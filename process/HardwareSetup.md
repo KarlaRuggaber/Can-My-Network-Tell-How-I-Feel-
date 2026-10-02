@@ -1,7 +1,3 @@
-# Hardware Setup
-
-Oct 2, 2026 · @Thierry Suhner
-
 ## 1. What we did today and why
 
 Today's work covered the hardware setup for the project: building a self-contained, reboot-proof WiFi gateway that records all client traffic as rotating pcap files and as a unified metadata feed (DNS, TLS SNI, QUIC SNI, hostnames), ready to feed the existing analysis model. This is one part of the larger project, not the whole of it; the analysis model and its integration are separate work.
@@ -13,7 +9,7 @@ The brief for this part set four requirements:
 - Use the most modern capture approach available, with the capture program written in Rust for speed.
 - First understand the overall approach, then build it step by step from a clean server.
 
-All test users were informed that their traffic is recorded for research. The work was done with the support of an AI assistant (Claude), which proposed designs, wrote and tested code and configurations, and guided debugging; all commands were executed and verified by the team on the real hardware.
+The work was done with the support of an AI assistant (Claude), which proposed designs, wrote and tested code and configurations, and guided debugging; all commands were executed and verified by the team on the real hardware.
 
 ## 2. Phase 1: Research and architecture decisions
 
