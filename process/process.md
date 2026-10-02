@@ -52,6 +52,8 @@
 - **Next / open:** set up hardware, make presentation
 - **Blockers / notes:**
 
+What we did today: we worked the entire day on the hardware setup. The entire process is documented in the file process/HardwareSetup.md.
+
 </details>
 
 <details>
