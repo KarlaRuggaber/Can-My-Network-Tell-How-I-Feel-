@@ -38,8 +38,8 @@
 - He will give iterative feedback on profiles and our work in general
 
 **Supervisor meeting:** Fri 25.09
-- **Done:**
-- **Next / open:**
+- **Done:** recap on meeting with Lukasz
+- **Next / open:** start on thinking about profiles
 - **Blockers / notes:**
 
 </details>
@@ -48,8 +48,8 @@
 <summary><b>Week 3</b> (28.09 – 04.10)</summary>
 
 **Supervisor meeting:** Fri 02.10
-- **Done:**
-- **Next / open:**
+- **Done:** discussed outline for presentation / hardware setup
+- **Next / open:** set up hardware, make presentation
 - **Blockers / notes:**
 
 </details>
