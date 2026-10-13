@@ -33,6 +33,8 @@ Used for "domain category mix" in schema section 8 and for the mapping rows belo
 | Search / general | general search engines, uncategorized queries | standard |
 | Other / uncategorized | anything not fitting above | standard |
 
+For scripting, [activity-catalog.md](activity-catalog.md) §3 refines these categories into `mix` keys with concrete domains (social/messaging → `messaging`, `social_passive`, `social_post`; streaming/entertainment → `streaming`, `gaming`; work/productivity → `work`, `study`; e-commerce → `shopping`; crisis → `crisis_help` + DNS-only placeholders). "Health / medical (general)" isn't used by any current profile.
+
 This taxonomy is intentionally coarse — fine enough to distinguish the behaviors below, coarse enough to keep the "grey zone" (Tier 1) profiles plausible against a healthy baseline that also touches most categories.
 
 ## 3. Symptom → behavior → network feature table
@@ -106,3 +108,28 @@ Tier 2 includes clinical diagnoses that are not MDD and have their own DSM-5 cri
 - **Network translation:**
   - Core avoidance/passive-monitoring pattern → reuse the "Anxiety — social" row in §3.
   - SAD-specific nuance: avoidance is strongest for *synchronous* social contact — expect a disproportionate drop in video/voice-call-associated domains specifically, while asynchronous messaging may stay closer to baseline or even increase slightly as a lower-threat substitute. This distinguishes SAD from general social withdrawal (§3), which drops broadly across all social/messaging categories.
+  - Offline avoidance → the device stays on the home network during the personal baseline's usual going-out times (e.g. weekend evenings), with solitary activity (streaming, gaming without voice chat) instead of the baseline's absence of home traffic. Observability: Partial — only visible against a baseline that actually goes out.
+  - Active vs. passive social use → measured as the upstream byte share on social domains (posts/uploads ↓ while DNS volume stays flat). Needs the up/down direction split, not DNS counts alone.
+
+## 8. Alignment with the thesis criteria (CareNet C1–C9)
+
+Each symptom row above → the thesis criterion that scores it and the thesis metrics (config keys). `*` = active in the shipped `fasl_config.json`; the others are computed by the thesis code but not configured. Scoring rules, bands and known issues (B1–B9): [thesis-alignment.md](thesis-alignment.md).
+
+| Symptom (§3 / §7) | DSM-5 | Thesis criterion | Thesis metrics | Fit |
+|---|---|---|---|---|
+| Depressed mood | A1 | C1 | `F8_NightDayRatioPkts`*, `F1_DistinctSocial`*, `F4_DownUpRatio`*, `F6_Fano`*, `F7_HourlyCV`*, LateNightShare | Partial. Thesis C1 mixes sleep-timing and social metrics. Our "reduced overall use, flatter curve" fits `F7_HourlyCV`, but its config direction is reversed (B9). |
+| Anhedonia | A2 | C2 | `C2_F1_UniqueSLD`*, `C2_F6_ProductivityHits`*, `C2_F3_ChatSessionCount`*, `C2_F4_MeanUpstreamRateBps`*, `C2_F5_PassiveActiveByteRatio` | Good for diversity and productivity. No hobby-specific metric: a gaming drop shows only through UniqueSLD and the passive/active ratio. |
+| Weight/appetite change | A3 | C3 | food-delivery, diet-site metrics | Not used, as in §3 (not configured in the thesis either). |
+| Sleep disturbance (general) | A4 | C4 (+ C1) | `C4_F2`*, `C4_F4`*, `C4_F8`*, `C4_F1` onset, `C4_F3`, `C4_F5` micro-sessions, `C4_F6`; also `C1_F8`* | Good, but `C4_F2` is an artifact (B3). |
+| Early morning waking (4-5am) | A4 | C4 | no dedicated metric | **Mismatch (B5):** `C4_F2` and `C6_F8` score *late* waking as worse. Early waking registers only through `C1_F8`/`C4_F8`. |
+| Psychomotor agitation/retardation | A5 | C5 | DHCP re-associations, sub-30 s sessions | Thesis has proxies; we treat it as not observable and don't script it. |
+| Fatigue / loss of energy | A6 | C6 | `C6_F8_FirstActivityMin`, `C6_F9_ActivationDelayVsBase28d` | Good once C6 is configured (thesis-alignment §4). |
+| Feelings of worthlessness/guilt | A7 | C7 | mental-health site visits, help-line look-ups, negative-self queries | Not observable for us. Note: help-line visits (`143.ch`) can also land in C7 because of the thesis's help-line metric. |
+| Concentration difficulty | A8 | C8 | `C8_F2_DNSBurstRatePerHour`*, `C8_F4_RepeatedQueryRatio60m`*, `C8_F8_MedianIKSsec`* | Good |
+| Suicidal ideation (overlay) | A9 | C9 | `C9_F1_CrisisLineHits` (domain hits); method/forum metrics need URLs | Partial: domain hits only. Episodic, so not suited to the N-of-M gate (B8) → flag. |
+| Hopelessness | ICD-11 only | — | — | No thesis equivalent. |
+| Social withdrawal | correlate, not a criterion | spread over C1 + C2 | `F1_DistinctSocial`*, `C2_F3`*, `C2_F4`*, `C2_F7_SocialOutgoingShareUp` | Partial: no own criterion, shows as C1/C2 evidence. |
+| Rumination | correlate, not a criterion | C8 | `C8_F4_RepeatedQueryRatio60m`* | Good |
+| Anxiety — generalized (GAD) | other diagnosis | — | — | Thesis is MDD-only (B6). |
+| Anxiety — social / Social Anxiety Disorder (§7) | other diagnosis | appears as C1 + C2 | `F4_DownUpRatio`*, `C2_F4`*, `C2_F7` | Misattribution expected: SAD read as depressed mood/anhedonia (B6). |
+| Insomnia Disorder (§7) | other diagnosis | appears as C4 + C1 | C4 sleep metrics, `C1_F8`* | Misattribution expected: the night/day ratio also raises C1 (B6). |
