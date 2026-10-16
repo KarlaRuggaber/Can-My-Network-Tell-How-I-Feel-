@@ -1,0 +1,13 @@
+streamlit
+streamlit[pdf]
+pandas
+numpy
+scapy
+pyarrow
+fastparquet
+plotly
+tldextract
+publicsuffixlist
+openpyxl
+pydenticon
+websiteclassificationapi

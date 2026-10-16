@@ -1,0 +1,10 @@
+streamlit
+streamlit[pdf]
+pandas
+numpy
+scapy
+pyarrow
+plotly
+tldextract
+publicsuffixlist
+openpyxl
