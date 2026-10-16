@@ -20,7 +20,7 @@ This is only the runner. It does not cover the scheduler (profile → 14-day pla
 | Device identity | Fixed `ipv4_address` and `mac_address` per container, taken from `config/devices.csv` |
 | Firewall and NAT | Docker runs with `"iptables": false`. All rules stay in `/etc/nftables.conf`. br-sim may reach DNS, ping and the internet, nothing else, and it is never forwarded to eno1. |
 | DNS | `config/resolv.conf` (`nameserver 10.42.1.1`) is mounted over `/etc/resolv.conf`. Every lookup goes from the container IP straight to dnsmasq, so `log-queries` and tapfeed attribute it to the device. |
-| Container lifecycle | Containers idle with `sleep infinity`. A run is `docker compose exec <device> python3 -m runner run ...`. Each run starts a **new browser process with a fresh context**, so no DNS, HTTP or cookie state carries over between blocks (catalog §5.2). |
+| Container lifecycle | Containers idle with `sleep infinity`. A run is `scripts/run-activity.sh <device> ...` (a `docker compose exec` with stdin detached, see section 3). Each run starts a **new browser process with a fresh context**, so no DNS, HTTP or cookie state carries over between blocks (catalog §5.2). |
 | Randomness | All randomness comes from `random.Random(f"{seed}/{block_id}")`. The same seed and block ID give the same sequence of choices. |
 
 ```
@@ -72,10 +72,17 @@ docker run --rm traffic-runner:0.1.0 python3 -m pytest -q
 ## 3. Running activities
 
 ```bash
-docker compose exec student01_phone python3 -m runner run \
+sudo scripts/run-activity.sh student01_phone \
     --activity phone_check --duration 300 --mix news,social_passive \
     --seed 42 --profile student --block-id b001
 ```
+
+**Always detach stdin** when you call `docker compose exec` yourself: `docker compose exec -T <device> ... < /dev/null`. Even with `-T`, exec reads from the terminal. On the gateway (2026-10-16) this caused three problems:
+- it swallowed the following lines of a pasted command block
+- commands started with `&` (background) hung
+- commands under `timeout` hung
+
+`scripts/run-activity.sh` does this for you.
 
 | Option | Meaning |
 |---|---|
@@ -322,17 +329,17 @@ cd ~/traffic-runner
 sudo docker compose build        # only the small pip layer (pinned packages)
 sudo docker compose up -d
 sudo docker compose ps
-sudo docker compose exec -T student01_phone python3 -m pytest -q
+sudo docker compose exec -T student01_phone python3 -m pytest -q < /dev/null
 # H.264/AAC support of the amd64 Chromium (expect true true; SRF needs it):
-sudo docker compose exec -T student01_phone python3 -c "from playwright.sync_api import sync_playwright as s; p = s().start(); b = p.chromium.launch(channel='chromium'); pg = b.new_page(); print([pg.evaluate('t => MediaSource.isTypeSupported(t)', t) for t in ('video/mp4; codecs=\"avc1.42E01E\"', 'audio/mp4; codecs=\"mp4a.40.2\"')]); b.close(); p.stop()"
+sudo docker compose exec -T student01_phone python3 -c "from playwright.sync_api import sync_playwright as s; p = s().start(); b = p.chromium.launch(channel='chromium'); pg = b.new_page(); print([pg.evaluate('t => MediaSource.isTypeSupported(t)', t) for t in ('video/mp4; codecs=\"avc1.42E01E\"', 'audio/mp4; codecs=\"mp4a.40.2\"')]); b.close(); p.stop()" < /dev/null
 ```
 
 ### Step 7: acceptance
 
 ```bash
 cd ~/traffic-runner
-sudo docker compose exec -T student01_phone  python3 -m runner run --activity phone_check --duration 2m --mix news,social_passive --seed 42 --profile student --block-id t001 &
-sudo docker compose exec -T student01_laptop python3 -m runner run --activity browse --duration 2m --mix news,shopping --seed 42 --profile student --block-id t002 &
+sudo scripts/run-activity.sh student01_phone  --activity phone_check --duration 2m --mix news,social_passive --seed 42 --profile student --block-id t001 &
+sudo scripts/run-activity.sh student01_laptop --activity browse --duration 2m --mix news,shopping --seed 42 --profile student --block-id t002 &
 wait
 sudo grep -E '"src":"10\.42\.1\.1[12]"' /var/lib/tapcap/meta/feed.ndjson | tail -20
 sudo bash -c 'tcpdump -nn -r "$(ls -t /var/lib/tapcap/sim/ready/*.pcap | head -1)" host 10.42.1.11 | head'
