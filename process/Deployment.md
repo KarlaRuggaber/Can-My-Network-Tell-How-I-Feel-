@@ -10,6 +10,8 @@ The work had three parts:
 2. **App changes.** The parser moved into a shared module, so the upload page and the ingest produce identical rows. The app's caches now notice data that grows while the app is running.
 3. **Deployment on the mini-PC.** We installed the ingest as a systemd service, installed Docker without letting it touch the firewall, and run the app in a container that is reachable only through an SSH tunnel.
 
+The app code itself now lives in this repository, in [`app_pcap_to_dsm5/`](../app_pcap_to_dsm5/ORIGIN.md), and the gateway runs a `git clone` of it (Section 7.5).
+
 This implements step 4.1 of [MasterThesisInc.md](MasterThesisInc.md) in a different form (live instead of nightly). The differences, and the parts of that plan that are still open, are listed in Section 4.
 
 The work was done with the support of an AI assistant (Claude), which wrote and tested the code and ran the deployment commands on the mini-PC over SSH. Each step was checked against the real system, and the outputs quoted below come from it.
@@ -27,7 +29,7 @@ The work was done with the support of an AI assistant (Claude), which wrote and 
         tapingest.service ── /etc/tapingest/devices.csv (IP → dataset)
                                    │  merge into 5-min windows
                                    ▼
-        /opt/app_pcap_to_dsm5_public/app/processed_parquet/<dataset>/<dataset>__YYYYMMDD_HHMM.parquet
+        /opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet/<dataset>/<dataset>__YYYYMMDD_HHMM.parquet
                                    │  bind mount
                                    ▼
         Docker container pcap-to-dsm5 (Streamlit, 127.0.0.1:8501, host network)
@@ -39,14 +41,14 @@ The work was done with the support of an AI assistant (Claude), which wrote and 
 
 | Component | What | Where |
 | --- | --- | --- |
-| Code | `app_pcap_to_dsm5_public`, branch `live-ingest` (deployed as an archive, see 6.1) | `/opt/app_pcap_to_dsm5_public` |
-| Python venv for the ingest | scapy 2.8.0, pandas 3.0.6, pyarrow 26.0.0, Python 3.14.4 | `/opt/app_pcap_to_dsm5_public/.venv` |
+| Code | `git clone` of this repository (owned by root), app in `app_pcap_to_dsm5/` | `/opt/can-my-network` |
+| Python venv for the ingest | scapy 2.8.0, pandas 3.0.6, pyarrow 26.0.0, Python 3.14.4 | `/opt/can-my-network/app_pcap_to_dsm5/.venv` |
 | Ingest service | `tapingest.service`, user `tapingest` (member of group `tapcap`), enabled at boot | `/etc/systemd/system/tapingest.service` |
 | Device map | `devices.csv` (IP → dataset) | `/etc/tapingest/devices.csv` |
 | Ingest state | SQLite list of processed capture files | `/var/lib/tapingest/state.sqlite` |
-| App data | Parquet partitions, owned by `tapingest` | `/opt/app_pcap_to_dsm5_public/app/processed_parquet/` |
-| App feature cache | Daily metric CSVs written by the app | `/opt/app_pcap_to_dsm5_public/app/feature_cache/` |
-| App login | `secrets.toml` (username/password), mode 600, root | `/opt/app_pcap_to_dsm5_public/app/.streamlit/secrets.toml` |
+| App data | Parquet partitions, owned by `tapingest` | `/opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet/` |
+| App feature cache | Daily metric CSVs written by the app | `/opt/can-my-network/app_pcap_to_dsm5/app/feature_cache/` |
+| App login | `secrets.toml` (username/password), mode 600, root | `/opt/can-my-network/app_pcap_to_dsm5/app/.streamlit/secrets.toml` |
 | Docker | docker.io 29.1.3, compose 2.40.3, buildx 0.30.1, `iptables: false` | `/etc/docker/daemon.json` |
 | App container | `pcap-to-dsm5`, image `app-app`, restart `unless-stopped`, host network | `app/docker-compose.yml` + `app/docker-compose.gateway.yml` |
 
@@ -105,14 +107,24 @@ The file is validated when loaded (columns, valid IPv4, unique ip/device/mac, sa
 
 The deployed file still holds the four example devices (10.42.1.11/.12/.21/.22) of the planned runner containers. Because those do not exist yet, **all current traffic goes to `gw_unassigned`**.
 
-### App changes (branch `live-ingest` of the app repo)
+### App changes (folder `app_pcap_to_dsm5/` in this repository)
 
-| Commit | Change |
+| Commit (this repo) | Change |
+| --- | --- |
+| `9a5c97d` | Import of Stephan Nef's app, **unchanged** (upstream `12f44bc0`), without the thesis datasets, the feature cache and his `user_profiles.json`. See [`ORIGIN.md`](../app_pcap_to_dsm5/ORIGIN.md) |
+| `2a168ed` | All our changes, see the list below |
+| `1c541f6` | Paths for the clone on the gateway, `.gitignore` for runtime files |
+
+`2a168ed` was developed on a local branch (`live-ingest` of a clone of the upstream repo) in four steps:
+
+| Local commit | Change |
 | --- | --- |
 | `18afb6cc` | `ingest/` (service, unit, README, example devices.csv), shared parser `app/utils/pcap_etl.py`, cache fixes in pages 01/02, `TZ=Europe/Zurich` in `docker-compose.yml` |
 | `cdaff706` | `--since` option |
 | `33cfc2ce` | `app/docker-compose.gateway.yml` (host network, Streamlit on localhost only) |
 | `05142cd0` | Background filter, MAC fallback for the device map |
+
+All our changes compared to the thesis version, as one diff: `git diff 9a5c97d HEAD -- app_pcap_to_dsm5/`.
 
 The cache fixes were needed because the app assumed that data never changes after upload:
 
@@ -121,7 +133,6 @@ The cache fixes were needed because the app assumed that data never changes afte
 
 Pages 01 and 02 now compute a cheap signature of the selected datasets (number of partition files + newest modification time, `app/utils/partitions.py`). The CSV is used only if it is newer than the newest partition. Day loaders are keyed on the modification times of that day's files, so unchanged days stay cached and only the changed day is reloaded. The "Refresh cached day metrics" button is no longer needed for live data.
 
-The app repo's `origin` is Stephan Nef's public repository (`nefste/app_pcap_to_dsm5_public`), where we cannot push. The three commits exist only on Thierry's laptop and on the gateway (as a deployed archive). **We still need our own fork** to version and share this code (Section 9).
 
 ## 4. Differences from the plan in MasterThesisInc.md §4.1
 
@@ -157,7 +168,7 @@ Before deployment, the code was tested on the laptop with synthetic capture file
 
 ### 6.1 Access and code transfer
 
-- **Code:** we cannot push to `origin`, so the code was packed on the laptop with `git archive` into `live-ingest-cdaff706.tar.gz` (5.6 MB, without the 490 MB of thesis datasets in `app/processed_parquet` and `app/feature_cache`). It was copied with `scp` and unpacked to `/opt`. Checksums matched on both sides.
+- **Code** (first deployment, replaced by a git clone in Section 7.5): we could not push to the upstream repository, so the code was packed on the laptop with `git archive` into `live-ingest-cdaff706.tar.gz` (5.6 MB, without the 490 MB of thesis datasets in `app/processed_parquet` and `app/feature_cache`). It was copied with `scp` and unpacked to `/opt/app_pcap_to_dsm5_public`. Checksums matched on both sides.
 - **SSH key:** a separate key without a passphrase, `~/.ssh/minipc_deploy` on Thierry's laptop, was added to kathy's `authorized_keys`. That lets the assistant run commands non-interactively.
 - **Temporary sudo:** `/etc/sudoers.d/90-temp-deploy` (`kathy ALL=(ALL) NOPASSWD: ALL`) lets those commands use sudo without a password. **This file and the deploy key must be removed after setup** (Section 8).
 
@@ -209,6 +220,35 @@ The app's login reads `username` and `password` from `app/.streamlit/secrets.tom
 - The dataset `gw_unassigned` is visible in the app
 - nftables still unchanged and `tapingest` still active after the container start
 
+### 7.5 Move to the project repository
+
+The app repository's `origin` is Stephan Nef's (`nefste/app_pcap_to_dsm5_public`), where we cannot push, and his last commit is final ("final pdf", 01.11.2025). Rather than a fork, we imported the app into this repository, with permission, so that docs, profiles, runner and app live in one place and the gateway needs one `git pull`.
+
+**Import (three commits, see Section 3).** The first commit is his code unchanged, which we checked: the files match the upstream archive byte for byte, except the deliberate `ORIGIN.md` and the omitted `user_profiles.json`. The second commit brings in our 12 changed files one-to-one from the local branch. The third adapts the paths. Left out of the import:
+
+- the thesis datasets (`app/processed_parquet`, ~490 MB) and the feature cache;
+- `app/user_profiles.json`: it holds the author's personal profile (date of birth, daily routine), and the app recreates it (empty) on first start and rewrites it at runtime.
+
+**`.gitignore` for runtime files.** On the gateway the ingest writes `processed_parquet/`, and the app writes `feature_cache/` and `user_profiles.json`, all inside the clone. These paths, plus `.venv/` and `secrets.toml`, are ignored, so the running system never blocks a `git pull`. One tracked file can still change at runtime: `app/fasl_config.json`, when someone saves a model configuration in the app. That is intended, since a recalibrated configuration belongs in git. Commit it from the gateway or copy it back before the next pull.
+
+**Switch on the gateway (16.10.2026).**
+
+1. Without downtime: `git clone` of this repository to `/opt/can-my-network` (as root), new venv in `app_pcap_to_dsm5/.venv`, ingest requirements installed. `git status` stayed clean with the venv present.
+2. 16:04:29 UTC: `tapingest` stopped, app container removed.
+3. `processed_parquet/` and `feature_cache/` moved (same filesystem, instant), `secrets.toml` copied (mode 600). The state db in `/var/lib/tapingest` stays where it is; it stores capture paths, which did not change.
+4. New unit from the repo, with `--since 2026-10-16T17:09` and `--exclude-mac 8c:30:66:4c:df:d1` set. The old unit is kept as `/root/tapingest.service.bak-before-repo`. `tapingest` started.
+5. The image build failed: pip could not fetch `setuptools` for `pydenticon`, apparently a network hiccup on the hotspot (the identical build had worked an hour earlier). To keep the downtime short, the container was started from the existing image (`up -d --no-build`). It was back at 16:06:28 UTC, so the app was down for about 2 minutes. Its code matched the repo: the hashes of all 32 code and config files in the image and in the clone were identical.
+6. A second build attempt succeeded, and the container was recreated from the new image.
+
+**Verification.**
+
+- `tapingest` runs from `/opt/can-my-network/app_pcap_to_dsm5` with the filter and the AP MAC. All capture files since 17:09 are processed, none with errors, and the files written during the switch were picked up right after the restart.
+- The partitions run from 17:05 to 18:05 without a gap except **17:55**. That window is empty on purpose: the iPhone was idle, the five minute files of that window held only 149–158 packets each, all AP and broadcast chatter, and the filter dropped all of them.
+- The app answers on `127.0.0.1:8501`, also through the tunnel from the laptop, and mounts its data from the new folder.
+- `git status` in the clone on the gateway is empty.
+
+The old folder `/opt/app_pcap_to_dsm5_public` stays as a backup for now (it still contains the code archive's version and Stephan's `user_profiles.json`). The unfiltered data from before the filter is in `/var/tmp/tapingest-unfiltered-202610161547/`.
+
 ## 8. Operating the system
 
 ### Open the app
@@ -229,7 +269,7 @@ journalctl -u tapingest -f                                    # one "Ingested 1 
 sudo sqlite3 /var/lib/tapingest/state.sqlite \
   "select path, packets, rows_mapped, rows_unmapped, error from processed order by processed_at desc limit 5"
 sudo sqlite3 /var/lib/tapingest/state.sqlite "select rule, sum(packets) from dropped group by rule"   # background filter
-ls /opt/app_pcap_to_dsm5_public/app/processed_parquet/
+ls /opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet/
 sudo docker ps
 sudo docker logs --tail 50 pcap-to-dsm5
 ```
@@ -250,22 +290,16 @@ sudo systemctl daemon-reload && sudo systemctl restart tapingest
 
 ### Deploy a new code version
 
-On the laptop, in the app repo:
+Push to `main`, then on the gateway:
 
 ```bash
-git archive --format=tar.gz --prefix=app_pcap_to_dsm5_public/ -o ../live-ingest-$(git rev-parse --short HEAD).tar.gz HEAD -- . ':(exclude)app/processed_parquet' ':(exclude)app/feature_cache'
-scp -i ~/.ssh/minipc_deploy ../live-ingest-<hash>.tar.gz kathy@172.20.10.10:~
+sudo git -C /opt/can-my-network pull
+sudo git -C /opt/can-my-network log --oneline -1               # which version runs
+sudo systemctl restart tapingest                               # if ingest/ changed
+cd /opt/can-my-network/app_pcap_to_dsm5/app && sudo docker compose -f docker-compose.yml -f docker-compose.gateway.yml up -d --build   # if app/ changed
 ```
 
-On the gateway:
-
-```bash
-sudo tar -xzf ~/live-ingest-<hash>.tar.gz -C /opt          # data, feature cache and secrets.toml are not in the archive
-sudo systemctl restart tapingest
-cd /opt/app_pcap_to_dsm5_public/app && sudo docker compose -f docker-compose.yml -f docker-compose.gateway.yml up -d --build
-```
-
-Once the code lives in our own fork, `git pull` on the gateway replaces the archive step.
+The clone is owned by root, so use `sudo git -C …` (as kathy, plain `git` refuses with "dubious ownership"). If `tapingest.service` in the repo changed, copy it again and re-apply the local settings (`--since`, `--exclude-mac`), see the appendix. If the image build fails on a pip download, retry it; the running container keeps working meanwhile.
 
 ### Re-process data
 
@@ -273,7 +307,7 @@ The service skips files that are already in the state db. To rebuild a dataset, 
 
 ```bash
 sudo systemctl stop tapingest
-sudo rm -r /opt/app_pcap_to_dsm5_public/app/processed_parquet/<dataset>
+sudo rm -r /opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet/<dataset>
 sudo rm /var/lib/tapingest/state.sqlite                     # or delete only the affected rows
 # set --since in the unit to the first file you want, daemon-reload
 sudo systemctl start tapingest
@@ -300,6 +334,10 @@ Nothing is deleted automatically, neither captures (`/var/lib/tapcap/ready`, 73 
 | 11 | Usage | "The tunnel command just hangs" | `ssh -N` prints nothing by design | Leave it running, open the browser |
 | 12 | Data | AP/controller traffic, IGMP, UniFi discovery and mDNS counted as activity (~9 % of packets) | No background filter in the first version | Filter (Section 3.1), AP by MAC; today's data rebuilt |
 | 13 | Data | DHCP discovers come from `0.0.0.0` and could not be assigned by IP | The client has no IP yet | Device map falls back to the MAC |
+| 14 | Code | No way to push our app changes | Upstream repository is not ours | App imported into this repository (Section 7.5) |
+| 15 | Code | `git pull` on the gateway would conflict with live data | Ingest and app write inside the clone; upstream tracked `user_profiles.json` | `.gitignore` for runtime paths; `user_profiles.json` not imported |
+| 16 | Docker | `No matching distribution found for setuptools` during the image build | pip download failed over the hotspot | Started the existing image (2 min downtime), retried the build |
+| 17 | Data | Window 17:55 missing | Phone idle, all packets were background and dropped | Expected behaviour, no fix needed |
 
 ## 10. Security notes
 
@@ -313,7 +351,7 @@ Nothing is deleted automatically, neither captures (`/var/lib/tapcap/ready`, 73 
 
 1. ~~Background filter~~ Done (Section 3.1). Still to decide after looking at real nights: always-on keep-alives such as Apple push (5223).
 2. **Remove the temporary access** (Section 10).
-3. **Own fork of the app repo** for the `live-ingest` branch, so the code is versioned and the gateway can `git pull`.
+3. ~~Own fork of the app repo~~ Done differently: app imported into this repository (Section 7.5). After a few days without problems, delete `/opt/app_pcap_to_dsm5_public`, `/var/tmp/tapingest-unfiltered-*` and `/root/tapingest.service.bak-*` on the gateway. The local `app_pcap_to_dsm5_public` clone and the `live-ingest-*.tar.gz` archives on Thierry's laptop are obsolete.
 4. **br-sim integration:** a second `--watch` folder, and one shared `devices.csv` for the runner and the ingest (e.g. the runner reads `/etc/tapingest/devices.csv`).
 5. **First end-to-end pilot:** one runner container (e.g. `student01_phone`) runs `browse` for 5 minutes, and `gw_student_01` appears in the app with exactly those domains.
 6. **Validation 3–6** from MasterThesisInc §8 on real data: packet counts vs. `capinfos`, a known action at a noted time, plausible domain names, night silence of an unused phone.
@@ -337,11 +375,11 @@ Group=tapingest
 SupplementaryGroups=tapcap
 Environment=TZ=Europe/Zurich
 Environment=PYTHONUNBUFFERED=1
-WorkingDirectory=/opt/app_pcap_to_dsm5_public
-ExecStart=/opt/app_pcap_to_dsm5_public/.venv/bin/python ingest/tapingest.py \
+WorkingDirectory=/opt/can-my-network/app_pcap_to_dsm5
+ExecStart=/opt/can-my-network/app_pcap_to_dsm5/.venv/bin/python ingest/tapingest.py \
     --watch /var/lib/tapcap/ready \
     --devices /etc/tapingest/devices.csv \
-    --out /opt/app_pcap_to_dsm5_public/app/processed_parquet \
+    --out /opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet \
     --state /var/lib/tapingest/state.sqlite --since 2026-10-16T17:09 \
     --exclude-mac 8c:30:66:4c:df:d1
 StateDirectory=tapingest
@@ -351,7 +389,7 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=/opt/app_pcap_to_dsm5_public/app/processed_parquet
+ReadWritePaths=/opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet
 
 [Install]
 WantedBy=multi-user.target
@@ -373,8 +411,8 @@ services:
 
 ```bash
 sudo apt install -y python3-venv sqlite3
-sudo tar -xzf ~/live-ingest-cdaff706.tar.gz -C /opt
-cd /opt/app_pcap_to_dsm5_public
+sudo git clone https://github.com/KarlaRuggaber/Can-My-Network-Tell-How-I-Feel-.git /opt/can-my-network
+cd /opt/can-my-network/app_pcap_to_dsm5
 sudo python3 -m venv .venv
 sudo .venv/bin/pip install -r ingest/requirements.txt
 
@@ -392,9 +430,11 @@ sudo -u tapingest env TZ=Europe/Zurich .venv/bin/python ingest/tapingest.py \
   --watch /var/lib/tapcap/ready --devices /etc/tapingest/devices.csv \
   --state /tmp/tapingest-test.sqlite --since "$(TZ=Europe/Zurich date -d '10 min ago' +%Y-%m-%dT%H:%M)" --once
 
-# service, starting from now
+# service, starting from now; set the AP's MAC (from /var/lib/misc/dnsmasq.leases)
 sudo cp ingest/tapingest.service /etc/systemd/system/
-sudo sed -i "s#--state /var/lib/tapingest/state.sqlite#--state /var/lib/tapingest/state.sqlite --since $(TZ=Europe/Zurich date +%Y-%m-%dT%H:%M)#" /etc/systemd/system/tapingest.service
+sudo sed -i -e "s#--exclude-mac 00:00:00:00:00:00#--exclude-mac 8c:30:66:4c:df:d1#" \
+  -e "s#--state /var/lib/tapingest/state.sqlite \\\\#--state /var/lib/tapingest/state.sqlite --since $(TZ=Europe/Zurich date +%Y-%m-%dT%H:%M) \\\\#" \
+  /etc/systemd/system/tapingest.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now tapingest
 ```
@@ -408,10 +448,10 @@ printf '{\n  "iptables": false,\n  "ip6tables": false\n}\n' | sudo tee /etc/dock
 sudo apt-get install -y -o DPkg::Lock::Timeout=600 docker.io docker-compose-v2 docker-buildx
 sudo nft list ruleset | diff /root/nft-before-docker.txt - && echo UNCHANGED
 
-sudo nano /opt/app_pcap_to_dsm5_public/app/.streamlit/secrets.toml   # username = "…" / password = "…"
-sudo chmod 600 /opt/app_pcap_to_dsm5_public/app/.streamlit/secrets.toml
+sudo nano /opt/can-my-network/app_pcap_to_dsm5/app/.streamlit/secrets.toml   # username = "…" / password = "…"
+sudo chmod 600 /opt/can-my-network/app_pcap_to_dsm5/app/.streamlit/secrets.toml
 
-cd /opt/app_pcap_to_dsm5_public/app
+cd /opt/can-my-network/app_pcap_to_dsm5/app
 sudo docker compose -f docker-compose.yml -f docker-compose.gateway.yml up -d --build
 curl -fsS http://127.0.0.1:8501/_stcore/health                   # expect: ok
 ```

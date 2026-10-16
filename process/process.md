@@ -82,11 +82,12 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - Approach for traffic generation decided: one scheduler (profile + seed → ground-truth plan), executed live by runner containers on a separate `br-sim` network, later synthetically by stitching recorded activity snippets into PCAPs.
   - Runner container (Karla) and scheduler started as parallel work items.
   - Background filter in the ingest (MasterThesisInc §3): AP/controller traffic, broadcasts, mDNS/SSDP/NTP and gateway services are dropped and counted per rule (~9 % of today's packets). Today's data rebuilt with it.
+  - Thesis app imported into this repo (`app_pcap_to_dsm5/`, with permission; first commit unchanged, our changes on top). The gateway now runs a `git clone` of this repo, so updates are a `git pull`.
 - **Next / open:**
   - Connect `br-sim` (second capture folder, shared `devices.csv`), first end-to-end pilot with one container
-  - Own fork of the app repo; remove temporary sudo rule and deploy key on the gateway
+  - Remove temporary sudo rule and deploy key on the gateway; delete the old `/opt/app_pcap_to_dsm5_public` after a few days
   - Validation on real data (MasterThesisInc §8, steps 3–6)
-- **Blockers / notes:** App repo `origin` is Stephan Nef's repo, so our code changes (branch `live-ingest`) are only local until we have a fork. Full documentation: [Deployment.md](Deployment.md).
+- **Blockers / notes:** Full documentation: [Deployment.md](Deployment.md). Origin and licence note of the imported app: [`app_pcap_to_dsm5/ORIGIN.md`](../app_pcap_to_dsm5/ORIGIN.md).
 
 </details>
 
