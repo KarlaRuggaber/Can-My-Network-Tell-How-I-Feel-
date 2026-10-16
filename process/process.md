@@ -74,6 +74,20 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
 - **Next / open:**
 - **Blockers / notes:**
 
+**Live ingest and app deployment:** Fri 16.10
+- **Done:**
+  - Live ingest service `tapingest`: every 60 s capture from tapcap is converted into the app's 5-min Parquet partitions within ~10 s, assigned per IP via `devices.csv` (one dataset = one person). Runs as a systemd service on the gateway.
+  - Thesis app adapted: shared PCAP parser (upload and ingest give identical rows); pages 01/02 now pick up data that grows while the app runs.
+  - Docker installed on the gateway with `"iptables": false` (firewall verified unchanged). The app runs in a container on localhost only, reachable via SSH tunnel.
+  - Approach for traffic generation decided: one scheduler (profile + seed → ground-truth plan), executed live by runner containers on a separate `br-sim` network, later synthetically by stitching recorded activity snippets into PCAPs.
+  - Runner container (Karla) and scheduler started as parallel work items.
+- **Next / open:**
+  - Background filter in the ingest (MasterThesisInc §3) before interpreting sleep/idle metrics
+  - Connect `br-sim` (second capture folder, shared `devices.csv`), first end-to-end pilot with one container
+  - Own fork of the app repo; remove temporary sudo rule and deploy key on the gateway
+  - Validation on real data (MasterThesisInc §8, steps 3–6)
+- **Blockers / notes:** App repo `origin` is Stephan Nef's repo, so our code changes (branch `live-ingest`) are only local until we have a fork. Full documentation: [Deployment.md](Deployment.md).
+
 </details>
 
 <details>

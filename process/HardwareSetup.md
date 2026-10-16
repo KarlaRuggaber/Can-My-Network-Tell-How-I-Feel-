@@ -260,7 +260,7 @@ The finished system is a self-contained, reboot-proof capture gateway; its data 
 
 **Next steps.**
 
-- Connect the existing analysis model to the two outputs (`ready/` pcaps and `feed.ndjson`), e.g. via a small file-watcher.
+- ~~Connect the existing analysis model to the two outputs (`ready/` pcaps and `feed.ndjson`), e.g. via a small file-watcher.~~ Done on 16.10.2026 for the pcaps (live ingest service `tapingest` + app in Docker on the gateway), see [Deployment.md](Deployment.md). `feed.ndjson` (SNI) is not used yet.
 - Optionally add Zeek to turn pcaps into rich structured logs (certificates, JA3/JA4 fingerprints, full connection records), and GeoIP/ASN enrichment on destination addresses.
 - Resolve the device-name mapping (Section 11) and disable uplink SSH once LAN-side administration is available.
 
