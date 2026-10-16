@@ -1,0 +1,38 @@
+# /etc/systemd/system/tapingest.service
+# Live ingest: tapcap capture files -> app/processed_parquet/<dataset>/
+# Adjust APP_ROOT paths if the repo is not checked out at /opt/app_pcap_to_dsm5_public.
+
+[Unit]
+Description=tapingest: live PCAP -> 5-minute Parquet for the analysis app
+After=network-online.target tapcap@eno1.service
+
+[Service]
+Type=simple
+User=tapingest
+Group=tapingest
+# Read access to /var/lib/tapcap/ready (owned by tapcap, mode 750)
+SupplementaryGroups=tapcap
+Environment=TZ=Europe/Zurich
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/app_pcap_to_dsm5_public
+# Add one --watch per capture folder, e.g. the br-sim instance of tapcap.
+ExecStart=/opt/app_pcap_to_dsm5_public/.venv/bin/python ingest/tapingest.py \
+    --watch /var/lib/tapcap/ready \
+    --devices /etc/tapingest/devices.csv \
+    --out /opt/app_pcap_to_dsm5_public/app/processed_parquet \
+    --state /var/lib/tapingest/state.sqlite \
+    --exclude-mac 00:00:00:00:00:00
+# ^ replace with the access point's MAC (see /var/lib/misc/dnsmasq.leases); repeat for other infrastructure devices.
+StateDirectory=tapingest
+Restart=on-failure
+RestartSec=5
+
+# Hardening: only the output folder and the state dir are writable
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/app_pcap_to_dsm5_public/app/processed_parquet
+
+[Install]
+WantedBy=multi-user.target

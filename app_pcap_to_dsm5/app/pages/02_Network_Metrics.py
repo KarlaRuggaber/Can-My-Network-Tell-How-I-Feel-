@@ -20,6 +20,7 @@ import streamlit as st
 import pyarrow as pa
 import pyarrow.parquet as pq
 from utils.acronyms import render_acronyms_helper_in_sidebar
+from utils.partitions import dataset_signature, newest_partition_mtime
 
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -595,9 +596,8 @@ def _safe_read_parquet(fp: str):
         except Exception:
             return None
 
-@st.cache_data(show_spinner=False)
 def list_partition_files_cached(base_name: str) -> list[str]:
-    """Return all parquet partition files for a base dataset name."""
+    """Return all parquet partition files for a base dataset name (not memoised: the live ingest adds files)."""
     dataset_dir = os.path.join(PROCESSED_DIR, base_name)
     if not os.path.isdir(dataset_dir):
         return []
@@ -635,7 +635,6 @@ def group_token_from_prefix(prefix: str) -> str:
     s = re.sub(r"^[_-]+", "", s)
     return s
 
-@st.cache_data(show_spinner=False)
 def partition_counts_by_date(base_names: list[str]) -> dict[pd.Timestamp, int]:
     from collections import defaultdict
     counts = defaultdict(int)
@@ -646,16 +645,24 @@ def partition_counts_by_date(base_names: list[str]) -> dict[pd.Timestamp, int]:
                 counts[pd.to_datetime(dt.date())] += 1
     return dict(sorted(counts.items(), key=lambda kv: kv[0]))
 
-@st.cache_data(show_spinner=False)
 def load_day_dataframe(base_name: str, day) -> pd.DataFrame:
     day = pd.to_datetime(day).normalize()
     next_day = day + pd.Timedelta(days=1)
-    files = list_partition_files_cached(base_name)
-    chosen = []
-    for p in files:
+    file_sigs = []
+    for p in list_partition_files_cached(base_name):
         dt = partition_file_to_start_dt(p)
         if dt and (day <= pd.to_datetime(dt) < next_day):
-            chosen.append(p)
+            try:
+                file_sigs.append((p, os.path.getmtime(p)))
+            except OSError:
+                continue
+    return _load_day_dataframe_cached(base_name, day, tuple(file_sigs))
+
+@st.cache_data(show_spinner=False)
+def _load_day_dataframe_cached(base_name: str, day, file_sigs: tuple[tuple[str, float], ...]) -> pd.DataFrame:
+    """Load one day's partitions; keyed on their mtimes so rewritten partitions are re-read."""
+    next_day = day + pd.Timedelta(days=1)
+    chosen = [p for p, _ in file_sigs]
     if not chosen:
         return pd.DataFrame(
             columns=[
@@ -716,8 +723,9 @@ def fingerprint_for_day(base_names: list[str], day) -> str:
 
 @st.cache_data(show_spinner=False)
 def compute_or_load_all_days_features(
-    base_names: list[str], all_days_list: list[pd.Timestamp], force: bool = False
+    base_names: list[str], all_days_list: list[pd.Timestamp], force: bool = False, data_sig: str = ""
 ) -> pd.DataFrame:
+    # data_sig only keys the memo cache, so partitions added by the live ingest trigger a re-run.
     cpath = cache_path_for_selection(base_names)
     existing: dict[datetime, pd.Series] = {}
     if os.path.isfile(cpath):
@@ -731,7 +739,10 @@ def compute_or_load_all_days_features(
 
     # If cache exists (regardless of Fingerprint), and we are not forcing recompute,
     # and the cache covers the requested days, load directly from CSV.
-    if (not force) and ("prev" in locals()) and (not prev.empty):
+    # Skipped when a partition is newer than the CSV (live ingest); the per-day
+    # fingerprints below then recompute only the days that changed.
+    csv_is_fresh = os.path.isfile(cpath) and os.path.getmtime(cpath) >= newest_partition_mtime(PROCESSED_DIR, base_names)
+    if (not force) and csv_is_fresh and ("prev" in locals()) and (not prev.empty):
         df_loaded = prev.copy()
         if all_days_list:
             wanted = set(pd.to_datetime(all_days_list).normalize())
@@ -940,12 +951,13 @@ with st.sidebar:
 st.session_state.setdefault("__ALL_DAILY_CACHE__", {})
 _days_sig = "|".join([str(pd.to_datetime(d).date()) for d in sorted(available_days)])
 _sel_sig = "|".join(sorted(selected_base_names))
-ALL_DAILY_KEY = hashlib.md5(f"{_sel_sig}||{_days_sig}".encode()).hexdigest()
+_data_sig = dataset_signature(PROCESSED_DIR, selected_base_names)
+ALL_DAILY_KEY = hashlib.md5(f"{_sel_sig}||{_days_sig}||{_data_sig}".encode()).hexdigest()
 
 if (not force_cache_refresh) and (ALL_DAILY_KEY in st.session_state["__ALL_DAILY_CACHE__"]):
     ALL_DAILY = st.session_state["__ALL_DAILY_CACHE__"][ALL_DAILY_KEY]
 else:
-    ALL_DAILY = compute_or_load_all_days_features(selected_base_names, available_days, force=force_cache_refresh)
+    ALL_DAILY = compute_or_load_all_days_features(selected_base_names, available_days, force=force_cache_refresh, data_sig=_data_sig)
     st.session_state["__ALL_DAILY_CACHE__"][ALL_DAILY_KEY] = ALL_DAILY
 
 # =============================== Load & enrich selected day ===================

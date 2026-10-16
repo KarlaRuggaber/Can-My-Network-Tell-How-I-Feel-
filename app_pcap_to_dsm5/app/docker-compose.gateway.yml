@@ -1,0 +1,15 @@
+# Overrides for the gateway mini-PC:
+#   docker compose -f docker-compose.yml -f docker-compose.gateway.yml up -d --build
+#
+# Docker runs there with "iptables": false (so it never touches the gateway's
+# nftables rules), which means bridge networks get no NAT. Build and run on the
+# host network instead. Streamlit listens on localhost only; port 8501 stays
+# closed in nftables and is reached through an SSH tunnel:
+#   ssh -L 8501:localhost:8501 kathy@<gateway>
+services:
+  app:
+    build:
+      network: host
+    network_mode: host
+    ports: !reset []
+    command: ["streamlit", "run", "00_Home.py", "--server.port=8501", "--server.address=127.0.0.1"]

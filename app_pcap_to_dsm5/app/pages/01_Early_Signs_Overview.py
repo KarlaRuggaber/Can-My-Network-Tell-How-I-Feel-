@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from utils.acronyms import render_acronyms_helper_in_sidebar
+from utils.partitions import dataset_signature, newest_partition_mtime
 
 from metrics.base_features import compute_daily_base_record
 from metrics.common import enrich_with_hostnames
@@ -283,8 +284,8 @@ FASL_CONFIG_PATH = APP_DIR / "fasl_config.json"
 
 # ------------------------------ Data loading ----------------------------------
 
-@st.cache_data(show_spinner=False)
 def list_partition_files(base_name: str) -> list[str]:
+    # Not memoised: the live ingest adds partitions while the app runs.
     d = os.path.join(PROCESSED_DIR, base_name)
     if not os.path.isdir(d):
         return []
@@ -407,7 +408,6 @@ def load_day_dataframe(base_name: str, day) -> pd.DataFrame:
     return _load_day_dataframe_cached(day.isoformat(), file_sigs)
 
 
-@st.cache_data(show_spinner=False)
 def available_days_for(base_names: list[str]) -> list[pd.Timestamp]:
     days = set()
     for bn in base_names:
@@ -419,7 +419,8 @@ def available_days_for(base_names: list[str]) -> list[pd.Timestamp]:
 
 
 @st.cache_data(show_spinner=False)
-def compute_all_daily(base_names: list[str], days: list[pd.Timestamp]) -> pd.DataFrame:
+def compute_all_daily(base_names: list[str], days: list[pd.Timestamp], data_sig: str = "") -> pd.DataFrame:
+    # data_sig only keys the memo cache, so new or rewritten partitions trigger a recompute.
     if not base_names or not days:
         return pd.DataFrame(columns=["Date"])
 
@@ -1046,7 +1047,8 @@ def _cache_path_for_selection(base_names: list[str]) -> str:
 if refresh_requested:
     st.session_state["fasl_force_refresh"] = True
 
-selection_signature = selected_base_names + [f"[cache]{name}" for name in selected_cache_files]
+data_signature = dataset_signature(PROCESSED_DIR, selected_base_names) if selected_base_names else ""
+selection_signature = selected_base_names + [f"[cache]{name}" for name in selected_cache_files] + [f"[data]{data_signature}"]
 selection_key = _cache_key_for_selection(selection_signature)
 
 days_cache: dict[str, list[pd.Timestamp]] = st.session_state.setdefault("fasl_days_cache", {})
@@ -1160,8 +1162,10 @@ with col_s_right:
                 else list(EXPECTED_METRIC_COLUMNS)
             )
 
-            if loaded.empty or missing or missing_metric_cols:
-                ALL_DAILY = compute_all_daily(selected_base_names, days)
+            # Partitions newer than the CSV (live ingest) make the CSV stale.
+            csv_stale = os.path.isfile(cpath) and os.path.getmtime(cpath) < newest_partition_mtime(PROCESSED_DIR, selected_base_names)
+            if loaded.empty or missing or missing_metric_cols or csv_stale:
+                ALL_DAILY = compute_all_daily(selected_base_names, days, data_signature)
                 try:
                     ALL_DAILY.to_csv(cpath, index=False)
                 except Exception:

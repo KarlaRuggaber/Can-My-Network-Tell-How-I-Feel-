@@ -8,6 +8,8 @@ services:
       - "8501:8501"
     environment:
       - SCAPY_USE_LIBPCAP=no
+      # Same local time as the live ingest service (ingest/tapingest.py)
+      - TZ=Europe/Zurich
     volumes:
       # Persist computed artifacts
       - ./processed_parquet:/app/processed_parquet

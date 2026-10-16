@@ -16,11 +16,10 @@ import plotly.express as px, plotly.figure_factory as ff
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
-from scapy.all import IP, TCP, UDP, DNS, DNSRR, PcapReader
-from scapy.utils import PcapNgReader
 import pyarrow as pa
 import pyarrow.parquet as pq
 from utils.acronyms import render_acronyms_helper_in_sidebar
+from utils.pcap_etl import sanitize_name, floor_to_interval, iter_packets_any, parse_packet_row
 
 from metrics.common import enrich_with_hostnames, ensure_full_day_minutes, build_dns_map
 
@@ -71,14 +70,6 @@ PROFILES_PATH = APP_DIR / "user_profiles.json"
 IP_CATALOG_PATH = PROCESSED_DIR / "known_ips.txt"
 
 RESAMPLE_FREQ = "1Min"; PARTITION_MINUTES = 5; COMMIT_LAG_WINDOWS = 2
-
-def sanitize_name(name: str) -> str:
-    base = os.path.splitext(os.path.basename(name))[0]
-    base = re.sub(r"[^A-Za-z0-9._-]+", "_", base)
-    return base
-
-def floor_to_interval(ts: datetime, minutes: int = PARTITION_MINUTES) -> datetime:
-    return ts.replace(second=0, microsecond=0, minute=(ts.minute // minutes) * minutes)
 
 # -------------------- User Profiles (persisted JSON) --------------------
 def _default_profiles() -> dict:
@@ -502,49 +493,6 @@ with st.container(border=True):
             save_profiles(profiles_data)
             st.success("Profile deleted.")
             st.rerun()
-
-def iter_packets_any(pcap_path: str):
-    ext = os.path.splitext(pcap_path)[1].lower()
-    reader_cls = PcapNgReader if ext == ".pcapng" else PcapReader
-    with reader_cls(pcap_path) as reader:
-        for pkt in reader: yield pkt
-
-def parse_packet_row(pkt):
-    if not (IP in pkt): return None
-    try:
-        ts = datetime.fromtimestamp(float(pkt.time))
-        ip = pkt[IP]
-        proto = "TCP" if TCP in pkt else ("UDP" if UDP in pkt else "OTHER")
-        sport = pkt[TCP].sport if TCP in pkt else (pkt[UDP].sport if UDP in pkt else None)
-        dport = pkt[TCP].dport if TCP in pkt else (pkt[UDP].dport if UDP in pkt else None)
-        tcp_flags = (pkt[TCP].flags if TCP in pkt else None)
-        length = len(pkt)
-        row = {"Timestamp": ts,"Date": ts.date(),"Hour": ts.hour,
-               "Protocol": proto,"Source IP": ip.src,"Destination IP": ip.dst,
-               "Source Port": sport,"Destination Port": dport,"TCP Flags": str(tcp_flags) if tcp_flags is not None else None,
-               "Length": length}
-        if pkt.haslayer(DNS):
-            dns = pkt[DNS]; row["IsDNS"] = True
-            if dns.qr == 0 and dns.qd is not None:
-                try: row["DNS_QNAME"] = dns.qd.qname.decode(errors="ignore").rstrip(".")
-                except Exception: row["DNS_QNAME"] = str(dns.qd.qname)
-                row["DNS_QTYPE"] = dns.qd.qtype
-            if dns.ancount and dns.an is not None:
-                ans_ips, ans_names = [], []
-                for i in range(int(dns.ancount)):
-                    rr = dns.an[i] if isinstance(dns.an[i], DNSRR) else None
-                    if isinstance(rr, DNSRR):
-                        rrname = rr.rrname.decode(errors="ignore").rstrip(".") if isinstance(rr.rrname, (bytes, bytearray)) else str(rr.rrname)
-                        ans_names.append(rrname)
-                        try: ans_ips.append(str(rr.rdata))
-                        except Exception: pass
-                if ans_ips: row["DNS_ANS_IPS"] = ",".join(ans_ips)
-                if ans_names: row["DNS_ANS_NAME"] = ans_names[0]
-        else:
-            row["IsDNS"] = False
-        return row
-    except Exception:
-        return None
 
 def _commit_partition(dataset_dir: str, base_name: str, key_dt: datetime, rows: list, engine="pyarrow", compression="snappy"):
     fname = f"{base_name}__{key_dt.strftime('%Y%m%d_%H%M')}.parquet"
