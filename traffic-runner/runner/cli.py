@@ -151,7 +151,8 @@ def cmd_run(args) -> int:
         role_cfg = roles[device.role]
         clock = RealClock()
         driver = BrowserDriver(role_cfg["playwright_device"], roles.get("context") or {},
-                               mixes.consent.get("reject_buttons") or [], headless=not args.headed)
+                               mixes.consent.get("reject_buttons") or [], headless=not args.headed,
+                               consent_settings_buttons=mixes.consent.get("settings_buttons") or [])
 
     ctx = RunContext(driver, clock, duration, overrides)
     ctx.mixes = mixes

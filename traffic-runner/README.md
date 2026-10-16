@@ -103,7 +103,7 @@ docker compose exec student01_phone python3 -m runner run \
 | `phone_check` | ok | 1–3 pages from the mix, 20–90 s dwell each, scrolling. Ends when the pages are done or the duration is over. | 1–5 min |
 | `browse` | ok | Page from the mix, 30–180 s dwell, scrolling, then 1–2 same-site links per page, each with its own dwell. Fills the block. | as block |
 | `repeat_visit_loop` | ok | Picks 2–3 fixed pages, revisits one every 1–3 min. A **new browser process** per visit forces a fresh DNS query. | 10–30 min |
-| `video_stream` | ok | YouTube search (term from `mixes.yaml`), plays one of the first 5 results at the **lowest quality** (144p preference plus `setPlaybackQualityRange('tiny')`, re-applied every check; the reached quality is logged to stderr). Runs to the end of the video or the block. | 30–120 min |
+| `video_stream` | ok | Picks a playable `streaming` site with the RNG and plays at the **lowest quality**. The decoded resolution is logged to stderr. Runs to the end of the video or the block. **YouTube:** search for a term from `mixes.yaml`, play one of the first 5 results; 144p preference plus `setPlaybackQualityRange('tiny')`, re-applied every check. **SRF:** one of the first 5 on-demand videos on the Play SRF page, lowest video.js quality level (270p in the tests). | 30–120 min |
 | `music_background` | ok | Plays the SRF 3 MP3 livestream (`mixes.yaml` → `audio.streams`) | as block |
 | `idle_connected` | ok | No browser, only waits | as block |
 | `messaging`, `social_post`, `video_call`, `voice_call` | stub | Writes `not_implemented` (needs test accounts or a call counterpart) | |
@@ -112,7 +112,15 @@ docker compose exec student01_phone python3 -m runner run \
 **Mixes:**
 - Sites with `login: true` are skipped, and their weight goes to the remaining categories (a warning names them).
 - A mix that consists only of login categories (e.g. `messaging`) logs `not_implemented`.
-- Cookie banners are closed with the most privacy-preserving button ("Alle ablehnen", "Reject all", ...).
+
+**Cookie banners:** the runner never accepts. After each page load it polls up to 5 s for a reject button (`consent.reject_buttons`). If the first level only offers accept/settings, it opens a clearly named settings button (`consent.settings_buttons`, e.g. "Individuell verwalten") and rejects there ("Nur Notwendige", "Alle Anbieter ablehnen", ...). Tested on 2026-10-16:
+
+| Result | Sites |
+|---|---|
+| Rejected | YouTube (desktop + mobile), SRF Play, NZZ, Tages-Anzeiger, Zalando, DuckDuckGo, Reddit, TikTok (mobile) |
+| Banner stays open, page loads without consent | 20min, watson, Migros, Galaxus (only "Akzeptieren" plus a generic "Einstellungen") |
+
+SRF Play only starts its player after a choice. Whether the simulated users should *accept* instead (closer to typical users, more ad/tracker traffic) is a design decision for the team (section 9).
 
 **Reproducibility:**
 - Each iteration draws everything it needs from the RNG **before** it touches the network.
@@ -177,14 +185,24 @@ b=$(cat /sys/class/net/br-sim/statistics/tx_bytes); r=$(cat /sys/class/net/br-si
 echo "down $(( ($(cat /sys/class/net/br-sim/statistics/tx_bytes)-b)/1048576 )) MiB, up $(( ($(cat /sys/class/net/br-sim/statistics/rx_bytes)-r)/1048576 )) MiB"
 ```
 
-| Activity (2 min) | Measured on the gateway |
-|---|---|
-| `phone_check` news | _tbd_ |
-| `browse` news,shopping | _tbd_ |
-| `repeat_visit_loop` news | _tbd_ |
-| `video_stream` (YouTube, lowest quality) | _tbd_ (estimate 10–15 MB incl. page) |
-| `music_background` (128 kbit/s MP3) | _tbd_ (estimate ≈ 2 MB) |
-| `idle_connected` | 0 |
+Measured on 2026-10-16 in local test runs (laptop, Docker Desktop, home network). These are container eth0 counters, so they include page loads, consent dialogs and ads. Repeat the measurement on the gateway with the br-sim counters.
+
+| Activity, 2 min | Down | Up | Notes |
+|---|---|---|---|
+| `phone_check` news,social_passive (phone) | 11–34 MiB | 0.3–1.2 MiB | 1 page (NZZ) = 11 MiB; NZZ + Reddit = 34 MiB |
+| `browse` news,shopping (laptop) | 6–16 MiB | 0.5–0.8 MiB | depends heavily on the site |
+| `repeat_visit_loop` news,search (phone) | 5–8 MiB | 0.3–0.4 MiB | 2 visits |
+| `video_stream` YouTube | 3–8 MiB | 0.3–0.6 MiB | phone 144p; laptop 144p–240p |
+| `video_stream` SRF | 10–26 MiB | 0.4–0.6 MiB | 270p; the player buffers ahead at the start |
+| `music_background` (128 kbit/s MP3) | 2 MiB | 0.1 MiB | ≈ 1 MiB/min, steady |
+| `idle_connected` | 0 | 0 | |
+
+Rough budget for full-length blocks:
+- `music_background`: ≈ 60 MiB/h
+- YouTube at 144p: ≈ 1–2 MiB/min after the page load
+- Browsing: about 5–15 MiB per page view, much of it ads
+
+A 14-day profile with several browsing blocks per day therefore reaches several GB. Check this against the hotspot plan before running profiles in real time.
 
 ## 7. Gateway setup (proposal: run step by step, with checks)
 
@@ -297,6 +315,8 @@ sudo docker compose build        # only the small pip layer (pinned packages)
 sudo docker compose up -d
 sudo docker compose ps
 sudo docker compose exec -T student01_phone python3 -m pytest -q
+# H.264/AAC support of the amd64 Chromium (expect true true; SRF needs it):
+sudo docker compose exec -T student01_phone python3 -c "from playwright.sync_api import sync_playwright as s; p = s().start(); b = p.chromium.launch(channel='chromium'); pg = b.new_page(); print([pg.evaluate('t => MediaSource.isTypeSupported(t)', t) for t in ('video/mp4; codecs=\"avc1.42E01E\"', 'audio/mp4; codecs=\"mp4a.40.2\"')]); b.close(); p.stop()"
 ```
 
 ### Step 7: acceptance
@@ -318,10 +338,13 @@ Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `
 - **No WiFi layer.** Containers sit on a Linux bridge with static IPs. There is no 802.11, no DHCP and no association, so the feed has no `hostname` events for them. MACs are only visible on br-sim (as on eno1 for real devices).
 - **No OS background traffic.** A container that is not running an activity is silent. `idle_connected` is therefore cleaner than a real idle phone, and the ingest filter for background traffic is not exercised by simulated devices.
 - **Only Chromium.**
+  - The runner uses the full Chromium build in new headless mode (`channel="chromium"`). The stripped headless shell is rejected outright by digitec, galaxus and zalando (`ERR_HTTP2_PROTOCOL_ERROR`, timeout).
+  - Nothing hides automation: `navigator.webdriver` stays `true`. Reddit answers with a JavaScript challenge before the page. The browser passes it on its own, the URL then carries `js_challenge=1`, and the traffic includes the challenge round trip. CAPTCHAs are never solved; a site that shows one is simply logged as visited.
   - The phone role is an Android user agent on Chromium (an iPhone UA would contradict the Chrome TLS fingerprint).
-  - Playwright's Chromium has no H.264/AAC. play.srf.ch and the srf.ch audio player do not play: they are marked `playable: false`, and `video_stream` uses YouTube.
-  - `music_background` uses the SRG MP3 stream, whose host `stream.srg-ssr.ch` → `srg-ssr.ch` is **not** in the thesis STREAMING list.
-- **YouTube quality is best effort.** The player API for quality is unofficial, and the reached quality is logged to stderr. Ads play as for any user without a login.
+  - The Playwright 1.63 Chromium decodes H.264/AAC (checked in the arm64 image; re-check on the amd64 gateway with `MediaSource.isTypeSupported`).
+- **Streaming hosts:** media segments come from CDNs in no thesis list: YouTube from `googlevideo.com` (listed together with youtube.com in the catalog), SRF from `*.akamaized.net`, and the MP3 radio from `stream.srg-ssr.ch` → `srg-ssr.ch`. With the 5-min DNS map (catalog §5.1), long streams lose their STREAMING label anyway.
+- **SRF live TV is not used.** Its player exposes no quality levels, so it would run at 540p (about 1.5–2 Mbit/s). `video_stream` plays SRF on-demand videos.
+- **YouTube quality is best effort.** The quality API is unofficial. The first seconds sometimes run at 240p before 144p takes effect, and the decoded resolution is logged. Ads play as for any user without a login.
 - **Fresh context every run.** Each block sees and rejects the cookie banner again. That is realistic for a clean device, but more consent traffic than a regular user generates.
 - **Login content.** Login categories are skipped, and the stubs listed in section 3 apply.
 - **Live pages change.** The sequence of start URLs and choices is reproducible. Link targets depend on the page content at that moment.
@@ -332,7 +355,8 @@ Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `
 
 1. **Catalog §2 `phone_check`:** 1–3 pages × ≤ 90 s is at most 4.5 min, but `student.md` schedules `wake_check` with `phone_check` for 5–15 min. The runner ends early and logs the real end. Proposal: add `pages` to such blocks, or allow more pages in the catalog.
 2. **Catalog §1 log format:** `status` is new and should be added to the catalog.
-3. **Catalog §3:** add a login-free audio source for `music_background`, and decide whether `srg-ssr.ch` should count as STREAMING.
+3. **Catalog §3:** add a login-free audio source for `music_background`, and decide whether `srg-ssr.ch` should count as STREAMING. An alternative is the srf.ch radio page (`/audio/radio-srf-3-live-hoeren`): it autoplays 192 kbit/s AAC from `*.akamaized.net` after a srf.ch page load.
+7. **Cookie consent:** the runner rejects or leaves the banner open. Decide whether the simulated users should accept instead, which is closer to typical users and produces more third-party traffic, and therefore more UniqueSLD (catalog §5.7).
 4. **Ingest, folder:** with the proposal above, br-sim pcaps are in `/var/lib/tapcap/sim/ready/`, so the ingest has to read both folders.
 5. **Ingest, retention:** `/etc/tmpfiles.d/tapcap.conf` has age `2d` on `ready/`, so `systemd-tmpfiles-clean` deletes pcaps older than 2 days (only 170 files remain since 2 Oct). This contradicts HardwareSetup ("nothing is deleted automatically").
 6. **Ingest, dataset names:** the app's `group_prefix()` strips trailing digits, so `gw_student_01` and `gw_student_02` are grouped as `gw_student` in the UI (MasterThesisInc §3 recommends names without trailing digits). The `devices.csv` format is unchanged, but the naming convention should be agreed.

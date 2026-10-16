@@ -15,7 +15,7 @@ from typing import Protocol
 log = logging.getLogger("runner")
 
 NAV_TIMEOUT = 45.0  # seconds, capped by the remaining time
-MIN_NAV_TIME = 3.0  # do not start a navigation with less time left than this
+MIN_NAV_TIME = 10.0  # do not start a navigation with less time left than this (mobile pages need ~5-10 s)
 
 
 class PageError(RuntimeError):
@@ -61,11 +61,14 @@ class Driver(Protocol):
     def play_youtube(self, search_term: str, result_index: int, timeout: float) -> str:
         """Search YouTube, play the n-th result at the lowest quality; return host."""
 
+    def play_srf(self, start_url: str, result_index: int, timeout: float) -> str:
+        """Open SRF Play, play the n-th on-demand video at the lowest quality; return host."""
+
     def play_audio(self, url: str, timeout: float) -> str:
         """Play an audio stream URL; return its host."""
 
     def media_state(self) -> str:
-        """'playing', 'paused', 'ended', 'error' or 'none'."""
+        """'playing', 'paused', 'stalled' (no data), 'ended', 'error' or 'none'."""
 
     def resume_media(self) -> None:
         """Try to continue playback after a pause prompt."""
@@ -147,6 +150,12 @@ class RunContext:
             return None
         return self._record(self.driver.play_youtube(search_term, result_index, timeout))
 
+    def play_srf(self, start_url: str, result_index: int) -> str | None:
+        timeout = self._nav_timeout()
+        if timeout is None:
+            return None
+        return self._record(self.driver.play_srf(start_url, result_index, timeout))
+
     def play_audio(self, url: str) -> str | None:
         timeout = self._nav_timeout()
         if timeout is None:
@@ -156,8 +165,9 @@ class RunContext:
     def watch_media(self, check_every: float = 15.0) -> str:
         """Keep media playing until it ends or the deadline; return the last state.
 
-        A missing player or a media error is tolerated for two checks in a row (e.g. while
-        YouTube switches to the next video); the third one fails the run.
+        A missing player, no data ('stalled'), a pause that resume_media() could not undo or a
+        media error is tolerated for two checks in a row (buffering, YouTube switching to the
+        next video); the third one fails the run.
         """
         state = "playing"
         bad = 0
@@ -171,7 +181,7 @@ class RunContext:
                 break
             if state == "paused":
                 self.driver.resume_media()
-            if state in ("error", "none"):
+            if state in ("error", "none", "stalled", "paused"):
                 bad += 1
                 if bad >= 3:
                     raise PageError(f"media stopped playing (state={state})")

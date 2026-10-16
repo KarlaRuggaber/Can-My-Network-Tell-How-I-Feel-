@@ -38,7 +38,7 @@ def test_only_login_categories(mixes):
 
 def test_video_kind_only_playable(mixes):
     hosts = {s.host for s in parse_mix("streaming", mixes, kind="video").all_sites()}
-    assert hosts == {"youtube.com"}
+    assert hosts == {"youtube.com", "play.srf.ch"}  # spotify/netflix need a login
 
 
 @pytest.mark.parametrize("spec", ["nonsense", "news:abc", "news:0", "news,news", ""])

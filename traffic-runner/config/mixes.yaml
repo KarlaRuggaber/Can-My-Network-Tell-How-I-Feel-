@@ -6,13 +6,13 @@
 #   url      start URL; `{query}` is replaced by one of `queries`, chosen with the run's RNG
 #   login    true = needs an account. Skipped in the MVP (no test accounts yet).
 #   kind     page (default) | video. video_stream only picks `video` sites.
-#   playable false = page loads, but the runner cannot play its media (see note).
+#   playable false = page loads, but video_stream must not pick it (no player driver for it).
 #
 # Notes found while building (to be fixed in the catalog, not silently here):
 #   - notion.so redirects to notion.com, office.com to microsoft365.com. The thesis lists only
 #     contain notion.so / office.com, so these visits may not count as PRODUCTIVITY.
-#   - play.srf.ch streams H.264/AAC (HLS). Playwright's Chromium has no proprietary codecs,
-#     so the page loads but the stream does not play. video_stream uses YouTube (VP9/Opus).
+#   - play.srf.ch redirects to www.srf.ch/play/tv (srf.ch = STREAMING). Its videos stream
+#     from *.akamaized.net, which is in no thesis list.
 
 categories:
   messaging:
@@ -39,7 +39,7 @@ categories:
     thesis_list: STREAMING
     sites:
       - {host: youtube.com, url: "https://www.youtube.com/", kind: video}
-      - {host: play.srf.ch, url: "https://play.srf.ch/", kind: video, playable: false}
+      - {host: play.srf.ch, url: "https://play.srf.ch/", kind: video}
       - {host: open.spotify.com, url: "https://open.spotify.com/", login: true}
       - {host: netflix.com, url: "https://www.netflix.com/", login: true}
 
@@ -98,8 +98,10 @@ categories:
       - {host: depression.ch, url: "https://www.depression.ch/"}
 
 # video_stream on YouTube: open a search results page, play one of the first `result_pool`
-# results (chosen with the run's RNG). No video IDs are hard-coded, so nothing goes stale.
+# results (chosen with the run's RNG). On SRF: play one of the first `result_pool`
+# on-demand videos of `srf_start_url`. No video IDs are hard-coded, so nothing goes stale.
 video:
+  srf_start_url: "https://www.srf.ch/play/tv"
   youtube_search_terms:
     - dokumentation natur
     - schweiz reise
@@ -111,14 +113,25 @@ video:
 
 # music_background: an audio-only livestream without login. Not in catalog §3 yet (proposed).
 # The MP3 stream is served by stream.srg-ssr.ch -> srg-ssr.ch, which is in NO thesis list
-# (srf.ch is STREAMING). The srf.ch web player itself uses AAC, which Chromium cannot decode.
+# (srf.ch is STREAMING). Alternative: the srf.ch radio page (e.g. /audio/radio-srf-3-live-hoeren)
+# autoplays too, but streams 192 kbit/s AAC from *.akamaized.net (also in no list).
 audio:
   streams:
     - {id: srf3, host: stream.srg-ssr.ch, url: "https://stream.srg-ssr.ch/srgssr/srf3/mp3/128"}
 
 # Cookie banners: the runner clicks the first visible button whose accessible name matches
-# one of these (case-insensitive, whole name). Always the most privacy-preserving choice.
+# one of `reject_buttons` (case-insensitive, whole name). If the banner has no reject button
+# on its first level, it opens one of `settings_buttons` and looks for a reject button there.
+# Never accepts. Keep `settings_buttons` specific: a generic "Einstellungen" also matches
+# normal site menus.
 consent:
+  settings_buttons:
+    - Individuell verwalten
+    - Zwecke anzeigen
+    - Cookie-Einstellungen anpassen
+    - Cookie-Einstellungen
+    - Dateneinstellungen
+    - Manage options
   reject_buttons:
     - Reject all
     - Alle ablehnen
@@ -132,3 +145,8 @@ consent:
     - Reject optional cookies
     - Only allow essential cookies
     - Tout refuser
+    - Alle optionalen ablehnen
+    - Alle optionalen Cookies ablehnen
+    - Auswahl ablehnen
+    - Alle Anbieter ablehnen
+    - Verwendung von Cookies und anderen Daten zu den beschriebenen Zwecken ablehnen   # YouTube "Alle ablehnen"

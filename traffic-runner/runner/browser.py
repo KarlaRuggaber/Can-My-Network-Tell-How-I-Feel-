@@ -20,7 +20,9 @@ log = logging.getLogger("runner")
 LAUNCH_ARGS = [
     "--autoplay-policy=no-user-gesture-required",
 ]
-CONSENT_WAIT_MS = 1500  # banners usually appear shortly after DOMContentLoaded
+CONSENT_WAIT_MS = 5000  # banners can appear a few seconds after DOMContentLoaded
+CONSENT_POLL_MS = 500
+PLAYER_WAIT = 20.0  # seconds to wait for a video player to start, capped by the deadline
 SKIP_LINK_RE = re.compile(
     r"(login|logout|signin|sign-in|signup|register|account|konto|abo|subscribe|checkout|mailto:|\.pdf$)",
     re.I,
@@ -52,13 +54,37 @@ YT_FORCE_LOW = """
 }
 """
 
+# Play SRF (video.js/Pillarbox): keep only the lowest quality level enabled. Works for
+# on-demand videos; SRF live TV exposes no quality levels (it then plays at 540p).
+SRF_FORCE_LOW = """
+() => {
+  const v = document.querySelector('video');
+  if (v) { v.muted = true; if (v.paused && !v.ended) v.play().catch(() => {}); }
+  if (typeof videojs === 'undefined' || !videojs.getPlayers) return null;
+  for (const p of Object.values(videojs.getPlayers()).filter(Boolean)) {
+    const ql = p.qualityLevels && p.qualityLevels();
+    if (!ql || !ql.length) continue;
+    let min = 0;
+    for (let i = 0; i < ql.length; i++) if ((ql[i].bitrate || 1e12) < (ql[min].bitrate || 1e12)) min = i;
+    for (let i = 0; i < ql.length; i++) ql[i].enabled = (i === min);
+    return ql[min].height + 'p';
+  }
+  return null;
+}
+"""
+
+VIDEO_RESOLUTION = """
+() => { const v = document.querySelector('video'); return v && v.videoHeight ? v.videoWidth + 'x' + v.videoHeight : null; }
+"""
+
 MEDIA_STATE = """
 () => {
   const m = document.querySelector('video, audio');
   if (!m) return 'none';
   if (m.error) return 'error';
   if (m.ended) return 'ended';
-  return m.paused ? 'paused' : 'playing';
+  if (m.paused) return 'paused';
+  return m.readyState >= 2 ? 'playing' : 'stalled';  // "playing" without data = blocked/buffering
 }
 """
 
@@ -79,16 +105,22 @@ def site_of(host: str) -> str:
     return ".".join(host.split(".")[-2:])
 
 
+def _names_re(names: list[str]) -> re.Pattern | None:
+    """Whole accessible name, case-insensitive. Allowed after it: a trailing arrow or dot,
+    or a comma plus a screen-reader hint ("Zwecke anzeigen, Öffnet das ...-Dialogfeld")."""
+    if not names:
+        return None
+    return re.compile(r"^\s*(?:" + "|".join(re.escape(n) for n in names) + r")\s*(?:[→›>.]|,.*)?\s*$", re.I)
+
+
 class BrowserDriver:
     def __init__(self, playwright_device: str, context_options: dict, consent_buttons: list[str],
-                 headless: bool = True):
+                 headless: bool = True, consent_settings_buttons: list[str] | None = None):
         self.playwright_device = playwright_device
         self.context_options = dict(context_options or {})
         self.headless = headless
-        self.consent_re = (
-            re.compile(r"^\s*(?:" + "|".join(re.escape(b) for b in consent_buttons) + r")\s*$", re.I)
-            if consent_buttons else None
-        )
+        self.consent_re = _names_re(consent_buttons)
+        self.settings_re = _names_re(consent_settings_buttons or [])
         self._pw = None
         self._browser = None
         self._context = None
@@ -106,7 +138,9 @@ class BrowserDriver:
             self._pw = sync_playwright().start()
         descriptor = dict(self._pw.devices[self.playwright_device])
         descriptor.pop("default_browser_type", None)
-        self._browser = self._pw.chromium.launch(headless=self.headless, args=LAUNCH_ARGS)
+        # channel="chromium": the full Chromium build in new headless mode instead of the
+        # stripped headless shell. Several shops (digitec, galaxus, zalando) reject the shell.
+        self._browser = self._pw.chromium.launch(channel="chromium", headless=self.headless, args=LAUNCH_ARGS)
         self._context = self._browser.new_context(**descriptor, **self.context_options)
         self._context.add_init_script(YT_QUALITY_INIT)
         self.page = self._context.new_page()
@@ -139,22 +173,46 @@ class BrowserDriver:
         except self._error_cls as e:
             raise PageError(str(e).splitlines()[0]) from None
         self._dismiss_consent()
+        log.info("page %s", self.page.url)
         return host_of(self.page.url)
 
     def _dismiss_consent(self) -> None:
+        """Reject optional cookies. Many banners only offer 'accept' or 'settings' on the
+        first level; then open the settings and reject there. Never accepts."""
         if self.consent_re is None:
             return
-        self.page.wait_for_timeout(CONSENT_WAIT_MS)
+        rejected = opened = False
+        for _ in range(CONSENT_WAIT_MS // CONSENT_POLL_MS):  # poll until a banner shows up
+            self.page.wait_for_timeout(CONSENT_POLL_MS)
+            rejected = self._click_button(self.consent_re)
+            opened = not rejected and self.settings_re is not None and self._click_button(self.settings_re)
+            if rejected or opened:
+                break
+        if rejected:
+            log.info("cookie banner rejected on %s", host_of(self.page.url))
+        elif opened:
+            self.page.wait_for_timeout(1500)
+            if self._click_button(self.consent_re):
+                log.info("cookie banner rejected via settings on %s", host_of(self.page.url))
+            else:
+                log.info("cookie settings opened but no reject button on %s", host_of(self.page.url))
+        else:
+            return
+        try:
+            self.page.wait_for_load_state("domcontentloaded", timeout=10_000)
+        except self._error_cls:
+            pass
+
+    def _click_button(self, name_re: re.Pattern) -> bool:
         for frame in list(self.page.frames):
             try:
-                button = frame.get_by_role("button", name=self.consent_re)
+                button = frame.get_by_role("button", name=name_re)
                 if button.count() and button.first.is_visible():
                     button.first.click(timeout=3000)
-                    log.info("cookie banner rejected on %s", host_of(frame.url) or host_of(self.page.url))
-                    self.page.wait_for_load_state("domcontentloaded", timeout=10_000)
-                    return
+                    return True
             except self._error_cls:
                 continue
+        return False
 
     def dwell(self, seconds: float, rng) -> None:
         self._ensure()
@@ -216,14 +274,40 @@ class BrowserDriver:
             raise PageError("no YouTube search results")
         vid = video_ids[min(result_index, len(video_ids) - 1)]
         host = self.open(f"https://{host_of(self.page.url)}/watch?v={vid}", timeout)
-        quality = None
-        for _ in range(10):  # the player object appears a few seconds after load
-            quality = self.page.evaluate(YT_FORCE_LOW)
-            if quality:
-                break
-            self.page.wait_for_timeout(2000)
-        log.info("YouTube video %s, playback quality: %s", vid, quality or "unknown (no player)")
+        until = time.monotonic() + min(timeout, PLAYER_WAIT)
+        quality = self._poll(YT_FORCE_LOW, until)  # the player appears a few seconds after load
+        log.info("YouTube video %s, player quality: %s, resolution: %s",
+                 vid, quality or "unknown", self._poll(VIDEO_RESOLUTION, until) or "unknown (not playing)")
         return host
+
+    def play_srf(self, start_url: str, result_index: int, timeout: float) -> str:
+        """Open the SRF Play overview, play the n-th on-demand video at the lowest quality."""
+        self.open(start_url, timeout)
+        try:
+            self.page.wait_for_selector('a[href*="urn:srf:video:"]', state="attached", timeout=timeout * 1000)
+            hrefs = self.page.eval_on_selector_all('a[href*="urn:srf:video:"]', "els => els.map(e => e.href)")
+        except self._error_cls as e:
+            raise PageError(f"no SRF videos found: {str(e).splitlines()[0]}") from None
+        videos = [h for h in dict.fromkeys(hrefs) if "/video/" in h]  # DOM order, no live channels
+        if not videos:
+            raise PageError("no SRF on-demand videos found")
+        host = self.open(videos[min(result_index, len(videos) - 1)], timeout)
+        until = time.monotonic() + min(timeout, PLAYER_WAIT)
+        quality = self._poll(SRF_FORCE_LOW, until)  # quality levels appear a few seconds after load
+        log.info("SRF video %s, quality level: %s, resolution: %s",
+                 self.page.url, quality or "unknown", self._poll(VIDEO_RESOLUTION, until) or "unknown (not playing)")
+        return host
+
+    def _poll(self, script: str, until: float, every_ms: int = 1000):
+        """Evaluate `script` until it returns something truthy or the monotonic time `until`."""
+        while True:
+            try:
+                value = self.page.evaluate(script)
+            except self._error_cls:
+                value = None
+            if value or time.monotonic() >= until:
+                return value
+            self.page.wait_for_timeout(every_ms)
 
     def play_audio(self, url: str, timeout: float) -> str:
         self._ensure()
@@ -241,8 +325,11 @@ class BrowserDriver:
         if self.page is None:
             return "none"
         try:
-            if site_of(host_of(self.page.url)) == "youtube.com":
+            site = site_of(host_of(self.page.url))
+            if site == "youtube.com":
                 self.page.evaluate(YT_FORCE_LOW)  # quality can reset after ads
+            elif site == "srf.ch":
+                self.page.evaluate(SRF_FORCE_LOW)
             return self.page.evaluate(MEDIA_STATE)
         except self._error_cls:
             return "none"  # page was navigating (e.g. YouTube autoplay)

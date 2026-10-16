@@ -74,6 +74,11 @@ class FakeDriver:
         self._media_started = self.clock.now()
         return self._load("https://www.youtube.com/watch?v=fake", timeout)
 
+    def play_srf(self, start_url, result_index, timeout):
+        self.calls.append(("srf", start_url, result_index))
+        self._media_started = self.clock.now()
+        return self._load("https://www.srf.ch/play/tv/fake/video/fake", timeout)
+
     def play_audio(self, url, timeout):
         self.calls.append(("audio", url))
         self._media_started = self.clock.now()

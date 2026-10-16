@@ -99,3 +99,20 @@ def test_video_stream_ends_early_when_media_ends():
     ctx.mixes = mixes
     ACTIVITIES["video_stream"].run(ctx, random.Random("1/b1"), 3600, parse_mix("streaming", mixes, kind="video"))
     assert 200 <= clock.now() < 230
+
+
+@pytest.mark.parametrize("state", ["stalled", "paused", "none", "error"])
+def test_media_that_does_not_play_fails(state):
+    from runner.context import PageError
+
+    class StuckDriver(FakeDriver):
+        def media_state(self):
+            return state
+
+    mixes = load_mixes()
+    clock = FakeClock()
+    ctx = RunContext(StuckDriver(clock), clock, 600)
+    ctx.mixes = mixes
+    with pytest.raises(PageError):
+        ACTIVITIES["video_stream"].run(ctx, random.Random("1/b1"), 600, parse_mix("streaming", mixes, kind="video"))
+    assert clock.now() < 60  # fails after three checks, not at the end of the block
