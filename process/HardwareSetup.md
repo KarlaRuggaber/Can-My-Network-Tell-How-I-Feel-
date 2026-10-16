@@ -481,3 +481,48 @@ sudo nft list ruleset | grep 8080
 sudo tshark -i eno1 -n -Y 'mdns' -V 2>/dev/null | grep -iE 'name|iphone' | head -40
 sudo tshark -i eno1 -n -Y 'mdns && dns.flags.response == 1' -T fields -e ip.src -e dns.a -e dns.resp.name -e dns.srv.target
 ```
+
+## 15. Addendum (16.10.2026): second network `br-sim` for the traffic runner
+
+On 16.10 the gateway got a second, virtual client network for the simulated devices of the traffic runner. Its traffic is routed and recorded like that of the real devices, but kept apart from them. Docker had been installed beforehand by Thierry (Ubuntu `docker.io` 29.1.3 with `"iptables": false`, see [Deployment.md §7.1](Deployment.md)). All original files are backed up in `/root/tapgw-backup-20261016-1602/`. Usage of the runner itself: [traffic-runner/README.md](../traffic-runner/README.md).
+
+```
+ real devices ──WiFi── AP ── eno1 (10.42.0.1) ─┐
+                                                ├─ mini-PC: nftables NAT ── wlp2s0 ── internet
+ runner containers ── br-sim (10.42.1.1) ──────┘
+   tapcap@br-sim  -> /var/lib/tapcap/sim/ready/cap-<ms>.pcap
+   tapfeed@br-sim -> SNI into the shared feed.ndjson (DNS stays with tapfeed@eno1)
+```
+
+**Changes, in the order they were applied** (after each step, a real phone was checked for internet access):
+
+| # | Area | Change | Check |
+| --- | --- | --- | --- |
+| 1 | Docker | Network `sim`: `docker network create -o com.docker.network.bridge.name=br-sim --subnet 10.42.1.0/24 --gateway 10.42.1.1 sim` | `ip -br addr show br-sim` → 10.42.1.1/24 |
+| 2 | nftables | `/etc/nftables.conf`: `define SIM = "br-sim"`; input from br-sim only DNS (53 udp/tcp) and ping; forward br-sim → wlp2s0. NAT unchanged (`oifname wlp2s0 masquerade` already covered all sources). No forwarding between br-sim and eno1. | `nft -c -f` before loading; `nft list ruleset \| grep br-sim` |
+| 3 | dnsmasq | `bind-interfaces` → `bind-dynamic` in `tapgw.conf` **and** `ubuntu-fan`; new `/etc/dnsmasq.d/sim.conf` (`interface=br-sim`, `no-dhcp-interface=br-sim`) | `/usr/share/dnsmasq/systemd-helper checkconfig`; `ss -lnup 'sport = :53'` shows 10.42.0.1 and 10.42.1.1 |
+| 4 | tmpfiles | `/etc/tmpfiles.d/tapcap.conf`: `/var/lib/tapcap/sim/{tmp,ready}`, without an age (never cleaned up) | `ls -la /var/lib/tapcap/sim` |
+| 5 | tapcap | Drop-in `tapcap@br-sim.service.d/override.conf`: `--out-dir /var/lib/tapcap/sim`, `After=docker.service`, no start limit | `journalctl -u tapcap@br-sim`: `kernel_drop=0` |
+| 6 | tapfeed | `/usr/local/bin/tapfeed`: switch `TAPFEED_DNS` (default 1) around the dnsmasq-journal source. Drop-in `tapfeed@br-sim.service.d/override.conf` sets `TAPFEED_DNS=0` and `After=docker.service` | two `tshark -i`, one `journalctl -u dnsmasq` |
+
+The files are versioned in [traffic-runner/gateway/](../traffic-runner/gateway/). The step-by-step commands with rollback are in the runner README §7.
+
+**Why a separate folder for the sim capture.** Both tapcap instances name their files `cap-<epoch_ms>.pcap`. In one shared `ready/` folder, two rotations in the same millisecond would overwrite each other, because files are moved into `ready/` with a rename. A separate folder also allows a different retention for the recorded activity snippets.
+
+**Why DNS only from tapfeed@eno1.** Source B of tapfeed follows the dnsmasq journal, which already contains the queries of *all* clients, the containers included. A second instance would write every DNS event twice.
+
+**Problems and solutions.**
+
+| # | Problem | Cause | Solution |
+| --- | --- | --- | --- |
+| 18 | `scp`/`rsync` from the laptop: "No route to host", although the gateway answered ping | The terminal app lacked the macOS permission "Local Network" | Ran the copy from the terminal panel of the Claude app; or grant the permission in System Settings → Privacy & Security → Local Network |
+| 19 | dnsmasq did not start after the change (`cannot set --bind-interfaces and --bind-dynamic`); about one minute without DNS/DHCP for the real devices, rolled back at once | `ubuntu-fan`, installed together with `docker.io`, ships `/etc/dnsmasq.d/ubuntu-fan` with `bind-interfaces`. `dnsmasq --test` had passed because the systemd helper loads `/etc/dnsmasq.d` a second time with other options | `bind-dynamic` in all files (it also binds per interface, so fan networks stay protected). Always test with `systemd-helper checkconfig` and restart only if it passes. On a package upgrade, keep the local `ubuntu-fan` |
+| 20 | Before the restart, the old dnsmasq answered every query with `REFUSED (EDE: network error)` | Upstream servers were unreachable for the running instance, most likely after a short hotspot dropout | The fresh instance resolved normally under the new firewall, so the firewall was not the cause |
+| 21 | `pytest` inside a container hung without any output | `docker compose exec` reads the terminal even with `-T`. It swallowed pasted lines and was stopped when run with `&` or `timeout` | Always `< /dev/null`; the runner ships `scripts/run-activity.sh` |
+
+**Finding on retention.** `/etc/tmpfiles.d/tapcap.conf` has the age `2d` on `/var/lib/tapcap/ready`. The `systemd-tmpfiles-clean` timer therefore deletes captures older than two days; on 16.10 only 170 files dating from 02.10 onwards were left. This contradicts "nothing is deleted automatically" in §13 and in Deployment.md. If the raw pcaps must be kept, remove the age, or archive them after ingest.
+
+**Open.**
+- The ingest service still watches only `/var/lib/tapcap/ready`. Add `--watch /var/lib/tapcap/sim/ready` (Deployment.md §8, "Add a second capture folder").
+- `/etc/tapingest/devices.csv` and the runner's `config/devices.csv` must list the same devices.
+- The Docker default address pools contain 172.20.0.0/16, which overlaps the hotspot subnet 172.20.10.0/28. This is harmless for `sim`, whose subnet is fixed. Set `default-address-pools` in `/etc/docker/daemon.json` before more Docker networks are created automatically.

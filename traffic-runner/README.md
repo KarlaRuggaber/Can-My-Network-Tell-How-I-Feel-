@@ -160,7 +160,7 @@ student01_phone,phone,02:00:0a:2a:01:0b,10.42.1.11,gw_student_01
 student01_laptop,laptop,02:00:0a:2a:01:0c,10.42.1.12,gw_student_01
 ```
 
-The file is the **interface with the ingest service**, which maps packets to a dataset by IP. Do not change the format without agreeing on it first.
+The file is the **interface with the ingest service**, which maps packets to a dataset by IP. On the gateway the ingest reads its own copy, `/etc/tapingest/devices.csv` (section 9, item 2). Do not change the format without agreeing on it first.
 
 | Column | Rule (checked by `python -m runner validate` and `gen_compose.py`) |
 |---|---|
@@ -377,13 +377,27 @@ Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `
 - **Redirects.** `domains` shows real hosts: `notion.so` → `www.notion.com` and `office.com` → `www.microsoft365.com`, both outside the thesis PRODUCTIVITY list.
 - **Containers run as root** (Playwright image default; Chromium without its own sandbox). They are isolated on br-sim and can only reach DNS and the internet.
 
-## 9. Open points (catalog and ingest)
+## 9. Open points
 
-1. **Catalog §2 `phone_check`:** 1–3 pages × ≤ 90 s is at most 4.5 min, but `student.md` schedules `wake_check` with `phone_check` for 5–15 min. The runner ends early and logs the real end. Proposal: add `pages` to such blocks, or allow more pages in the catalog.
-2. **Catalog §1 log format:** `status` is new and should be added to the catalog.
-3. **Catalog §3:** add a login-free audio source for `music_background`, and decide whether `srg-ssr.ch` should count as STREAMING. An alternative is the srf.ch radio page (`/audio/radio-srf-3-live-hoeren`): it autoplays 192 kbit/s AAC from `*.akamaized.net` after a srf.ch page load.
-7. **Cookie consent:** the runner rejects or leaves the banner open. Decide whether the simulated users should accept instead, which is closer to typical users and produces more third-party traffic, and therefore more UniqueSLD (catalog §5.7).
-4. **Ingest, folder:** with the proposal above, br-sim pcaps are in `/var/lib/tapcap/sim/ready/`, so the ingest has to read both folders.
-5. **Ingest, retention:** `/etc/tmpfiles.d/tapcap.conf` has age `2d` on `ready/`, so `systemd-tmpfiles-clean` deletes pcaps older than 2 days (only 170 files remain since 2 Oct). This contradicts HardwareSetup ("nothing is deleted automatically").
-8. **Chromium background traffic counts as PRODUCTIVITY.** Both containers open TLS connections to `android.clients.google.com`. The pipeline reduces this to `google.com`, which is in the PRODUCTIVITY list (C2_F6). Either suppress it in the runner (launch flags or DNS) or drop these hosts in the ingest, before profiles run.
-6. **Ingest, dataset names:** the app's `group_prefix()` strips trailing digits, so `gw_student_01` and `gw_student_02` are grouped as `gw_student` in the UI (MasterThesisInc §3 recommends names without trailing digits). The `devices.csv` format is unchanged, but the naming convention should be agreed.
+State 2026-10-16. The same list is in `process/process.md` (week 5).
+
+**Ingest (tapingest, see `process/Deployment.md`)**
+1. **Watch the sim folder.** br-sim pcaps are in `/var/lib/tapcap/sim/ready/`. `tapingest` still watches only `/var/lib/tapcap/ready`, so the simulated devices do not reach the Parquet data yet. Add `--watch /var/lib/tapcap/sim/ready` (Deployment.md §8).
+2. **One devices.csv.** The ingest reads `/etc/tapingest/devices.csv` (currently 4 example devices), the runner reads `config/devices.csv` (2 devices). Both must list the same devices.
+   - Either generate the compose file from the ingest file, or copy it into `config/`.
+   - The ingest format allows `#` comment lines. The runner's validator rejects them so far.
+3. **Retention.** `/etc/tmpfiles.d/tapcap.conf` has age `2d` on `ready/`, so `systemd-tmpfiles-clean` deletes pcaps older than 2 days (only 170 files remained from 2 Oct on). This contradicts "nothing is deleted automatically" in HardwareSetup and Deployment. The sim folder has no age.
+4. **Dataset names.** The app's `group_prefix()` strips trailing digits, so `gw_student_01` and `gw_student_02` are grouped as `gw_student` in the UI (MasterThesisInc §3 recommends names without trailing digits). The `devices.csv` format stays as it is, but the naming convention should be agreed.
+
+**Runner**
+
+5. **Chromium background traffic counts as PRODUCTIVITY.** Both containers open TLS connections to `android.clients.google.com`. The pipeline reduces this to `google.com`, which is in the PRODUCTIVITY list (C2_F6). Suppress it in the runner with launch flags before profiles run, or drop these hosts in the ingest.
+6. **Cookie consent.** The runner rejects banners, or leaves them open where there is no reject button. Decide whether the simulated users should accept instead: that is closer to typical users and produces more third-party traffic, and therefore more UniqueSLD (catalog §5.7).
+7. **Gateway location.** The runner currently runs from a copy in `~/traffic-runner`. Since PR #1 is merged, it is also in the git clone `/opt/can-my-network/traffic-runner`. Switch to the clone so that updates are a `git pull`: `docker compose down` in the old folder, then `up -d` in the new one. Carry `logs/ground_truth.csv` over.
+8. **Gateway measurements.** Only `phone_check` and `browse` ran on the gateway. Run the other activities once to complete the data-volume table (section 6).
+
+**Activity catalog**
+
+9. **§2 `phone_check`.** 1–3 pages × ≤ 90 s is at most 4.5 min, but `student.md` schedules `wake_check` with `phone_check` for 5–15 min. The runner ends early and logs the real end. Proposal: add `pages` to such blocks, or allow more pages in the catalog.
+10. **§1 log format.** `status` is new and should be added to the catalog.
+11. **§3 audio source.** Add a login-free audio source for `music_background`, and decide whether `srg-ssr.ch` should count as STREAMING. An alternative is the srf.ch radio page (`/audio/radio-srf-3-live-hoeren`): it autoplays 192 kbit/s AAC from `*.akamaized.net` after a srf.ch page load.

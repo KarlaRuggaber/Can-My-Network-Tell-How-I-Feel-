@@ -21,9 +21,10 @@ The work was done with the support of an AI assistant (Claude), which wrote and 
 ```
  real devices ──WiFi── U7 Lite ── eno1 (10.42.0.1) ─┐
                                                      ├─ mini-PC: nftables NAT ── wlp2s0 ── Internet (hotspot)
- (planned) runner containers ── br-sim (10.42.1.1) ─┘
+ runner containers ─────────── br-sim (10.42.1.1) ─┘
                                    │
-        tapcap@eno1 ──► /var/lib/tapcap/ready/cap-<ms>.pcap   (60 s files)
+        tapcap@eno1   ──► /var/lib/tapcap/ready/cap-<ms>.pcap       (60 s files)
+        tapcap@br-sim ──► /var/lib/tapcap/sim/ready/cap-<ms>.pcap   (since 16.10, not yet watched by the ingest)
                                    │  polled every 10 s
                                    ▼
         tapingest.service ── /etc/tapingest/devices.csv (IP → dataset)
@@ -282,7 +283,7 @@ Edit `/etc/tapingest/devices.csv`. The service reloads it on the next scan, no r
 
 ### Add a second capture folder (br-sim)
 
-Once `tapcap@br-sim` runs, check where it writes. Both instances name files `cap-<milliseconds>.pcap`, so two instances in the same folder could collide. Then add a second `--watch <folder>` to the `ExecStart` line and run:
+`tapcap@br-sim` runs since 16.10 and writes to its own folder `/var/lib/tapcap/sim/ready`, so the two instances cannot collide ([HardwareSetup.md §15](HardwareSetup.md)). Add `--watch /var/lib/tapcap/sim/ready` to the `ExecStart` line and run:
 
 ```bash
 sudo systemctl daemon-reload && sudo systemctl restart tapingest
@@ -315,7 +316,7 @@ sudo systemctl start tapingest
 
 ### Disk usage
 
-Nothing is deleted automatically, neither captures (`/var/lib/tapcap/ready`, 73 MB after the first day of light use) nor Parquet (616 KB after 25 minutes). 427 GB are free, so this is not urgent, but a retention policy is part of the open work.
+**Correction (16.10):** `/etc/tmpfiles.d/tapcap.conf` has the age `2d` on `/var/lib/tapcap/ready`, so `systemd-tmpfiles-clean` deletes captures older than two days ([HardwareSetup.md §15](HardwareSetup.md)). The sim folder has no age. Apart from that, nothing is deleted automatically, neither captures (`/var/lib/tapcap/ready`, 73 MB after the first day of light use) nor Parquet (616 KB after 25 minutes). 427 GB are free, so this is not urgent, but a retention policy is part of the open work.
 
 ## 9. Problems and solutions
 
