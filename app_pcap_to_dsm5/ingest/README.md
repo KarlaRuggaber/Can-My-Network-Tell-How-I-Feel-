@@ -37,7 +37,7 @@ app/processed_parquet/<dataset>/<dataset>__YYYYMMDD_HHMM.parquet  →  app pages
 
 ## Background filter
 
-Rules from `process/MasterThesisInc.md` §3 in the project repo. The first matching rule drops the packet:
+Rules from [`process/MasterThesisInc.md`](../../process/MasterThesisInc.md) §3. The first matching rule drops the packet:
 
 | Rule | Drops | Why |
 |---|---|---|
@@ -95,8 +95,8 @@ TZ=Europe/Zurich python ingest/tapingest.py --watch /path/to/ready --devices dev
 ## Install on the gateway
 
 ```bash
-sudo git clone <repo> /opt/app_pcap_to_dsm5_public
-cd /opt/app_pcap_to_dsm5_public
+sudo git clone https://github.com/KarlaRuggaber/Can-My-Network-Tell-How-I-Feel-.git /opt/can-my-network
+cd /opt/can-my-network/app_pcap_to_dsm5
 sudo python3 -m venv .venv
 sudo .venv/bin/pip install -r ingest/requirements.txt
 
@@ -106,7 +106,7 @@ sudo install -d -o tapingest -g tapingest -m 755 app/processed_parquet
 sudo install -d -m 755 /etc/tapingest
 sudo cp ingest/devices.example.csv /etc/tapingest/devices.csv   # then edit
 
-sudo cp ingest/tapingest.service /etc/systemd/system/
+sudo cp ingest/tapingest.service /etc/systemd/system/   # then set --exclude-mac to the AP's MAC
 sudo systemctl daemon-reload
 sudo systemctl enable --now tapingest
 journalctl -u tapingest -f
@@ -123,6 +123,10 @@ sudo sqlite3 /var/lib/tapingest/state.sqlite \
 The app (`app/docker-compose.yml`) bind-mounts `app/processed_parquet`, so new datasets show up in its
 dataset selection without a restart. Pages 01 and 02 notice new or rewritten partitions and recompute
 the affected days.
+
+Update later with `cd /opt/can-my-network && sudo git pull`, then `sudo systemctl restart tapingest`.
+`processed_parquet/`, `feature_cache/`, `.venv/`, `user_profiles.json` and `secrets.toml` are ignored by git,
+so the running system never blocks a pull.
 
 ## Limits
 

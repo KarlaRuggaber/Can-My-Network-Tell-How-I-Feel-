@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# app_pcap_to_dsm5: files the running system writes (gateway or local runs).
+# Ignored so that `git pull` on the gateway never conflicts with live data.
+app_pcap_to_dsm5/.venv/
+app_pcap_to_dsm5/app/processed_parquet/
+app_pcap_to_dsm5/app/feature_cache/
+app_pcap_to_dsm5/app/user_profiles.json
+app_pcap_to_dsm5/app/.streamlit/secrets.toml
+__pycache__/
