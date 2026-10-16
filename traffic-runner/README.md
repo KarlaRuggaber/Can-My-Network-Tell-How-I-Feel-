@@ -356,7 +356,7 @@ Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `
   - The runner uses the full Chromium build in new headless mode (`channel="chromium"`). The stripped headless shell is rejected outright by digitec, galaxus and zalando (`ERR_HTTP2_PROTOCOL_ERROR`, timeout).
   - Nothing hides automation: `navigator.webdriver` stays `true`. Reddit answers with a JavaScript challenge before the page. The browser passes it on its own, the URL then carries `js_challenge=1`, and the traffic includes the challenge round trip. CAPTCHAs are never solved; a site that shows one is simply logged as visited.
   - The phone role is an Android user agent on Chromium (an iPhone UA would contradict the Chrome TLS fingerprint).
-  - The Playwright 1.63 Chromium decodes H.264/AAC (checked in the arm64 image; re-check on the amd64 gateway with `MediaSource.isTypeSupported`).
+  - The Playwright 1.63 Chromium decodes H.264/AAC. This was checked in the arm64 image (laptop) and in the amd64 image on the gateway on 2026-10-16.
 - **Streaming hosts:** media segments come from CDNs in no thesis list: YouTube from `googlevideo.com` (listed together with youtube.com in the catalog), SRF from `*.akamaized.net`, and the MP3 radio from `stream.srg-ssr.ch` → `srg-ssr.ch`. With the 5-min DNS map (catalog §5.1), long streams lose their STREAMING label anyway.
 - **SRF live TV is not used.** Its player exposes no quality levels, so it would run at 540p (about 1.5–2 Mbit/s). `video_stream` plays SRF on-demand videos.
 - **YouTube quality is best effort.** The quality API is unofficial. The first seconds sometimes run at 240p before 144p takes effect, and the decoded resolution is logged. Ads play as for any user without a login.
