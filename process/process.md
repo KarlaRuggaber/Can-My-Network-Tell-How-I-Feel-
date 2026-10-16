@@ -81,8 +81,8 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - Docker installed on the gateway with `"iptables": false` (firewall verified unchanged). The app runs in a container on localhost only, reachable via SSH tunnel.
   - Approach for traffic generation decided: one scheduler (profile + seed → ground-truth plan), executed live by runner containers on a separate `br-sim` network, later synthetically by stitching recorded activity snippets into PCAPs.
   - Runner container (Karla) and scheduler started as parallel work items.
+  - Background filter in the ingest (MasterThesisInc §3): AP/controller traffic, broadcasts, mDNS/SSDP/NTP and gateway services are dropped and counted per rule (~9 % of today's packets). Today's data rebuilt with it.
 - **Next / open:**
-  - Background filter in the ingest (MasterThesisInc §3) before interpreting sleep/idle metrics
   - Connect `br-sim` (second capture folder, shared `devices.csv`), first end-to-end pilot with one container
   - Own fork of the app repo; remove temporary sudo rule and deploy key on the gateway
   - Validation on real data (MasterThesisInc §8, steps 3–6)

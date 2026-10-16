@@ -56,10 +56,30 @@ The work was done with the support of an AI assistant (Claude), which wrote and 
 
 1. **Find new files.** Every 10 s it lists the watch folders (`--watch`, repeatable) and takes every `.pcap`/`.pcapng` that is not yet in the state db. It skips files modified in the last 5 s (in case they are still being written) and, if set, files older than `--since`.
 2. **Parse.** It reads the packets with the same function the app's upload page uses (`app/utils/pcap_etl.py`: `parse_packet_row`). Live and uploaded data therefore have identical columns: `Timestamp, Date, Hour, Protocol, Source IP, Destination IP, Source Port, Destination Port, TCP Flags, Length, IsDNS, DNS_QNAME, DNS_QTYPE, DNS_ANS_NAME, DNS_ANS_IPS`. Timestamps are naive local time, so the service runs with `TZ=Europe/Zurich`.
-3. **Assign a dataset.** It looks up the source IP in `devices.csv`, then the destination IP. A match gives the dataset (`gw_student_01` …). Packets of unknown IPs go to `gw_unassigned` (`--unmapped`, or `drop`).
-4. **Merge into 5-minute windows.** A window is fed by about 5 capture files of 60 s, so a partition is read, extended and rewritten, never just overwritten. Each row carries a `Capture File` column (the source pcap's name). Before adding a file's rows, the service removes rows that already carry that name. Processing a file twice (after a crash, or by hand) therefore never creates duplicates.
-5. **Write atomically.** It writes to a temp file next to the partition and renames it. The app never sees a half-written file, because the temp name does not end in `.parquet`.
-6. **Record the file as done**, only after all its rows are written. A truncated or corrupt file is ingested as far as readable, recorded with its error, and not retried.
+3. **Drop background traffic** (Section 3.1) and count the dropped packets per rule.
+4. **Assign a dataset.** It looks up the source IP in `devices.csv`, then the destination IP, then the source and destination MAC (for DHCP broadcasts sent from `0.0.0.0`). A match gives the dataset (`gw_student_01` …). Packets of unknown devices go to `gw_unassigned` (`--unmapped`, or `drop`).
+5. **Merge into 5-minute windows.** A window is fed by about 5 capture files of 60 s, so a partition is read, extended and rewritten, never just overwritten. Each row carries a `Capture File` column (the source pcap's name). Before adding a file's rows, the service removes rows that already carry that name. Processing a file twice (after a crash, or by hand) therefore never creates duplicates.
+6. **Write atomically.** It writes to a temp file next to the partition and renames it. The app never sees a half-written file, because the temp name does not end in `.parquet`.
+7. **Record the file as done**, only after all its rows are written. A truncated or corrupt file is ingested as far as readable, recorded with its error, and not retried.
+
+### 3.1 Background filter
+
+Added the same day (commit `05142cd0`), implementing the rules of [MasterThesisInc.md](MasterThesisInc.md) §3. The first matching rule drops the packet:
+
+| Rule | Drops | Why |
+| --- | --- | --- |
+| `infra_device` | Everything to/from `--exclude-mac` (the U7 Lite, `8c:30:66:4c:df:d1`) or `--exclude-ip` | UniFi controller (8080), discovery and AP traffic would fill every quiet minute. By MAC because the AP gets its IP via DHCP |
+| (keep) | DHCP (UDP 67/68) of clients | Needed for C5_F1 re-associations. The gateway's broadcast offers/acks count as `broadcast` |
+| `mdns`, `ssdp`, `ntp` | UDP 5353, 1900, 123 | Periodic device chatter, not behaviour |
+| `broadcast` | Broadcast or multicast destination (255.255.255.255, LAN broadcast, 224.0.0.0/4) | Not attributable to a user action (IGMP, UniFi discovery on 10001 …) |
+| `gateway_service` | To/from `--gateway-ip` (10.42.0.1, 10.42.1.1) except DNS (53): SSH, ping … | Gateway services, not behaviour |
+| `no_client` | Neither side is a client in `--lan-net` (10.42.0.0/24, 10.42.1.0/24) | Not attributable to a device |
+
+Everything else between a client and the internet is kept, including STUN to the internet (calls) and Apple push on 5223. Whether always-on keep-alives should go is a decision for after looking at real nights. `--no-filter` disables the filter, e.g. to compare with an app upload of the same pcap.
+
+**Tests.** A capture with one labelled packet per case (19 packets: 7 to keep, 12 to drop, one per rule plus variants) landed exactly as expected. That includes a DHCP discover from `0.0.0.0`, which reached the right dataset through the MAC fallback. The earlier equivalence tests still pass with and without the filter.
+
+**Result on the gateway.** Today's data since 17:09 was rebuilt with the filter (the unfiltered version was moved to `/var/tmp/tapingest-unfiltered-202610161547/`). Of 66 869 packets in 38 capture files, 5 909 (~9 %) were dropped: `infra_device` 4 435, `broadcast` 1 191, `mdns` 277, `ntp` 6. The only LAN hosts left are the iPhone (10.42.0.174) and the gateway as DNS server, there is no traffic left on ports 8080/10001/5353, and all 334 DNS queries were kept.
 
 It also keeps `processed_parquet/known_ips.txt` up to date, like the upload page does. `--max-rows` (default 300 000) closes a batch early to bound memory, and `--once` processes everything pending and exits (for backfills and synthetic data).
 
@@ -92,6 +112,7 @@ The deployed file still holds the four example devices (10.42.1.11/.12/.21/.22) 
 | `18afb6cc` | `ingest/` (service, unit, README, example devices.csv), shared parser `app/utils/pcap_etl.py`, cache fixes in pages 01/02, `TZ=Europe/Zurich` in `docker-compose.yml` |
 | `cdaff706` | `--since` option |
 | `33cfc2ce` | `app/docker-compose.gateway.yml` (host network, Streamlit on localhost only) |
+| `05142cd0` | Background filter, MAC fallback for the device map |
 
 The cache fixes were needed because the app assumed that data never changes after upload:
 
@@ -109,8 +130,8 @@ The app repo's `origin` is Stephan Nef's public repository (`nefste/app_pcap_to_
 | Timing | Nightly batch (systemd timer 00:20) over the previous day | Continuous service, every new 60 s file within ~10 s | Done, live view in the app |
 | Parser | tshark fields → pandas | The app's own scapy parser (shared module) | Identical to an upload by construction; validation 8.2 is covered by tests |
 | Partitions overwritten | Avoided by processing whole days | Avoided by merging into existing partitions, idempotent via `Capture File` | Done |
-| Identity | Split per client **MAC** (`/etc/tapgw/devices.json`) | Split per **IP** (`/etc/tapingest/devices.csv`, shared with the runner) | Done. Real devices need a fixed DHCP lease (`dhcp-host=`) |
-| Background filter (§3) | Drop gateway services, AP/controller traffic, mDNS/SSDP/NTP, broadcasts | **Not implemented.** Everything is kept | **Open.** Must be done before sleep/idle metrics are interpreted |
+| Identity | Split per client **MAC** (`/etc/tapgw/devices.json`) | Split per **IP**, MAC as fallback (`/etc/tapingest/devices.csv`, shared with the runner) | Done. Real devices need a fixed DHCP lease (`dhcp-host=`) |
+| Background filter (§3) | Drop gateway services, AP/controller traffic, mDNS/SSDP/NTP, broadcasts | Implemented as specified (Section 3.1), AP excluded by MAC, drop counts per rule in the state db | Done |
 | SNI in hostnames (§5) | Patch `enrich_with_hostnames` + SNI column | Not implemented | Open |
 | Output location | `/var/lib/tapcap/parquet`, mounted read-only | `app/processed_parquet` in the repo, mounted read-write | Done. Read-write so the upload page keeps working |
 | Hosting | Option A: app on the gateway via SSH tunnel | Option A, Docker, Streamlit bound to 127.0.0.1 | Done |
@@ -207,6 +228,7 @@ systemctl is-active tapcap@eno1 tapfeed@eno1 tapingest docker
 journalctl -u tapingest -f                                    # one "Ingested 1 file(s)" line per minute
 sudo sqlite3 /var/lib/tapingest/state.sqlite \
   "select path, packets, rows_mapped, rows_unmapped, error from processed order by processed_at desc limit 5"
+sudo sqlite3 /var/lib/tapingest/state.sqlite "select rule, sum(packets) from dropped group by rule"   # background filter
 ls /opt/app_pcap_to_dsm5_public/app/processed_parquet/
 sudo docker ps
 sudo docker logs --tail 50 pcap-to-dsm5
@@ -216,7 +238,7 @@ Note: the system clock of the gateway is **UTC**. `journalctl` and `date` show U
 
 ### Add or change devices
 
-Edit `/etc/tapingest/devices.csv`. The service reloads it on the next scan, no restart needed. Real phones need a fixed IP first: add `dhcp-host=<mac>,<ip>` in dnsmasq, and set the phone's "Private Wi-Fi Address" to "Fixed" for the study network.
+Edit `/etc/tapingest/devices.csv`. The service reloads it on the next scan, no restart needed. If the access point is replaced, update `--exclude-mac` in the unit (MAC from `/var/lib/misc/dnsmasq.leases`). Real phones need a fixed IP first: add `dhcp-host=<mac>,<ip>` in dnsmasq, and set the phone's "Private Wi-Fi Address" to "Fixed" for the study network.
 
 ### Add a second capture folder (br-sim)
 
@@ -276,6 +298,8 @@ Nothing is deleted automatically, neither captures (`/var/lib/tapcap/ready`, 73 
 | 9 | Docker | Default Docker would break routing for the clients | Docker's iptables rules and FORWARD DROP policy | `"iptables": false` before the first start; ruleset compared before/after |
 | 10 | Docker | Container build would have no internet | No NAT for Docker bridges without iptables | Build and run on the host network (`docker-compose.gateway.yml`) |
 | 11 | Usage | "The tunnel command just hangs" | `ssh -N` prints nothing by design | Leave it running, open the browser |
+| 12 | Data | AP/controller traffic, IGMP, UniFi discovery and mDNS counted as activity (~9 % of packets) | No background filter in the first version | Filter (Section 3.1), AP by MAC; today's data rebuilt |
+| 13 | Data | DHCP discovers come from `0.0.0.0` and could not be assigned by IP | The client has no IP yet | Device map falls back to the MAC |
 
 ## 10. Security notes
 
@@ -287,7 +311,7 @@ Nothing is deleted automatically, neither captures (`/var/lib/tapcap/ready`, 73 
 
 ## 11. Open issues and next steps
 
-1. **Background filter** (MasterThesisInc §3). Without it, gateway services, UniFi controller traffic, mDNS/SSDP/NTP and broadcasts count as user activity, which distorts sleep and idle metrics. It should be implemented in `tapingest`, with a drop counter per rule in the state db.
+1. ~~Background filter~~ Done (Section 3.1). Still to decide after looking at real nights: always-on keep-alives such as Apple push (5223).
 2. **Remove the temporary access** (Section 10).
 3. **Own fork of the app repo** for the `live-ingest` branch, so the code is versioned and the gateway can `git pull`.
 4. **br-sim integration:** a second `--watch` folder, and one shared `devices.csv` for the runner and the ingest (e.g. the runner reads `/etc/tapingest/devices.csv`).
@@ -318,7 +342,8 @@ ExecStart=/opt/app_pcap_to_dsm5_public/.venv/bin/python ingest/tapingest.py \
     --watch /var/lib/tapcap/ready \
     --devices /etc/tapingest/devices.csv \
     --out /opt/app_pcap_to_dsm5_public/app/processed_parquet \
-    --state /var/lib/tapingest/state.sqlite --since 2026-10-16T17:09
+    --state /var/lib/tapingest/state.sqlite --since 2026-10-16T17:09 \
+    --exclude-mac 8c:30:66:4c:df:d1
 StateDirectory=tapingest
 Restart=on-failure
 RestartSec=5

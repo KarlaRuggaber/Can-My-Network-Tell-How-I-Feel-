@@ -72,7 +72,7 @@ The thesis names its own gaps (Ch. 6.5 Limitations, Ch. 7.2 Future Work). Our ha
 ## 4. Suggested order of work
 ### Step 4.1 in Detail: Automatic Ingest of Gateway Captures into the Thesis App
 
-> **Status 16.10.2026:** implemented in a different form, as a live service (`tapingest`) instead of a nightly batch, with an IP-based `devices.csv` instead of `devices.json`. The background filter (section 3), the SNI patch (section 5) and validation steps 3–6 (section 8) are still open. See [Deployment.md](Deployment.md), section 4, for the comparison.
+> **Status 16.10.2026:** implemented in a different form, as a live service (`tapingest`) instead of a nightly batch, with an IP-based `devices.csv` instead of `devices.json`. The background filter (section 3) was added the same day; the SNI patch (section 5) and validation steps 3–6 (section 8) are still open. See [Deployment.md](Deployment.md), section 4, for the comparison.
 
 ## Goal
 Every night, convert yesterday's `tapcap` pcaps into exactly the Parquet layout the thesis app already reads. Write **one dataset per device**, with background traffic removed and timestamps in Swiss local time. The app (Network Metrics, Early Signs Overview) then works on our data without any UI changes.
