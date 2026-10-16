@@ -89,6 +89,54 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - Validation on real data (MasterThesisInc §8, steps 3–6)
 - **Blockers / notes:** Full documentation: [Deployment.md](Deployment.md). Origin and licence note of the imported app: [`app_pcap_to_dsm5/ORIGIN.md`](../app_pcap_to_dsm5/ORIGIN.md).
 
+**Traffic runner and br-sim network:** Fri 16.10
+- **Done:**
+  - **`traffic-runner/` (merged in PR #1)**
+    - Docker image based on the official Playwright Python image 1.63.0, all versions pinned.
+    - CLI that runs one activity from the activity catalog as a simulated phone or laptop with a fixed MAC/IP. It writes one ground-truth row per run (`start,end,device,activity_id,domains,profile,seed,block_id,status`) to a shared, file-locked CSV.
+    - Randomness comes only from `seed` + `block_id`, so the same seed gives the same page sequence. A test checks this without network.
+  - **Implemented activities:** `phone_check`, `browse`, `repeat_visit_loop`, `video_stream` (YouTube at 144p, SRF on-demand at its lowest level), `music_background` (SRF 3 MP3 stream) and `idle_connected`.
+  - **Stubs:** the activities that need test accounts (`messaging`, `social_post`, calls) log `not_implemented`.
+  - **Configuration:**
+    - The domain sets of catalog §3 are in `config/mixes.yaml`.
+    - `config/devices.csv` (same format as the ingest's `devices.csv`) is validated, and `docker-compose.yml` is generated from it.
+  - **Local tests:** every activity ran for 2 min against real pages and wrote a correct log row; 96 offline tests pass. The measured data volume is in the runner README §6. A page view costs about 5–15 MiB, YouTube at 144p about 1–2 MiB/min.
+  - **Fixes from the real runs:**
+    - Chromium now runs in full new-headless mode; the stripped headless shell is blocked by digitec/galaxus/zalando.
+    - Cookie banners are rejected in two steps and never accepted; SRF only starts its player after this choice.
+    - Media that reports "playing" without data now counts as an error.
+  - **Gateway, network part (with backups in `/root/tapgw-backup-20261016-1602/`):**
+    - Docker network `sim` (bridge `br-sim`, 10.42.1.0/24).
+    - nftables: DNS + ping from br-sim, forward br-sim → internet, no forwarding to eno1.
+    - dnsmasq also serves DNS on 10.42.1.1.
+  - **Gateway, capture part:**
+    - `tapcap@br-sim` writes to its own folder `/var/lib/tapcap/sim/ready/`.
+    - `tapfeed@br-sim` adds SNI only; DNS stays with tapfeed@eno1, so nothing is logged twice.
+  - **Acceptance on the gateway:**
+    - two containers ran in parallel, both `ok`
+    - 181 SNI events from 10.42.1.11/.12 with the right MACs in `feed.ndjson`
+    - 7k–11k packets per device and minute in the sim pcaps
+    - a real phone kept internet access after every step
+- **Next / open:**
+  - **Ingest:**
+    - Add `--watch /var/lib/tapcap/sim/ready` to `tapingest`, so the simulated devices actually reach the Parquet data.
+    - Keep one `devices.csv` for runner and ingest. The runner does not accept `#` comment lines yet.
+  - **Chromium background traffic:** Chromium connects to `android.clients.google.com`, which the pipeline counts as google.com = PRODUCTIVITY. Suppress it before running profiles; a follow-up session is proposed.
+  - **Decide:** cookie consent (reject vs. accept), an audio source for `music_background` that is in the STREAMING list, and dataset names without trailing digits (`group_prefix()`).
+  - **Gateway operation:**
+    - Run the runner from the git clone in `/opt/can-my-network/traffic-runner` instead of the copy in `~/traffic-runner`, so updates are a `git pull`.
+    - Run the remaining activities once on the gateway to complete the data-volume table.
+  - **Next milestone:** scheduler (profile + seed → plan) that calls `scripts/run-activity.sh`, then a first end-to-end pilot.
+- **Blockers / notes:**
+  - **Retention:** `/etc/tmpfiles.d/tapcap.conf` has age `2d` on `/var/lib/tapcap/ready`, so `systemd-tmpfiles-clean` deletes pcaps older than two days. This contradicts "nothing is deleted automatically" in HardwareSetup/Deployment. The sim folder has no age.
+  - **Three problems on the gateway, all fixed:**
+    - Ubuntu's `docker.io` pulled in `ubuntu-fan`, whose `bind-interfaces` clashed with `bind-dynamic` and stopped dnsmasq for about a minute (rolled back at once). Test dnsmasq with `systemd-helper checkconfig`, not plain `dnsmasq --test`.
+    - `docker compose exec` reads the terminal and hung in pasted blocks; always use `< /dev/null` or `scripts/run-activity.sh`.
+    - The terminal app on the laptop lacked the macOS "Local Network" permission ("No route to host").
+  - **Documentation:**
+    - [traffic-runner/README.md](../traffic-runner/README.md) (usage, gateway steps, data volume, limitations)
+    - [HardwareSetup.md §15](HardwareSetup.md) (gateway changes)
+
 </details>
 
 <details>
