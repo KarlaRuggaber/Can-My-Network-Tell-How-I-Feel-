@@ -1,0 +1,134 @@
+# Domain sets (`mix` categories) from profiles/activity-catalog.md §3.
+# The catalog is the source of truth: change a domain there first, then here.
+#
+# Per site:
+#   host     domain as written in the catalog (documentation; the log records the real host)
+#   url      start URL; `{query}` is replaced by one of `queries`, chosen with the run's RNG
+#   login    true = needs an account. Skipped in the MVP (no test accounts yet).
+#   kind     page (default) | video. video_stream only picks `video` sites.
+#   playable false = page loads, but the runner cannot play its media (see note).
+#
+# Notes found while building (to be fixed in the catalog, not silently here):
+#   - notion.so redirects to notion.com, office.com to microsoft365.com. The thesis lists only
+#     contain notion.so / office.com, so these visits may not count as PRODUCTIVITY.
+#   - play.srf.ch streams H.264/AAC (HLS). Playwright's Chromium has no proprietary codecs,
+#     so the page loads but the stream does not play. video_stream uses YouTube (VP9/Opus).
+
+categories:
+  messaging:
+    thesis_list: SOCIAL
+    sites:
+      - {host: web.whatsapp.com, url: "https://web.whatsapp.com/", login: true}
+      - {host: web.telegram.org, url: "https://web.telegram.org/", login: true}
+      - {host: discord.com, url: "https://discord.com/app", login: true}
+
+  social_passive:
+    thesis_list: SOCIAL
+    sites:
+      - {host: reddit.com, url: "https://www.reddit.com/"}
+      - {host: tiktok.com, url: "https://www.tiktok.com/explore"}
+      - {host: instagram.com, url: "https://www.instagram.com/", login: true}   # "partly" in the catalog: login wall after a few posts
+
+  social_post:
+    thesis_list: SOCIAL
+    sites:
+      - {host: instagram.com, url: "https://www.instagram.com/", login: true}
+      - {host: reddit.com, url: "https://www.reddit.com/", login: true}
+
+  streaming:
+    thesis_list: STREAMING
+    sites:
+      - {host: youtube.com, url: "https://www.youtube.com/", kind: video}
+      - {host: play.srf.ch, url: "https://play.srf.ch/", kind: video, playable: false}
+      - {host: open.spotify.com, url: "https://open.spotify.com/", login: true}
+      - {host: netflix.com, url: "https://www.netflix.com/", login: true}
+
+  news:
+    thesis_list: none
+    sites:
+      - {host: 20min.ch, url: "https://www.20min.ch/"}
+      - {host: nzz.ch, url: "https://www.nzz.ch/"}
+      - {host: watson.ch, url: "https://www.watson.ch/"}
+      - {host: tagesanzeiger.ch, url: "https://www.tagesanzeiger.ch/"}
+
+  work:
+    thesis_list: PRODUCTIVITY
+    sites:
+      - {host: outlook.office.com, url: "https://outlook.office.com/mail/", login: true}
+      - {host: docs.google.com, url: "https://docs.google.com/", login: true}
+      - {host: notion.so, url: "https://www.notion.so/"}
+      - {host: github.com, url: "https://github.com/"}
+
+  study:
+    thesis_list: PRODUCTIVITY (office.com / google.com only)
+    sites:
+      # University LMS (e.g. Canvas): URL not decided yet, needs a login anyway.
+      - {host: unisg.ch, url: "https://www.unisg.ch/"}
+      - {host: office.com, url: "https://www.office.com/"}
+      - {host: docs.google.com, url: "https://docs.google.com/", login: true}
+      - {host: scholar.google.com, url: "https://scholar.google.com/scholar?q={query}",
+         queries: [depression network traffic, sleep quality students, smartphone sensing mental health]}
+
+  search:
+    thesis_list: none
+    sites:
+      - {host: duckduckgo.com, url: "https://duckduckgo.com/?q={query}",
+         queries: [wetter zürich, sbb fahrplan, rezept pasta, öffnungszeiten migros, kino programm]}
+
+  shopping:
+    thesis_list: none
+    sites:
+      - {host: galaxus.ch, url: "https://www.galaxus.ch/"}
+      - {host: digitec.ch, url: "https://www.digitec.ch/"}
+      - {host: zalando.ch, url: "https://www.zalando.ch/"}
+      - {host: migros.ch, url: "https://www.migros.ch/"}
+
+  gaming:
+    thesis_list: SOCIAL (discord.com only)
+    sites:
+      - {host: steampowered.com, url: "https://store.steampowered.com/"}
+      - {host: riotgames.com, url: "https://www.riotgames.com/"}
+      - {host: discord.com, url: "https://discord.com/app", login: true}
+
+  crisis_help:
+    thesis_list: CRISIS / MENTAL_HEALTH
+    sites:
+      - {host: 143.ch, url: "https://www.143.ch/"}
+      - {host: 147.ch, url: "https://www.147.ch/"}
+      - {host: depression.ch, url: "https://www.depression.ch/"}
+
+# video_stream on YouTube: open a search results page, play one of the first `result_pool`
+# results (chosen with the run's RNG). No video IDs are hard-coded, so nothing goes stale.
+video:
+  youtube_search_terms:
+    - dokumentation natur
+    - schweiz reise
+    - kochen rezept
+    - fussball highlights
+    - lofi music
+    - podcast deutsch
+  result_pool: 5
+
+# music_background: an audio-only livestream without login. Not in catalog §3 yet (proposed).
+# The MP3 stream is served by stream.srg-ssr.ch -> srg-ssr.ch, which is in NO thesis list
+# (srf.ch is STREAMING). The srf.ch web player itself uses AAC, which Chromium cannot decode.
+audio:
+  streams:
+    - {id: srf3, host: stream.srg-ssr.ch, url: "https://stream.srg-ssr.ch/srgssr/srf3/mp3/128"}
+
+# Cookie banners: the runner clicks the first visible button whose accessible name matches
+# one of these (case-insensitive, whole name). Always the most privacy-preserving choice.
+consent:
+  reject_buttons:
+    - Reject all
+    - Alle ablehnen
+    - Ablehnen
+    - Nur notwendige
+    - Nur notwendige Cookies
+    - Nur erforderliche Cookies
+    - Nur erforderliche
+    - Optionale Cookies ablehnen
+    - Decline optional cookies
+    - Reject optional cookies
+    - Only allow essential cookies
+    - Tout refuser
