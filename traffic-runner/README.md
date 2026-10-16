@@ -204,6 +204,8 @@ Measured on 2026-10-16 in local test runs (laptop, Docker Desktop, home network)
 | `music_background` (128 kbit/s MP3) | 2 MiB | 0.1 MiB | ≈ 1 MiB/min, steady |
 | `idle_connected` | 0 | 0 | |
 
+On the gateway (br-sim counters), `phone_check` and `browse` in parallel for 2 min transferred 25 MiB down and 1 MiB up.
+
 Rough budget for full-length blocks:
 - `music_background`: ≈ 60 MiB/h
 - YouTube at 144p: ≈ 1–2 MiB/min after the page load
@@ -211,7 +213,16 @@ Rough budget for full-length blocks:
 
 A 14-day profile with several browsing blocks per day therefore reaches several GB. Check this against the hotspot plan before running profiles in real time.
 
-## 7. Gateway setup (proposal: run step by step, with checks)
+## 7. Gateway setup (run step by step, with checks)
+
+**Status 2026-10-16: steps 2–7 are applied on the gateway.**
+- Docker was already installed by a colleague.
+- Backups are in `/root/tapgw-backup-20261016-1602/`.
+- Acceptance passed:
+  - two devices in parallel, both `ok`
+  - 181 SNI events from 10.42.1.11/.12 with the right MACs in `feed.ndjson`
+  - 7k–11k packets per device and minute in `/var/lib/tapcap/sim/ready/`
+  - a real phone kept internet access after every step
 
 Reading `/etc/nftables.conf` and the dnsmasq, tapcap and tapfeed files on 2026-10-16 showed what has to change:
 
@@ -374,4 +385,5 @@ Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `
 7. **Cookie consent:** the runner rejects or leaves the banner open. Decide whether the simulated users should accept instead, which is closer to typical users and produces more third-party traffic, and therefore more UniqueSLD (catalog §5.7).
 4. **Ingest, folder:** with the proposal above, br-sim pcaps are in `/var/lib/tapcap/sim/ready/`, so the ingest has to read both folders.
 5. **Ingest, retention:** `/etc/tmpfiles.d/tapcap.conf` has age `2d` on `ready/`, so `systemd-tmpfiles-clean` deletes pcaps older than 2 days (only 170 files remain since 2 Oct). This contradicts HardwareSetup ("nothing is deleted automatically").
+8. **Chromium background traffic counts as PRODUCTIVITY.** Both containers open TLS connections to `android.clients.google.com`. The pipeline reduces this to `google.com`, which is in the PRODUCTIVITY list (C2_F6). Either suppress it in the runner (launch flags or DNS) or drop these hosts in the ingest, before profiles run.
 6. **Ingest, dataset names:** the app's `group_prefix()` strips trailing digits, so `gw_student_01` and `gw_student_02` are grouped as `gw_student` in the UI (MasterThesisInc §3 recommends names without trailing digits). The `devices.csv` format is unchanged, but the naming convention should be agreed.
