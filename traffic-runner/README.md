@@ -214,7 +214,7 @@ Reading `/etc/nftables.conf` and the dnsmasq, tapcap and tapfeed files on 2026-1
 | dnsmasq | Uses `bind-interfaces` | Fails on an interface that does not exist yet. Switch to `bind-dynamic`, which is mutually exclusive with `bind-interfaces`. |
 | tapcap file names | `cap-<epoch_ms>.pcap` with no interface in the name | Two instances writing to the same `ready/` could collide, and the rename overwrites. Proposal: tapcap@br-sim writes to **`/var/lib/tapcap/sim/{tmp,ready}`**. |
 | tapfeed | Writes a fixed `feed.ndjson` and follows the dnsmasq journal for DNS | A second instance would log every DNS query twice. Proposal: `TAPFEED_DNS=0` for the br-sim instance, so DNS stays with tapfeed@eno1 (which sees 10.42.1.x too) and br-sim adds only SNI. Both append to the same `feed.ndjson` (one `printf` per line, appends are atomic). |
-| Docker | Not installed | `/etc/docker/daemon.json` must exist **before** the package is installed. dockerd starts right after installation, and with the default `"iptables": true` it sets the FORWARD policy to DROP, which would cut off the real devices. |
+| Docker | Not installed (since installed by a colleague: Ubuntu `docker.io` 29.1.3 with `"iptables": false`) | `/etc/docker/daemon.json` must exist **before** the package is installed. dockerd starts right after installation, and with the default `"iptables": true` it sets the FORWARD policy to DROP, which would cut off the real devices. |
 
 Back up before every step. After every step, check that a **real phone on the AP still has internet** and that `tapcap@eno1` is still running.
 
@@ -270,15 +270,23 @@ sudo nft list ruleset | grep -n br-sim
 
 ### Step 4: dnsmasq
 
+`bind-interfaces` must be replaced by `bind-dynamic` in **every** file that sets it. The two options are mutually exclusive. Besides `tapgw.conf`, the `ubuntu-fan` package (pulled in by Ubuntu's `docker.io` package) ships `/etc/dnsmasq.d/ubuntu-fan` with `bind-interfaces`. `bind-dynamic` also binds per interface, so the fan networks stay protected.
+
+Test with the systemd helper, not with plain `dnsmasq --test`:
+- The helper loads `/etc/dnsmasq.d` a second time with other options. Plain `dnsmasq --test` passed on 2026-10-16 while the real start failed with `cannot set --bind-interfaces and --bind-dynamic`.
+- `ubuntu-fan` is a package conffile. If an upgrade asks about it, keep the local version.
+
 ```bash
-sudo cp -a /etc/dnsmasq.d/tapgw.conf "$BK/"
-sudo sed -i 's/^bind-interfaces$/bind-dynamic/' /etc/dnsmasq.d/tapgw.conf
+sudo cp -a /etc/dnsmasq.d/tapgw.conf /etc/dnsmasq.d/ubuntu-fan "$BK/" 2>/dev/null
+sudo sed -i 's/^bind-interfaces$/bind-dynamic/' /etc/dnsmasq.d/*
 sudo install -m 644 ~/traffic-runner/gateway/dnsmasq-sim.conf /etc/dnsmasq.d/sim.conf
-sudo dnsmasq --test
-sudo systemctl restart dnsmasq   # about 1 s without DNS for the real devices
-sudo ss -lnup 'sport = :53'      # expect 10.42.0.1:53 and 10.42.1.1:53
-# rollback: sudo cp "$BK/tapgw.conf" /etc/dnsmasq.d/ && sudo rm /etc/dnsmasq.d/sim.conf && sudo systemctl restart dnsmasq
+sudo grep -rn "bind-" /etc/dnsmasq.d/        # only bind-dynamic may remain
+sudo /usr/share/dnsmasq/systemd-helper checkconfig && echo "CHECK OK" && sudo systemctl restart dnsmasq
+sudo ss -lnup 'sport = :53'                  # expect 10.42.0.1:53 and 10.42.1.1:53
+# rollback: sudo cp "$BK"/{tapgw.conf,ubuntu-fan} /etc/dnsmasq.d/ && sudo rm /etc/dnsmasq.d/sim.conf && sudo systemctl restart dnsmasq
 ```
+
+The restart leaves the real devices without DNS for about 1 s.
 
 ### Step 5: capture on br-sim
 
