@@ -1,0 +1,14 @@
+# Device role -> browser emulation. Role names must match the `role` column of devices.csv.
+#
+# playwright_device: a Playwright device descriptor name (playwright.devices).
+#   phone uses an Android descriptor on purpose: the runner always drives Chromium, so an
+#   iPhone/Safari user agent would not match the Chrome TLS fingerprint on the wire.
+phone:
+  playwright_device: "Pixel 7"
+laptop:
+  playwright_device: "Desktop Chrome"
+
+# Applied to every browser context.
+context:
+  locale: "de-CH"
+  timezone_id: "Europe/Zurich"

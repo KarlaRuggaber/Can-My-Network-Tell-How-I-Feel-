@@ -1,0 +1,42 @@
+#!/bin/bash
+# Unified metadata feed: DNS queries + TLS/QUIC SNI + DHCP/mDNS hostnames.
+# One JSON object per line -> /var/lib/tapcap/meta/feed.ndjson
+# TAPFEED_DNS=0 disables source B (for extra instances; DNS is logged once by tapfeed@eno1).
+set -euo pipefail
+IFACE="${1:-eno1}"
+OUT="/var/lib/tapcap/meta/feed.ndjson"
+mkdir -p "$(dirname "$OUT")" 2>/dev/null || true
+
+json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+# --- Source A: SNI + hostnames from the wire (tshark) ---
+tshark -i "$IFACE" -n -l \
+  -Y 'tls.handshake.extensions_server_name || dhcp.option.hostname || (mdns && dns.resp.name)' \
+  -T fields -E separator='|' -E occurrence=f \
+  -e frame.time_epoch -e ip.src -e eth.src \
+  -e tls.handshake.extensions_server_name \
+  -e dhcp.option.hostname -e dns.resp.name 2>/dev/null \
+| while IFS='|' read -r ts ipsrc mac sni dhcp mdns; do
+    if   [ -n "$sni" ];  then typ=sni;      val=$sni
+    elif [ -n "$dhcp" ]; then typ=hostname; val=$dhcp
+    elif [ -n "$mdns" ]; then typ=hostname; val=$mdns
+    else continue; fi
+    printf '{"ts":%s,"src":"%s","mac":"%s","type":"%s","value":"%s"}\n' \
+      "${ts:-0}" "$(json_escape "$ipsrc")" "$(json_escape "$mac")" \
+      "$typ" "$(json_escape "$val")" >> "$OUT"
+  done &
+
+# --- Source B: DNS queries from dnsmasq (server is the resolver) ---
+if [ "${TAPFEED_DNS:-1}" = "1" ]; then
+journalctl -u dnsmasq -f -o short-unix --no-hostname 2>/dev/null \
+| stdbuf -oL grep 'query\[' \
+| while read -r ts _ rest; do
+    name=$(echo "$rest"  | sed -n 's/.*query\[[A-Za-z0-9]*\] \([^ ]*\) from .*/\1/p')
+    from=$(echo "$rest"  | sed -n 's/.*from \([0-9.]*\).*/\1/p')
+    [ -z "$name" ] && continue
+    printf '{"ts":%s,"src":"%s","mac":"","type":"dns","value":"%s"}\n' \
+      "${ts%.*}" "$(json_escape "$from")" "$(json_escape "$name")" >> "$OUT"
+  done &
+fi
+
+wait

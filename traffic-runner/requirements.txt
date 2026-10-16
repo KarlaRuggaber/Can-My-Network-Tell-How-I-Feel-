@@ -1,0 +1,4 @@
+# Runtime dependencies, all pinned. playwright must match the base image tag in Dockerfile.
+playwright==1.63.0
+PyYAML==6.0.3
+tzdata==2026.4
