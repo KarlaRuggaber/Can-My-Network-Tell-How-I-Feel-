@@ -125,7 +125,11 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - **Decide:** cookie consent (reject vs. accept), an audio source for `music_background` that is in the STREAMING list, and dataset names without trailing digits (`group_prefix()`).
   - **Gateway operation:**
     - Run the runner from the git clone in `/opt/can-my-network/traffic-runner` instead of the copy in `~/traffic-runner`, so updates are a `git pull`.
-    - Run the remaining activities once on the gateway to complete the data-volume table.
+    - (done, 16.10 evening) The remaining activities were also run on the gateway, all `ok`:
+      - `repeat_visit_loop`: 12 MiB
+      - `music_background`: 2 MiB
+      - YouTube video: 7 MiB, at 240p on the laptop role
+      - `idle_connected`: 0
   - **Next milestone:** scheduler (profile + seed → plan) that calls `scripts/run-activity.sh`, then a first end-to-end pilot.
 - **Blockers / notes:**
   - **Retention:** `/etc/tmpfiles.d/tapcap.conf` has age `2d` on `/var/lib/tapcap/ready`, so `systemd-tmpfiles-clean` deletes pcaps older than two days. This contradicts "nothing is deleted automatically" in HardwareSetup/Deployment. The sim folder has no age.

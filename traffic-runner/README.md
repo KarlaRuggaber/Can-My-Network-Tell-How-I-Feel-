@@ -192,17 +192,17 @@ b=$(cat /sys/class/net/br-sim/statistics/tx_bytes); r=$(cat /sys/class/net/br-si
 echo "down $(( ($(cat /sys/class/net/br-sim/statistics/tx_bytes)-b)/1048576 )) MiB, up $(( ($(cat /sys/class/net/br-sim/statistics/rx_bytes)-r)/1048576 )) MiB"
 ```
 
-Measured on 2026-10-16 in local test runs (laptop, Docker Desktop, home network). These are container eth0 counters, so they include page loads, consent dialogs and ads. Repeat the measurement on the gateway with the br-sim counters.
+Measured on 2026-10-16, locally (laptop, Docker Desktop) and on the gateway. All values are container eth0 counters unless noted, so they include page loads, consent dialogs and ads.
 
-| Activity, 2 min | Down | Up | Notes |
-|---|---|---|---|
-| `phone_check` news,social_passive (phone) | 11–34 MiB | 0.3–1.2 MiB | 1 page (NZZ) = 11 MiB; NZZ + Reddit = 34 MiB |
-| `browse` news,shopping (laptop) | 6–16 MiB | 0.5–0.8 MiB | depends heavily on the site |
-| `repeat_visit_loop` news,search (phone) | 5–8 MiB | 0.3–0.4 MiB | 2 visits |
-| `video_stream` YouTube | 3–8 MiB | 0.3–0.6 MiB | phone 144p; laptop 144p–240p |
-| `video_stream` SRF | 10–26 MiB | 0.4–0.6 MiB | 270p; the player buffers ahead at the start |
-| `music_background` (128 kbit/s MP3) | 2 MiB | 0.1 MiB | ≈ 1 MiB/min, steady |
-| `idle_connected` | 0 | 0 | |
+| Activity, 2 min | Down (laptop) | Up (laptop) | Gateway, 2026-10-16 (down / up) | Notes |
+|---|---|---|---|---|
+| `phone_check` news,social_passive (phone) | 11–34 MiB | 0.3–1.2 MiB | 25 MiB / 1 MiB together with `browse` (br-sim counters) | 1 page (NZZ) = 11 MiB; NZZ + Reddit = 34 MiB |
+| `browse` news,shopping (laptop) | 6–16 MiB | 0.5–0.8 MiB | see above | depends heavily on the site |
+| `repeat_visit_loop` news (phone) | 5–8 MiB | 0.3–0.4 MiB | 12 MiB / 1.4 MiB (20min + watson) | 2 visits |
+| `video_stream` YouTube (laptop) | 3–8 MiB | 0.3–0.6 MiB | 7 MiB / 0.6 MiB (240p) | phone 144p; laptop 144p–240p |
+| `video_stream` SRF | 10–26 MiB | 0.4–0.6 MiB | not run | 270p; the player buffers ahead at the start |
+| `music_background` (128 kbit/s MP3) | 2 MiB | 0.1 MiB | 2 MiB / 0.2 MiB | ≈ 1 MiB/min, steady |
+| `idle_connected` | 0 | 0 | 0 / 0 | |
 
 On the gateway (br-sim counters), `phone_check` and `browse` in parallel for 2 min transferred 25 MiB down and 1 MiB up.
 
@@ -394,7 +394,7 @@ State 2026-10-16. The same list is in `process/process.md` (week 5).
 5. **Chromium background traffic counts as PRODUCTIVITY.** Both containers open TLS connections to `android.clients.google.com`. The pipeline reduces this to `google.com`, which is in the PRODUCTIVITY list (C2_F6). Suppress it in the runner with launch flags before profiles run, or drop these hosts in the ingest.
 6. **Cookie consent.** The runner rejects banners, or leaves them open where there is no reject button. Decide whether the simulated users should accept instead: that is closer to typical users and produces more third-party traffic, and therefore more UniqueSLD (catalog §5.7).
 7. **Gateway location.** The runner currently runs from a copy in `~/traffic-runner`. Since PR #1 is merged, it is also in the git clone `/opt/can-my-network/traffic-runner`. Switch to the clone so that updates are a `git pull`: `docker compose down` in the old folder, then `up -d` in the new one. Carry `logs/ground_truth.csv` over.
-8. **Gateway measurements.** Only `phone_check` and `browse` ran on the gateway. Run the other activities once to complete the data-volume table (section 6).
+8. **YouTube quality on the laptop role.** On the gateway the laptop again played 240p in the first 2 minutes (the 144p preference applied only on the phone role). Check over a longer run whether it drops to 144p, otherwise force the quality via the player menu.
 
 **Activity catalog**
 
