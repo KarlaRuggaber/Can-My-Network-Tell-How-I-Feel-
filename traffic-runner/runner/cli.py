@@ -154,10 +154,13 @@ def cmd_run(args) -> int:
         clock = RealClock()
         driver = BrowserDriver(role_cfg["playwright_device"], roles.get("context") or {},
                                mixes.consent.get("reject_buttons") or [], headless=not args.headed,
-                               consent_settings_buttons=mixes.consent.get("settings_buttons") or [])
+                               consent_settings_buttons=mixes.consent.get("settings_buttons") or [],
+                               call_mode=getattr(module, "BROWSER_MODE", None) == "call",
+                               ignore_https_errors=os.environ.get("RUNNER_PEER_INSECURE_TLS") == "1")
 
     ctx = RunContext(driver, clock, duration, overrides)
     ctx.mixes = mixes
+    ctx.run_key = f"{args.profile}/{args.seed}/{args.block_id}"
 
     start = gtlog.now_iso()
     log.info("start %s on %s (%s, %s), %.0f s, mix=%s, seed=%s, block=%s",
@@ -258,6 +261,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--block-id", required=True, help="block ID for the log, e.g. b001")
     r.add_argument("--pages", help="override page count range, e.g. 2-4")
     r.add_argument("--dwell", help="override dwell range, e.g. 20-90 or 1m-3m")
+    r.add_argument("--platform", help="call platform from the plan (zoom/teams/jitsi/discord); all calls use the peer VM")
     r.add_argument("--lookups", help="override lookup count range (sh_adjacent_lookup), e.g. 1-3")
     r.add_argument("--dry-run", action="store_true", help="no network: print the planned sequence")
     r.add_argument("--headed", action="store_true", help="show the browser (needs a display)")

@@ -1,0 +1,15 @@
+# Single public entry point of the VM (ports 80/443). TLS: automatic Let's Encrypt for
+# <ip>.sslip.io; for the local test CADDY_TLS="tls internal" (Caddy's own CA).
+{$DOMAIN} {
+	{$CADDY_TLS}
+	encode gzip
+	handle /peer/* {
+		reverse_proxy peer:8080
+	}
+	handle /game* {
+		reverse_proxy peer:8080
+	}
+	handle {
+		reverse_proxy web:8000
+	}
+}

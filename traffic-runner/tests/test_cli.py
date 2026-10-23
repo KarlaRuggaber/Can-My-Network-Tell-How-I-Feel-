@@ -29,7 +29,7 @@ def test_stub_logs_not_implemented(logdir):
 
 
 def test_catalog_only_activity_logs_not_implemented(logdir):
-    assert cli.main(BASE + ["--activity", "gaming_session"]) == cli.EXIT_NOT_IMPLEMENTED
+    assert cli.main(BASE + ["--activity", "away"]) == cli.EXIT_NOT_IMPLEMENTED
     assert rows(logdir)[0]["status"] == "not_implemented"
 
 
@@ -72,3 +72,11 @@ def test_parse_duration():
     assert cli.parse_duration("2h") == 7200
     assert cli.parse_range("1m-3m") == (60, 180)
     assert cli.parse_range("1-3", integer=True) == (1, 3)
+
+
+@pytest.mark.parametrize("activity", ["video_call", "voice_call", "gaming_session"])
+def test_peer_activities_without_vm_log_not_implemented(logdir, monkeypatch, activity):
+    monkeypatch.delenv("RUNNER_PEER_URL", raising=False)
+    monkeypatch.delenv("RUNNER_PEER_TOKEN", raising=False)
+    assert cli.main(BASE + ["--activity", activity, "--duration", "60"]) == cli.EXIT_NOT_IMPLEMENTED
+    assert rows(logdir)[0]["status"] == "not_implemented"

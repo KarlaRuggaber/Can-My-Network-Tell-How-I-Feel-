@@ -198,3 +198,63 @@ def test_sh_adjacent_lookup_placeholders_only(seed):
 def test_sh_adjacent_lookup_override():
     calls, _, _ = run_once("sh_adjacent_lookup", None, 60, seed=1, overrides={"lookups": (3, 3)})
     assert len([c for c in calls if c[0] == "dns"]) == 3
+
+
+@pytest.fixture
+def peer_vm(monkeypatch):
+    from runner import peer
+    joins = []
+    monkeypatch.setenv("RUNNER_PEER_URL", "https://peer.test")
+    monkeypatch.setenv("RUNNER_PEER_TOKEN", "secret")
+    monkeypatch.setattr(peer.Peer, "request_join", lambda self, room, duration, video: joins.append((room, duration, video)))
+    return joins
+
+
+def run_with_key(activity_id, mix_spec, duration, seed, run_key):
+    mixes = load_mixes()
+    module = ACTIVITIES[activity_id]
+    mix = parse_mix(mix_spec, mixes) if mix_spec else None
+    clock = FakeClock()
+    driver = FakeDriver(clock)
+    ctx = RunContext(driver, clock, duration)
+    ctx.mixes = mixes
+    ctx.run_key = run_key
+    module.run(ctx, random.Random(f"{seed}/b1"), duration, mix)
+    return driver.calls, ctx.visited, clock.now()
+
+
+@pytest.mark.parametrize("activity_id, video", [("video_call", True), ("voice_call", False)])
+def test_calls_ask_peer_then_join_same_room(peer_vm, activity_id, video):
+    calls, visited, end = run_with_key(activity_id, None, 1800, 1, "student/42/b1")
+    room, duration, asked_video = peer_vm[0]
+    assert (duration, asked_video) == (1800, video)
+    assert calls[0] == ("call", f"https://peer.test/{room}")
+    assert visited == ["peer.test"] and end == pytest.approx(1800)
+
+
+def test_call_room_is_per_run_and_secret(peer_vm):
+    from runner.peer import Peer
+    p = Peer("https://peer.test", "secret")
+    assert p.room_for("student/42/b1") == p.room_for("student/42/b1")
+    assert p.room_for("student/42/b1") != p.room_for("student/42/b2")
+    assert p.room_for("student/42/b1") != Peer("https://peer.test", "other").room_for("student/42/b1")
+    assert "startWithVideoMuted=true" in p.call_url("r-x", video=False, name="runner")
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_gaming_session_store_then_game(peer_vm, seed):
+    calls, visited, end = run_with_key("gaming_session", "gaming", 3600, seed, "student/42/g1")
+    game = [i for i, c in enumerate(calls) if c[0] == "game"]
+    assert len(game) == 1
+    store = [c[1] for c in calls[:game[0]] if c[0] == "open"]
+    assert store and all("steampowered" in u or "riotgames" in u for u in store)
+    tick = int(calls[game[0]][1].split("tick=")[1].split("&")[0])
+    assert 20 <= tick <= 60
+    assert end == pytest.approx(3600)
+    assert not peer_vm  # gaming does not ask the peer to join anything
+
+
+def test_gaming_session_same_seed_same_plan(peer_vm):
+    a = run_with_key("gaming_session", "gaming", 3600, 3, "k")
+    b = run_with_key("gaming_session", "gaming", 3600, 3, "k")
+    assert a == b

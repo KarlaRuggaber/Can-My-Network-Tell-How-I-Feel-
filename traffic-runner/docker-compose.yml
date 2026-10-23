@@ -22,6 +22,10 @@ services:
       RUNNER_DEVICE: student_a_phone
       RUNNER_STRICT_IP: "1"
       TZ: Europe/Zurich
+    # Peer VM address and token (calls, gaming): root-only file on the gateway, not in git.
+    env_file:
+      - path: peer.env
+        required: false
     dns: [10.42.1.1]
     volumes:
       - ./logs:/logs
@@ -46,6 +50,10 @@ services:
       RUNNER_DEVICE: student_a_laptop
       RUNNER_STRICT_IP: "1"
       TZ: Europe/Zurich
+    # Peer VM address and token (calls, gaming): root-only file on the gateway, not in git.
+    env_file:
+      - path: peer.env
+        required: false
     dns: [10.42.1.1]
     volumes:
       - ./logs:/logs

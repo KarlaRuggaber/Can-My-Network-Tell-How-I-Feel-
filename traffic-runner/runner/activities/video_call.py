@@ -1,17 +1,23 @@
-"""video_call: WebRTC call with fake camera and mic against a counterpart outside the network (catalog §2).
+"""video_call: WebRTC call with fake camera and microphone against a counterpart outside
+the home network (catalog §2). See _call.py.
 
-Stub: needs a call counterpart outside the home network (and accounts for zoom/teams). Logs status not_implemented until that exists.
+Every `platform` (jitsi, zoom, teams) runs on the self-hosted Jitsi of the peer VM: zoom
+and teams would need accounts. The host is therefore the VM's, which, like jit.si and
+zoom.us, is in no thesis list; only teams.microsoft.com would count as PRODUCTIVITY.
 """
 
-from .base import not_implemented
+from ._call import run_call
 
 ID = "video_call"
-IMPLEMENTED = False
+IMPLEMENTED = True
 ROLES = ("phone", "laptop")
 DEFAULT_DURATION = None  # "as block"
 NEEDS_MIX = False
 DEFAULT_MIX = None
 MIX_KIND = None
 NEEDS_BROWSER = True
+BROWSER_MODE = "call"
 
-run = not_implemented(ID, "needs a call counterpart outside the home network (and accounts for zoom/teams)")
+
+def run(ctx, rng, duration, mix):
+    return run_call(ctx, duration, video=True)

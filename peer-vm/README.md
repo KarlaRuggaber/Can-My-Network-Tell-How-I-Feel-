@@ -1,0 +1,88 @@
+# peer-vm
+
+Counterpart for the traffic runner's calls and games. A small VM **outside the home network**, so that call media and game traffic of the simulated devices flow through the gateway in both directions (activity catalog §2: "call … against a counterpart outside the home network").
+
+```
+gateway (br-sim)                               VM, e.g. 203-0-113-7.sslip.io
+ runner container ──HTTPS 443──► Caddy (Let's Encrypt) ──► Jitsi web / prosody / jicofo
+   video_call / voice_call ──UDP 10000───────────────────► Jitsi videobridge (media)
+   gaming_session ──WSS 443 (20–60 msg/s each way)───────► peer: game server
+   └ "join room X for N s" (HTTPS + token) ──────────────► peer: call API
+                                                           peer: headless Chromium with fake
+                                                           camera/mic joins room X
+```
+
+| Part | What it does |
+|---|---|
+| Jitsi (self-hosted) | Video conferencing server, no login. `jitsi-compose.yml` is the official compose file of docker-jitsi-meet `stable-11248`, unmodified ([JITSI_ORIGIN.md](JITSI_ORIGIN.md)). Settings are in `.env` (see below) |
+| Caddy | Only public entry point (80/443). Automatic Let's Encrypt certificate for `<ip-with-dashes>.sslip.io`, which resolves to the VM's IP without registering a domain |
+| `peer` | One Python service (`peer/peer_service.py`). `POST /peer/join` (bearer token) lets a headless Chromium with fake camera/mic join a room for the call's duration. It leaves early when no media has arrived for 45 s (the runner is gone). `GET /game` + `/game/ws` is a toy multiplayer game: the client sends inputs and the server sends game states, 20–60 times per second each |
+
+**Settings that keep a call on this VM** (generated into `.env` by `setup.sh`):
+
+| Setting | Effect |
+|---|---|
+| `ENABLE_P2P=false` | Media always goes through our videobridge, never peer-to-peer |
+| `JVB_DISABLE_STUN=true` + `JVB_ADVERTISE_IPS=<ip>` | The bridge does not ask external STUN servers |
+| `ENABLE_PREJOIN_PAGE=false` | Server-side. Turning the prejoin page off *in the URL* makes Jitsi join without camera and microphone, as a safeguard against manipulated links (found while testing) |
+
+Checked in the net-log: during a call, the runner's browser contacts only the VM.
+
+## Setting up the VM
+
+**Requirements**
+- Ubuntu VM with 2 vCPU, 4 GB RAM and 20 GB disk, e.g. SWITCHengines, Exoscale or Hetzner (about 5–10 €/month)
+- A public IPv4 address
+- Inbound ports open in the provider's firewall:
+  - **80/tcp** (Let's Encrypt)
+  - **443/tcp** (web, API, game)
+  - **10000/udp** (call media)
+
+```bash
+# on the VM (Docker from the official repository, see Docker's install guide), then:
+git clone https://github.com/KarlaRuggaber/Can-My-Network-Tell-How-I-Feel-.git can-my-network
+cd can-my-network/peer-vm
+./setup.sh <public-ip>              # writes .env with secrets, prints the gateway settings
+sudo docker compose up -d --build
+curl -s https://<ip-with-dashes>.sslip.io/peer/health     # {"calls": 0}
+```
+
+`setup.sh` prints two lines for the gateway. Put them into `/opt/can-my-network/traffic-runner/peer.env`, a root-owned file with mode 600 that is not in git:
+
+```bash
+sudo install -m 600 /dev/null /opt/can-my-network/traffic-runner/peer.env
+sudo nano /opt/can-my-network/traffic-runner/peer.env   # RUNNER_PEER_URL=… and RUNNER_PEER_TOKEN=…
+sudo /opt/can-my-network/traffic-runner/scripts/deploy.sh
+```
+
+Without `peer.env`, `video_call`, `voice_call` and `gaming_session` log `not_implemented`.
+
+## Local test (laptop)
+
+```bash
+./setup.sh --local                  # DOMAIN=peer.test, Caddy's internal CA
+docker compose up -d --build
+# runner container in the same Docker network:
+docker run --rm --shm-size 1g --network peer-vm_meet.jitsi \
+  -e RUNNER_PEER_URL=https://peer.test -e RUNNER_PEER_TOKEN=<PEER_TOKEN from .env> -e RUNNER_PEER_INSECURE_TLS=1 \
+  traffic-runner:0.1.0 python3 -m runner run --device student_a_laptop --activity video_call \
+  --duration 2m --seed 1 --profile test --block-id local1
+docker compose down                 # when done
+```
+
+## Measured (laptop, 23.10.2026)
+
+| Run | Up | Down | Notes |
+|---|---|---|---|
+| `video_call`, 2 min | 13 MB | 9.4 MB | ≈ 0.9 Mbit/s up, upload-heavy. The download includes ~2 MB for loading the Jitsi page |
+| `voice_call`, 90 s | 0.5 MB | 2.5 MB | ≈ 40 kbit/s audio plus the page |
+| `gaming_session` game phase | ≈ 50 kbit/s | ≈ 60 kbit/s | many small packets in both directions; the store pages before it dominate the volume |
+
+Roughly 1 h of video call ≈ 0.6 GB up + 0.4 GB down through the hotspot.
+
+## Security and limits
+
+- **Join API:** needs the bearer token. Room names are an HMAC of the run (`profile/seed/block_id`) with the token, so they cannot be guessed.
+- **Limits:** at most 3 calls at a time and 4 h per call.
+- **Game page:** public, but it only exchanges toy game states. It can be abused at most as a small echo service.
+- **Secrets:** `.env` holds the Jitsi passwords and the token. Mode 600, never committed (`.gitignore`).
