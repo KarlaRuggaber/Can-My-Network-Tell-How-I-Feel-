@@ -393,7 +393,7 @@ Without a fix, the live runs would have run the gateway out of memory within the
 
 **Remote access.** Thierry installed Tailscale at 16:31 (Section 8, HardwareSetup §17): the gateway is `can-my-network-gw` (100.124.37.62) in his tailnet, tailscaled runs with `--netfilter-mode=off`, and `/etc/nftables.conf` opens only SSH on `tailscale0`. Tested from outside the hotspot (Thierry, and SSH from another network at 16:40).
 
-**SSH from the AP network.** From a laptop on the AP's WiFi, `ssh kathy@10.42.0.1` failed with "Host key verification failed", because `known_hosts` lists the gateway under 172.20.10.10. Same machine, same keys (fingerprints compared). The hotspot address 172.20.10.10 works from both networks, so the commands in this document keep using it; from any other network use Tailscale (`can-my-network-gw`, Section 8).
+**SSH from the AP network.** From a laptop on the AP's WiFi, `ssh kathy@10.42.0.1` failed with "Host key verification failed", because `known_hosts` lists the gateway under 172.20.10.10. Same machine, same keys (fingerprints compared). The hotspot address worked from both networks. Since the uplink uses DHCP (23.10 evening, HardwareSetup §17), the gateway no longer has a fixed hotspot address (it got 172.20.10.3); use Tailscale (`can-my-network-gw`, Section 8) for everything.
 
 ## 8. Operating the system
 
@@ -402,7 +402,7 @@ Without a fix, the live runs would have run the gateway out of memory within the
 On the laptop (connected to the same hotspot as the gateway):
 
 ```bash
-ssh -i ~/.ssh/minipc_deploy -N -L 8501:localhost:8501 kathy@172.20.10.10
+ssh -i ~/.ssh/minipc_deploy -N -L 8501:localhost:8501 kathy@can-my-network-gw   # Tailscale, from any network
 ```
 
 The command prints nothing and keeps running. That is the open tunnel. Then open http://localhost:8501, log in, and select the `gw_*` datasets (type "Other"). Ctrl+C closes the tunnel.
