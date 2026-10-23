@@ -1,8 +1,8 @@
 [Unit]
-Description=Daily traffic report at 08:00
+Description=Daily traffic report at 08:00 Zurich time (the gateway clock is UTC)
 
 [Timer]
-OnCalendar=*-*-* 08:00:00
+OnCalendar=*-*-* 08:00:00 Europe/Zurich
 Persistent=true
 
 [Install]

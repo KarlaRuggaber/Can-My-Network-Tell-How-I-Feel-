@@ -81,28 +81,41 @@ def with_duration(args: list[str], seconds: int) -> list[str]:
 
 class State:
     """Append-only JSON lines: one entry per event (start, late, missed, exit). Locked against a second
-    executor on the same plan."""
+    executor on the same plan; `readonly` (for --status) reads without the lock, while an executor runs."""
 
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, readonly: bool = False):
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._f = open(self.path, "a+", encoding="utf-8")
-        try:
-            fcntl.flock(self._f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            self._f.close()
-            raise ExecutorError(f"{self.path} is locked: another executor runs this plan") from None
-        self._f.seek(0)
+        self.readonly = readonly
         self.events: dict[str, list[dict]] = {}
-        for line in self._f:
+        if readonly:
+            self._f = None
+            lines = self.path.read_text(encoding="utf-8").splitlines() if self.path.exists() else []
+        else:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._f = open(self.path, "a+", encoding="utf-8")
+            try:
+                fcntl.flock(self._f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                self._f.close()
+                raise ExecutorError(f"{self.path} is locked: another executor runs this plan") from None
+            self._f.seek(0)
+            lines = self._f.read().splitlines()
+        for line in lines:
             if line.strip():
-                e = json.loads(line)
+                try:
+                    e = json.loads(line)
+                except json.JSONDecodeError:
+                    if readonly:   # a line the running executor is writing right now
+                        continue
+                    raise
                 self.events.setdefault(e["block_id"], []).append(e)
 
     def handled(self, block_id: str) -> bool:
         return any(e["event"] in ("start", "late", "missed") for e in self.events.get(block_id, ()))
 
     def record(self, event: str, block_id: str, at: datetime, **fields) -> None:
+        if self._f is None:
+            raise ExecutorError("state opened read-only")
         e = {"t": at.isoformat(timespec="seconds"), "event": event, "block_id": block_id, **fields}
         self._f.write(json.dumps(e) + "\n")
         self._f.flush()
@@ -115,7 +128,8 @@ class State:
                 if any(e["event"] in ("start", "late") for e in es) and not any(e["event"] == "exit" for e in es)]
 
     def close(self) -> None:
-        self._f.close()
+        if self._f is not None:
+            self._f.close()
 
 
 class RealClock:
@@ -246,11 +260,11 @@ def main(args) -> int:
             what = "wait" if c.start > now else ex.decide(c, now)[0]
             print(f"{c.start.astimezone(ZURICH).isoformat(timespec='seconds')}  {what:6s}  {c.device}  {c.block_id}")
         return 0
+    if args.status:   # read-only: works while the executor runs
+        print(status(commands, State(args.state, readonly=True), datetime.now(UTC)))
+        return 0
     state = State(args.state)
     try:
-        if args.status:
-            print(status(commands, state, datetime.now(UTC)))
-            return 0
         script = Path(args.runner_dir) / RUN_SCRIPT
         if not os.access(script, os.X_OK):
             raise ExecutorError(f"{script} is missing or not executable (--runner-dir)")

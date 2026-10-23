@@ -307,6 +307,94 @@ All other metric values of these days are unchanged. The thesis datasets are not
 
 **Deployment.** `git pull` on the gateway, app image rebuilt, container recreated. The feature cache of the gateway data (one CSV, computed with the old lookup) was moved to `/var/tmp/feature_cache-before-hostfix-202610230709/`, because the cache only notices new data, not new code. Check on the gateway afterwards: inbound rows of the pilot without SLD 98.7 % → 0.5 %.
 
+### 7.8 Scheduler, run setup, pilot and gateway fixes (23.10.2026)
+
+On 23.10 the missing piece between the profiles and the runner was built and the gateway was prepared for the first live run, which starts on Sun 25.10. All code is in the repository, in Thierry's name; the gateway steps were run over SSH (user `kathy`, temporary sudo rule, Section 10). Times below are Zurich time (the gateway clock is UTC).
+
+**Scheduler** ([scheduler/README.md](../scheduler/README.md), PRs #3–#5). `python -m scheduler plan` turns a profile (its §9 "Script specification", as YAML in `scheduler/profiles/`) and a seed into the ground-truth plan: one row per block with absolute start and end time, device, activity, mix and the runner's arguments. It writes `plan.csv` (the runner's ground-truth columns plus `phase`, `profile_block`, `flag`, …) and `plan.commands.tsv` (one `scripts/run-activity.sh …` call per block). Each row's `block_id` is written by the runner into `ground_truth.csv`, so a reported likelihood can be traced back to the profile block that produced it.
+
+| Part | What it does |
+| --- | --- |
+| Profiles | `student`, `9to5-worker` (tier 0); `insomnia-moderate`, `mdd-severe-suicidality`, `social-anxiety-moderate` (tier 2, patches on their tier-0 profile) |
+| Rules (catalog §1) | Only seeded randomness (one stream per day/block, so a baseline phase equals the tier-0 profile run alone with the same seed); Europe/Zurich via `zoneinfo` (DST-safe); nights belong to the day they start on; away periods drop blocks and cancel evenings; overlaps on one device run one after the other; calls are exclusive across devices (music and the gaming voice chat excepted); `count`, `per_week`, `per_window`, `days_per_week`, `nights_per_window`, `keep_per_window` |
+| Clinical extras | `scale`/`duration_scale` ("baseline × f", f once per seed), skipped campus days (MDD), kept and replaced going-out evenings (SAD), conditions on the night's sleep onset, consecutive parts of an evening (SAD), the suicidality sequence (`flag=sensitive`) |
+| Executor | `python -m scheduler execute` replays `plan.commands.tsv` live: absolute start times, one process per block (`sudo …/run-activity.sh`), devices in parallel; a state file written before each start, so a restart or reboot never starts a block twice; late blocks run with the remaining time or are recorded as missed |
+| Push report | `python -m scheduler report` compares each block due in the window with `ground_truth.csv` and the state file, and checks executors, new Parquet partitions, memory, OOM kills, disk and services; pushes to an ntfy topic (README §5.2) |
+| Tests | 430 (pytest): reproducibility, coverage of the requested days, every rule over several seeds and all profiles, executor restarts/late starts/DST, report cases |
+
+**Decisions of 23.10** (Thierry; details in scheduler README §7–8):
+
+| Topic | Decision |
+| --- | --- |
+| Window start | The warm-up is the **Sunday** before the 14-day window; `--start` must be a Sunday (`--any-start` for pilots) |
+| Noise | One duration factor per day: U(0.75, 1.25) for the student, U(0.85, 1.15) for the 9-to-5 (the profiles' "±25 % / ±15 % on durations"); insomnia's night bursts are exempt (≤ 5 min threshold) |
+| Overlaps | Calls are placed first; work and study blocks are cut around them. Blocks with a fixed start may slip by up to 30 min |
+| Student campus | Late-lecture days start between 10:30 and 14:00 (the profile's 08:00–14:00 could start before waking) |
+| MDD / SAD | The proposed defaults for the constructs their §9 leaves open (README §8); SAD's home evenings are split into consecutive parts by share (stream, gaming, social) |
+| Run | All three clinical personas in parallel, each with 14 baseline days, seeds 1/2/3 |
+
+**Runner interface.** The commands pass `--platform` (ignored by the runner, every call goes to the peer's Jitsi), `--lookups N` (drawn per row) and `--mic-share 0.1` for the SAD calls (runner since `dca94cd`). With Karla's activities of 23.10 only `messaging` and `social_post` are still stubs: 5 % of the student's and 3 % of the 9-to-5's planned activity time (before: 23 % and 11 %).
+
+**The run** (plans generated against `traffic-runner/config/devices.csv`, files in `/var/lib/traffic-executor/` on the gateway):
+
+| Dataset (persona) | Profile | Seed | Rows | Warm-up | Baseline (tier 0) | Profile phase |
+| --- | --- | --- | --- | --- | --- | --- |
+| `gw_insomnia_a` (Ben) | 9-to-5 worker → insomnia-moderate | 1 | 491 | Sun 25.10 | Mon 26.10 – Sun 08.11 | Mon 09.11 – Sun 22.11 |
+| `gw_mdd_suicidality_a` (Maria) | student → mdd-severe-suicidality | 2 | 704 | Sun 25.10 | Mon 26.10 – Sun 08.11 | Mon 09.11 – Sun 22.11 |
+| `gw_social_anxiety_a` (Carl) | student → social-anxiety-moderate | 3 | 825 | Sun 25.10 | Mon 26.10 – Sun 08.11 | Mon 09.11 – Sun 22.11 |
+
+The warm-up Sunday is also the switch to winter time (a 25-hour day); the scheduler and the executor work with absolute times, so nothing special is needed. The MDD profile is to be reviewed by Lukasz before its phase starts on 09.11 (profile header).
+
+**Capacity estimate** (before the pilot). Over the 29 days of the three plans, 0–3 browser runs overlap most of the time, 5 or more in about 1 % of the minutes, with peaks of 7–8 runs and at most 2 calls at once. With the memory figures of HardwareSetup §16 (base 3.5 GB, ~0.45 GB per run, ~0.45 GB of peer per call) the 7.1 GB would be exceeded for about 60 min in total, around noon and 22–24 h. The pilot was chosen to test this: it replays the plans' busiest hour.
+
+**Installed on the gateway** (15:43–15:46):
+- `git pull` of the clone (scheduler, report, units); `/var/lib/traffic-executor/` and `/var/log/traffic-executor/`
+- the units from `scheduler/systemd/` in `/etc/systemd/system/`; `traffic-sample.timer` enabled (one memory sample per minute → `/var/lib/traffic-executor/gateway-samples.csv`)
+- the three plans (`.csv` + `.commands.tsv`)
+- `/etc/traffic-report.env` (mode 600) with a random ntfy topic; a test push arrived on Thierry's phone
+- after the pilot (17:04): `traffic-executor@gw_insomnia_a`, `@gw_mdd_suicidality_a`, `@gw_social_anxiety_a` enabled (449, 670 and 777 blocks pending, first block Sun 25.10 08:05); `traffic-report.timer` (08:00 Zurich time) and `traffic-watch.timer` (hourly) enabled; the first real report arrived ("Gateway: all good")
+- the plans on the gateway are byte-identical to plans generated from the current main (checked with SHA-1)
+
+**Pilot** (16:00–17:00). `run-2026-10-25/make_pilot.py` (outside the repository) took the plans' busiest hour by memory load, Wed 04.11 20:55–21:55, and shifted it to today: 12 blocks on the six new devices, among them two gaming sessions with voice chat in parallel, a stream, `social_passive` and phone checks. Block IDs `pilot-<device>-…`, `--profile pilot`, own state file. It ran as a transient unit (`systemd-run --unit traffic-pilot`).
+
+**Pilot results** (state file, ground-truth log, memory samples, Parquet data):
+
+| Check | Result |
+| --- | --- |
+| Executor | 12 of 12 blocks started on time (0 late, 0 missed); parallel starts on three devices at 16:00 |
+| Ground truth | 10 `ok`; 1 `not_implemented` (`messaging`, an expected stub); 1 `error`: YouTube `video_stream` on `mdd_suicidality_a_laptop` stopped after 2 min with "media stopped playing (state=stalled)", so 29 min of that block stayed silent (open issue 14) |
+| Calls and gaming | Both gaming sessions with voice chat ran their full length (28 min and 59 min) |
+| Data | All three datasets received partitions for 16:00–17:00 with only their own IPs: `gw_insomnia_a` 311 k rows / 331 MiB, `gw_mdd_suicidality_a` 878 k / 685 MiB, `gw_social_anxiety_a` 694 k / 152 MiB (Carl had only laptop blocks in this hour) |
+| Memory | Available 1.07–2.58 GB, median 1.56 GB; swap use ~2 GB of 4 GB; no OOM kill |
+| CPU | Load up to 11.3 on 6 cores when six blocks started at 16:00, then 3–7 |
+| tapfeed temp files on disk | 906 MB (br-sim) and 422 MB (eno1) after the hour |
+
+The gateway copes with the busiest hour of the three plans, with about 1 GB of headroom at the worst minute (after the tapfeed fix below). The pilot's Parquet data (only pilot traffic) was moved to `/var/tmp/pilot-20261023/processed_parquet/`, so it does not enter the three datasets' history; its executor files and logs are in `/var/tmp/pilot-20261023/executor/`. The pilot's ground-truth rows stay in the log with `profile=pilot`.
+
+**Finding: tapfeed kept a growing capture file in RAM.** With nothing running, only 1.9 GB of memory was available at 15:40, and 1.27 GB at 15:56. The cause was not the runner: tapfeed's `tshark` (through `dumpcap`) stores every captured packet in a temporary pcapng in `/tmp`, which only grows, and `/tmp` on the gateway is a tmpfs, i.e. RAM.
+
+| Time | Observation |
+| --- | --- |
+| 15:57 | `/tmp` held 1.6 GB: `wireshark_eno1….pcapng` 1.5 GB (tapfeed@eno1, running for 7 h), `wireshark_br-sim….pcapng` 144 MB; tshark itself 864 MB RSS |
+| 15:58 | Restart of `tapfeed@eno1` and `tapfeed@br-sim`: the files are deleted on exit, available memory 1.3 → 3.7 GB |
+| 16:01–16:02 | During the pilot the br-sim file grew by **~90–100 MB/min** (138 MB after 1.5 min, 248 MB after 2.5 min); available memory fell to 1.09 GB, swap use rose to 2.2 GB |
+| 16:02 | Another restart of `tapfeed@br-sim` (a repeating restart timer was refused by the permission policy of the AI tooling, and not worked around) |
+
+Without a fix, the live runs would have run the gateway out of memory within the first hour. It also explains part of the 3.5 GB "baseline" measured in HardwareSetup §16: the eno1 file had been growing since the last boot.
+
+**Fix** (PRs #6 and #7, HardwareSetup §17):
+- `TMPDIR` does not help: `dumpcap` has file capabilities (`cap_net_admin,cap_net_raw=eip`), and the C library ignores `TMPDIR` for such programs. Checked by running the new script as a separate process during the pilot: its temp file still went to `/tmp`.
+- Drop-in `/etc/systemd/system/tapfeed@.service.d/tmp-on-disk.conf`: every tapfeed instance gets a disk-backed `/tmp` of its own, `/var/lib/tapfeed/<interface>` (`StateDirectory=tapfeed/%i`, `BindPaths=/var/lib/tapfeed/%i:/tmp`).
+- `tapfeed`: tshark stops every `TAPFEED_ROTATE` seconds (default 1 h; its temp file is deleted on exit) and starts again at once. This bounds the disk use; the gap is well under a second, DNS is not affected. `TAPFEED_OUT` allows test runs without touching the real feed.
+- First install at 16:09 failed: the drop-in created the folder in an `ExecStartPre`, but systemd sets up the bind mount before that runs, so both instances failed with `226/NAMESPACE`. With `StateDirectory` (created by systemd before the namespace) both were active again at 16:10. **The feed had a gap of about one minute (16:09:40–16:10:30).**
+- Check: both instances active; temp files in `/var/lib/tapfeed/br-sim` and `/var/lib/tapfeed/eno1`, none in `/tmp`; SNI lines of the runner devices (10.42.1.x) arrive again; the gateway's files equal the repository (`cfd242a`). Backup of the old script: `/root/tapgw-backup-20261023-1409/`.
+- Rollback: remove the drop-in, copy `tapfeed` back from the backup, `systemctl daemon-reload`, restart both instances.
+- **tshark's own memory** grows too: after 30 min of the pilot 410 MB (br-sim) and 302 MB (eno1). The hourly restart frees it, but at peak load br-sim's tshark would reach about 0.8 GB before each restart. Recommended: `TAPFEED_ROTATE=600` (open issue 16).
+
+**Remote access.** Thierry installed Tailscale at 16:31 (Section 8, HardwareSetup §17): the gateway is `can-my-network-gw` (100.124.37.62) in his tailnet, tailscaled runs with `--netfilter-mode=off`, and `/etc/nftables.conf` opens only SSH on `tailscale0`. Tested from outside the hotspot (Thierry, and SSH from another network at 16:40).
+
+**SSH from the AP network.** From a laptop on the AP's WiFi, `ssh kathy@10.42.0.1` failed with "Host key verification failed", because `known_hosts` lists the gateway under 172.20.10.10. Same machine, same keys (fingerprints compared). The hotspot address 172.20.10.10 works from both networks, so the commands in this document keep using it; from any other network use Tailscale (`can-my-network-gw`, Section 8).
+
 ## 8. Operating the system
 
 ### Open the app
@@ -372,6 +460,19 @@ sudo sqlite3 /var/lib/tapingest/state.sqlite "select rule, sum(packets) from dro
 ls /opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet/
 sudo docker ps
 sudo docker logs --tail 50 pcap-to-dsm5
+```
+
+Live runs (scheduler README §5):
+
+```bash
+systemctl status 'traffic-executor@*' --no-pager                 # one executor per dataset
+cd /opt/can-my-network/scheduler
+sudo python3 -m scheduler execute --commands /var/lib/traffic-executor/gw_insomnia_a.commands.tsv \
+    --state /var/lib/traffic-executor/gw_insomnia_a.state.jsonl --status    # started, late, missed, next block
+sudo python3 -m scheduler report --hours 24                       # the push report, printed only (no NTFY_URL in the shell)
+systemctl list-timers 'traffic-*' --no-pager                      # sample (1 min), report (08:00), watch (hourly)
+sudo du -sh /var/lib/tapfeed/*                                     # tshark's temp files (on disk since 23.10)
+tailscale status
 ```
 
 Note: the system clock of the gateway is **UTC**. `journalctl` and `date` show UTC, while the ingest log lines, the partitions and the app use Zurich time. SQLite's `localtime` also prints UTC on this machine.
@@ -443,6 +544,13 @@ sudo systemctl start tapingest
 | 19 | Deployment | The clone on the gateway did not contain `traffic-runner/` | Nobody had pulled since 16.10; the runner ran from a copy | `git pull`, runner moved into the clone |
 | 20 | Data | 63.8 % of the pilot's rows without a domain | App looks up hostnames by destination IP only, so inbound packets never get one | Remote-side lookup (Section 7.7): 0.3 % |
 | 21 | App | After a metric change, the app would still show old values | The feature-cache CSV is only invalidated by newer partitions | Move `feature_cache/` away after metric changes (Section 8) |
+| 22 | Memory | Only 1.9 GB available on an idle gateway; 90–100 MB/min less during the pilot | tapfeed's tshark keeps a growing temporary pcapng in `/tmp`, a tmpfs (RAM) | Disk-backed `/tmp` per tapfeed instance plus an hourly tshark restart (Section 7.8) |
+| 23 | Memory | `TMPDIR` did not move tshark's temp file | `dumpcap` has file capabilities; the C library ignores `TMPDIR` for it | Bind mount of a disk folder over the service's `/tmp` instead |
+| 24 | systemd | Both tapfeed instances failed with `226/NAMESPACE` after the first fix (feed down ~1 min) | `BindPaths` source created in `ExecStartPre`, but the namespace is set up before | `StateDirectory=tapfeed/%i`, which systemd creates first |
+| 25 | Executor | The pilot file was refused: "block … appears twice" | Block IDs are unique per plan only; the pilot merged three plans | Pilot IDs include the device; the real run has one executor per plan |
+| 26 | Access | `Host key verification failed` for `kathy@10.42.0.1` | `known_hosts` has the gateway under 172.20.10.10 | Same keys (compared); use 172.20.10.10, which works from the hotspot and from the AP network |
+| 27 | Executor | `--status` refused while the executor ran ("state file is locked") | The status view opened the state file like an executor, with the lock | `--status` reads without the lock (fixed 23.10) |
+| 28 | Report | The daily report would have arrived at 10:00 instead of 08:00 | `OnCalendar=08:00` is read in the system time zone, which is UTC on the gateway | `OnCalendar=*-*-* 08:00:00 Europe/Zurich` (also correct after the switch to winter time) |
 
 ## 10. Security notes
 
@@ -451,8 +559,9 @@ sudo systemctl start tapingest
 - The Parquet data contains client IPs and visited domain names. It stays on the gateway (no sync to laptops).
 - **To remove after setup:** `/etc/sudoers.d/90-temp-deploy` and the `minipc-deploy` line in `/home/kathy/.ssh/authorized_keys`. Both give full root access without a password while they exist.
 - SSH on the uplink (`wlp2s0`) is still allowed (HardwareSetup Section 13).
-- **Tailscale** (if set up, §8): only SSH is open on `tailscale0`, and tailscaled does not touch the firewall (`--netfilter-mode=off`). Anyone in the tailnet can try SSH; keep the tailnet to the project accounts.
-- The push report (scheduler README §5.2) sends counts, block IDs and gateway figures to an ntfy topic, but no domains or IPs. A long random topic name keeps it private.
+- **Tailscale** (set up 23.10, §8): only SSH is open on `tailscale0`, and tailscaled does not touch the firewall (`--netfilter-mode=off`). Anyone in the tailnet can try SSH; keep the tailnet to the project accounts.
+- The temporary passwordless sudo rule was still in place on 23.10 and was used for the run setup. Remove it once the run is set up (item 2 below).
+- The push report (scheduler README §5.2) sends counts, block IDs and gateway figures to an ntfy topic, but no domains or IPs. A long random topic name keeps it private. The topic is in `/etc/traffic-report.env` (root, mode 600).
 
 ## 11. Open issues and next steps
 
@@ -467,6 +576,11 @@ sudo systemctl start tapingest
 9. **Retention policy.** Decided 23.10: raw pcaps are kept in both folders (the `2d` age on `ready/` was removed, HardwareSetup §15). Still open: a policy for Parquet and for when the disk fills up.
 10. **Real devices in the device map.** The ingest reads one `devices.csv`, which also generates runner containers. Real test phones need either a second `--devices` file or a role the runner's generator skips.
 11. **Dataset names.** Done 23.10: `gw_<profile>_<letter>`, devices `<profile>_<letter>_<role>` (activity-catalog §1), because the app groups `gw_student_01` and `gw_student_02` as `gw_student`. The runner's devices are renamed (`student_a_*` → `gw_student_a`), and its validator enforces the rule. Data ingested before the rename stays under `gw_student_01`.
+12. ~~Live run setup~~ Done 23.10 (Section 7.8): executors and report timers enabled, pilot data moved aside. The run starts Sun 25.10 with the warm-up day; watch the push reports.
+13. **MDD review** by Lukasz before 09.11, when the MDD phase starts. A changed profile only needs a new plan; the baseline rows stay identical (same seed), so the executor continues.
+14. **YouTube stalls end the block.** In the pilot, `video_stream` aborted with `state=stalled` after 2 min and the block's remaining 29 min stayed silent. Runner (Karla): reload or switch to another video on a stall instead of failing.
+15. **CPU at peaks.** The load reached 11 (6 cores) while the pilot's six blocks started. Watch the push report's load figure; if pages time out at peaks, stop the UniFi controller during the run (an adopted AP keeps working).
+16. **tapfeed rotation** every 10 min instead of 1 h (`Environment=TAPFEED_ROTATE=600` in the drop-in), so tshark's own memory stays near 140 MB at peak load (Section 7.8).
 
 ## 12. Appendix: configuration and commands
 

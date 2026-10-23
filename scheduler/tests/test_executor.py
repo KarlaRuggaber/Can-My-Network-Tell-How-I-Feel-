@@ -211,3 +211,14 @@ def test_executor_needs_no_pyyaml(tmp_path):
             "'--status']))")
     r = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+def test_status_works_while_the_executor_runs(tmp_path, capsys):
+    p = tsv(tmp_path, [(T0, T0 + m(1), "s_phone", "b1")])
+    running = executor.State(tmp_path / "state.jsonl")       # holds the lock, like the live executor
+    running.record("start", "b1", T0)
+    with open(tmp_path / "state.jsonl", "a") as f:
+        f.write('{"half a line')                             # being written right now
+    assert cli.main(["execute", "--commands", str(p), "--state", str(tmp_path / "state.jsonl"), "--status"]) == 0
+    assert "1 started on time" in capsys.readouterr().out
+    running.close()
