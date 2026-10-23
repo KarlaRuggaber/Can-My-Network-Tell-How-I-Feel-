@@ -1,0 +1,61 @@
+# Machine-readable §9 of profiles/tier2-clinical/mdd-severe-suicidality.md (format: scheduler/README.md §2).
+# A patch on student.yaml; the same file is the baseline for --baseline-days. Sensitive profile: review
+# with Lukasz before use (profile header). Defaults for the constructs §9 leaves open: README §8 (23.10).
+profile: mdd-severe-suicidality
+source: profiles/tier2-clinical/mdd-severe-suicidality.md
+tier: 2
+extends: student
+
+patch:
+  anchors:
+    wake:
+      - {day_types: [weekend], value: 'N("09:30", 30m)'}          # weekend_anchors: like lecture_late (structure collapses)
+      - {day_types: all, shift: 'U(30m, 150m)', unless_after: early_waking}   # "on days without early waking"
+    sleep:
+      - {days: [Fri, Sat], value: 'N("00:30", 45m)'}              # weekend_anchors: like nights_sun_to_thu
+      - {day_types: all, shift: 'U(0m, 150m)', sd_scale: 1.7}     # later and more irregular (variance × 3)
+
+  modify:
+    # activity collapse; "baseline × f": f drawn once per seed (scale / duration_scale)
+    day_checks:     {scale: 'U(0.6, 0.7)', mix: {social_passive: .5, streaming: .3, messaging: .1, news: .1},
+                     pages: 3-6, dwell: 5-20s}                     # concentration: fragmented checks
+    messaging_day:  {scale: 'U(0.3, 0.5)'}                        # social withdrawal
+    evening_social: {scale: 'U(0.3, 0.5)'}
+    social_post:    {per_window: 0-1}                             # active social use almost gone
+    family_call:    {duration_scale: 0.6}                         # usually kept, shorter
+    group_call:     {scale: 0.3}
+    study_home:     {duration_scale: 'U(0.3, 0.5)'}               # productivity −50 to −70 %
+    study_am:       {duration_scale: 'U(0.3, 0.5)'}               # fill blocks: shorter window from its start
+    study_pm:       {duration_scale: 'U(0.3, 0.5)'}
+    gaming:         {scale: 'U(0.2, 0.4)', voice: false}          # anhedonia: hobby −60 to −80 %
+    evening_stream: {duration: 90m-180m}                          # passive shift; may pass midnight, ends by sleep
+    weekend_slow:   {duration_scale: 1.5}
+    # remove_away
+    going_out:      {keep_per_window: 0}
+    weekend_out:    {keep_per_window: 0-1}
+    campus:         {attend_share: 0.5, skipped_allow: [day_checks]}   # skipped days: at home, idle + day_checks only
+
+  add:
+    # night of day d; the morning after is on d+1. `then: idle_connected until wake`: nothing is scheduled before wake
+    - {id: early_waking, day_types: all, days_per_week: 3-4, night: true, at: 'U("04:00", "05:00")',
+       only_if: {sleep_before: "02:30"}, device: phone, activity: phone_check, duration: 3m-15m, pages: 1-2,
+       mix: {social_passive: .6, news: .4}}
+    - {id: night_passive, day_types: all, nights_per_window: 4-6, night: true, within: ["02:00", "03:30"],
+       only_if: {sleep_before: "01:30"}, device: phone, activity: social_passive, duration: 20m-60m,
+       mix: {social_passive: .5, streaming: .5}}
+    - {id: rumination, day_types: all, count: 1-2, within: ["14:00", "02:00"], device: phone,
+       activity: repeat_visit_loop, duration: 10m-30m, mix: {social_passive: .6, news: .4}}
+    # suicidality_overlay (section 8 note, mapping file §5): 2-4 episodes on different days, 23:00-04:00, also
+    # after sleep onset (awakenings). DNS-only placeholders for self-harm-adjacent content, never real domains.
+    - id: suicidality
+      day_types: all
+      per_window: 2-4
+      night: true
+      within: ["23:00", "04:00"]
+      device: phone
+      flag: sensitive
+      sequence:
+        - {activity: repeat_visit_loop, duration: 10m-20m, probability: 0.7,
+           mix: {social_passive: .6, news: .4}}                   # scheduler: §9 gives no mix; the rumination mix
+        - {activity: crisis_resource_visit, duration: 2m-10m, mix: {crisis_help: 1}, pages: 1-3}
+        - {activity: sh_adjacent_lookup, probability: 0.5, lookups: 1-3}

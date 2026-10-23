@@ -1,0 +1,75 @@
+# Machine-readable §9 of profiles/tier0-healthy/student.md (format: scheduler/README.md §2).
+# Block IDs, windows, durations and mixes are taken over 1:1; deviations are marked "scheduler:".
+profile: student
+source: profiles/tier0-healthy/student.md
+tier: 0
+timezone: Europe/Zurich
+window_days: 14
+warmup_days: 1
+start_weekday: Mon
+devices: [phone, laptop]
+noise: {duration: 0.25}          # "±25 % on durations": one factor U(0.75, 1.25) per day (day-to-day volume noise)
+
+day_types:
+  lecture:    [Mon, Tue, Wed, Thu]
+  self_study: [Fri]
+  weekend:    [Sat, Sun]
+
+timetable:                       # drawn once per seed, repeats every week
+  tags:
+    lecture_early: {choose: 2, of: lecture, else: lecture_late}   # early_lecture_share 0.5
+  values:
+    campus_start:
+      lecture_early: "08:00"
+      lecture_late: 'U("10:30", "14:00")'   # scheduler: profile says U("08:00", "14:00"); late days start after the late wake
+    campus_length: 'U(2h, 5h)'
+
+anchors:
+  wake:
+    - {day_types: [lecture_early], value: 'N("07:30", 30m)'}
+    - {day_types: [lecture_late],  value: 'N("09:30", 30m)'}
+    - {day_types: [self_study],    value: 'N("09:00", 45m)'}
+    - {day_types: [weekend],       value: 'N("10:00", 60m)'}
+  sleep:                         # night of day d; times before 12:00 are on d+1
+    - {days: [Sun, Mon, Tue, Wed, Thu], value: 'N("00:30", 45m)'}
+    - {days: [Fri, Sat],                value: 'N("01:30", 30m)'}
+
+away:
+  - {id: campus,      day_types: [lecture], from: timetable.campus_start, length: timetable.campus_length,
+     not_before: wake + 20m}
+  - {id: weekend_out, day_types: [weekend], per_week: 1, from: "14:00", length: 2h-4h}
+  - {id: going_out,   days: [Thu, Fri, Sat], per_week: 1-2, from: 'N("20:00", 30m)', to: 'N("01:00", 45m)',
+     replaces: evening, sleep_after_return: 15m-30m}
+
+blocks:
+  # morning
+  - {id: wake_check,     day_types: all, at: wake, device: phone, activity: phone_check, duration: 5m-15m,
+     mix: {messaging: .4, social_passive: .4, news: .2}}
+  # study
+  - {id: study_home,     day_types: [lecture], from: away.campus.end, duration: 1h-3h, device: laptop,
+     activity: study_block, with: music_background}
+  - {id: study_am,       day_types: [self_study], from: "10:00", to: "12:30", device: laptop, activity: study_block,
+     with: music_background}
+  - {id: study_pm,       day_types: [self_study], from: "13:30", to: "16:30", device: laptop, activity: study_block}
+  - {id: group_call,     day_types: [lecture, self_study], per_week: 2-3, within: ["13:00", "18:00"], device: laptop,
+     activity: video_call, platform: zoom, duration: 30m-60m}
+  # phone checks while at home
+  - {id: day_checks,     day_types: all, count: 10-18, within: [wake, "20:00"], device: phone, activity: phone_check,
+     duration: 1m-5m, mix: {messaging: .35, social_passive: .45, news: .1, search: .1}}
+  - {id: messaging_day,  day_types: all, count: 3-6, within: [wake, sleep], device: phone, activity: messaging}
+  - {id: social_post,    day_types: all, per_week: 5-7, within: ["12:00", "23:00"], device: phone, activity: social_post}
+  # evening (cancelled on going-out days)
+  - {id: gaming,         group: evening, day_types: all, per_week: 3, within: ["20:00", "23:30"], device: laptop,
+     activity: gaming_session, duration: 60m-120m, voice: true}
+  - {id: evening_stream, group: evening, day_types: all, within: ["19:00", sleep], device: laptop, activity: video_stream,
+     duration: 30m-90m, mix: {streaming: 1}}
+  - {id: evening_social, group: evening, day_types: all, count: 4-8, within: ["18:00", sleep], device: phone,
+     activity: social_passive, duration: 5m-20m}
+  - {id: family_call,    group: evening, days: [Sun], within: ["17:00", "20:00"], device: phone, activity: video_call,
+     platform: jitsi, duration: 25m-35m}
+  # weekend daytime
+  - {id: weekend_slow,   day_types: [weekend], from: wake, duration: 60m-120m, device: phone, activity: social_passive}
+  - {id: weekend_shop,   day_types: [weekend], count: 0-1, within: ["11:00", "18:00"], device: laptop, activity: browse,
+     duration: 15m-40m, mix: {shopping: .7, search: .3}}
+  # bedtime
+  - {id: bedtime_check,  day_types: all, at: sleep - 20m, device: phone, activity: social_passive, duration: 10m-20m}
