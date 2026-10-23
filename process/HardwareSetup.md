@@ -597,3 +597,11 @@ On 23.10 the gateway was prepared for the live runs from 25.10 ([Deployment.md Â
 
 **Rollback.** tapfeed: remove `/etc/systemd/system/tapfeed@.service.d/tmp-on-disk.conf`, copy `tapfeed` back from `/root/tapgw-backup-20261023-1409/`, `systemctl daemon-reload`, restart `tapfeed@eno1` and `tapfeed@br-sim` (without the drop-in, the temp files grow in RAM again). Tailscale: `sudo tailscale down`, restore `/etc/nftables.conf` from the backup and restart nftables.
 
+**Uplink: DHCP and a fourth WiFi (23.10, evening).** For running the whole month at one place, `/etc/netplan/00-installer-config.yaml` got a fourth access point, `WN-C8A770`, next to `Karla`, `iPhone von Thierry` and `bbr`. The gateway joins whichever is in range. At the same time the fixed hotspot settings were removed:
+- the static address `172.20.10.10/28`
+- the default route via `172.20.10.1`
+- the nameservers
+- the duplicate `dhcp4: false`
+
+`dhcp4: true` remains. Reason: the static route would also have applied on the new WiFi, where `172.20.10.1` does not exist, so the gateway would have had no internet there. Applied by Thierry with `netplan try` (automatic rollback), backup in `/root/netplan-backup-*.yaml`. Check: the gateway got 172.20.10.3 from the hotspot, default route via DHCP, internet, Tailscale and all services up. **SSH to 172.20.10.10 no longer works; use Tailscale (`kathy@can-my-network-gw`).** dnsmasq forwards to 9.9.9.9/1.1.1.1 and the firewall refers to the interface `wlp2s0`, so neither depends on the uplink network. A wired uplink (`enp1s0f0`) would need nftables changes, because NAT and forwarding only use `wlp2s0`.
+
