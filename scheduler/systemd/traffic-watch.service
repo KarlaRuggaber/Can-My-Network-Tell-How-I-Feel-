@@ -1,0 +1,10 @@
+# Hourly check of the last hour; sends a push only if something is wrong.
+[Unit]
+Description=Hourly traffic watch (push on problems only)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/can-my-network/scheduler
+EnvironmentFile=/etc/traffic-report.env
+ExecStart=/usr/bin/python3 -m scheduler report --hours 1 --only-problems

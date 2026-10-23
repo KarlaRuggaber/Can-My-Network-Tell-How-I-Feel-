@@ -1,0 +1,9 @@
+[Unit]
+Description=Gateway memory sample every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,17 @@
+# One executor per plan (= dataset): traffic-executor@gw_mdd_a reads /var/lib/traffic-executor/gw_mdd_a.commands.tsv.
+# Install: scheduler/README.md §5.3.
+[Unit]
+Description=Traffic executor for %i
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/can-my-network/scheduler
+ExecStart=/usr/bin/python3 -m scheduler execute --commands /var/lib/traffic-executor/%i.commands.tsv --state /var/lib/traffic-executor/%i.state.jsonl --log-dir /var/log/traffic-executor/%i
+Restart=on-failure
+RestartSec=30
+# stopping or restarting the executor must not stop the blocks that are running
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

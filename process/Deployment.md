@@ -319,6 +319,39 @@ ssh -i ~/.ssh/minipc_deploy -N -L 8501:localhost:8501 kathy@172.20.10.10
 
 The command prints nothing and keeps running. That is the open tunnel. Then open http://localhost:8501, log in, and select the `gw_*` datasets (type "Other"). Ctrl+C closes the tunnel.
 
+### Remote access over Tailscale (from outside the hotspot)
+
+The gateway's uplink is a phone hotspot, which accepts no incoming connections from the internet. [Tailscale](https://tailscale.com) connects outward from the gateway and puts it into a private network (tailnet) with your laptops, so SSH and the app tunnel work from anywhere. tailscaled runs with `--netfilter-mode=off`: `/etc/nftables.conf` stays the only firewall, and it allows only SSH on `tailscale0`.
+
+Steps on the gateway, with the usual routine (backup first; after the firewall step a real phone must still have internet):
+
+```bash
+BK=/root/tapgw-backup-$(date +%Y%m%d-%H%M); sudo install -d -m 700 "$BK"; sudo cp -a /etc/nftables.conf "$BK/"
+# 1. package from Tailscale's apt repository (if "resolute" is not listed yet on pkgs.tailscale.com, use the newest codename there)
+curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/resolute.noarmor.gpg | sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/resolute.tailscale-keyring.list | sudo tee /etc/apt/sources.list.d/tailscale.list
+sudo apt-get update && sudo apt-get install -y tailscale
+# 2. firewall: the repo file has the tailscale0 SSH line (traffic-runner/gateway/nftables.conf)
+cd /opt/can-my-network && git pull
+diff /etc/nftables.conf traffic-runner/gateway/nftables.conf      # only the Tailscale lines are new
+sudo nft -c -f traffic-runner/gateway/nftables.conf && sudo install -m 755 traffic-runner/gateway/nftables.conf /etc/nftables.conf
+sudo systemctl restart nftables
+# 3. join the tailnet: prints a login URL, open it on the laptop and log in with your Tailscale account
+sudo tailscale up --netfilter-mode=off --accept-dns=false --hostname can-my-network-gw
+tailscale status
+systemctl is-active tapcap@eno1 tapfeed@eno1 dnsmasq nftables      # and test a real phone
+# rollback: sudo tailscale down; sudo cp "$BK/nftables.conf" /etc/nftables.conf && sudo systemctl restart nftables
+```
+
+On the laptop: install Tailscale, log in to the same tailnet (invite Karla's account from the admin console), then:
+
+```bash
+ssh -i ~/.ssh/minipc_deploy kathy@can-my-network-gw
+ssh -i ~/.ssh/minipc_deploy -N -L 8501:localhost:8501 kathy@can-my-network-gw     # app: http://localhost:8501
+```
+
+Do not enable Tailscale Serve or Funnel: they would publish services of the gateway. The run's push report (scheduler README §5.2) works without Tailscale.
+
 ### Check the status
 
 Peer stack for the runner's calls and gaming (on the gateway since 23.10, [HardwareSetup.md §16](HardwareSetup.md)):
@@ -418,6 +451,8 @@ sudo systemctl start tapingest
 - The Parquet data contains client IPs and visited domain names. It stays on the gateway (no sync to laptops).
 - **To remove after setup:** `/etc/sudoers.d/90-temp-deploy` and the `minipc-deploy` line in `/home/kathy/.ssh/authorized_keys`. Both give full root access without a password while they exist.
 - SSH on the uplink (`wlp2s0`) is still allowed (HardwareSetup Section 13).
+- **Tailscale** (if set up, §8): only SSH is open on `tailscale0`, and tailscaled does not touch the firewall (`--netfilter-mode=off`). Anyone in the tailnet can try SSH; keep the tailnet to the project accounts.
+- The push report (scheduler README §5.2) sends counts, block IDs and gateway figures to an ntfy topic, but no domains or IPs. A long random topic name keeps it private.
 
 ## 11. Open issues and next steps
 

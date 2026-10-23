@@ -2,7 +2,7 @@
 
 Turns a profile (its §9 "Script specification") and a seed into the **ground-truth plan**: one row per scripted block, with absolute start/end times, device, activity and mix. The same plan drives the live runs (the runner executes it block by block) and, later, the synthetic snippet stitching. Every row has a `block_id`, which the runner writes into `ground_truth.csv`. A reported likelihood can therefore be traced back through the day's rows to the profile block that produced them.
 
-This folder holds the scheduler and the executor that replays a plan live on the gateway (§5.1). It reads `traffic-runner/config/devices.csv` but never changes it.
+This folder holds the scheduler, the executor that replays a plan live on the gateway (§5.1) and the push report that watches the run (§5.2). It reads `traffic-runner/config/devices.csv` but never changes it.
 
 ```
 scheduler/
@@ -18,6 +18,8 @@ scheduler/
     planner.py           day contexts, occurrences, conflict resolution
     output.py            plan CSV + runner commands
     executor.py          python -m scheduler execute: replays the commands live (stdlib only)
+    report.py            python -m scheduler report: push report for the live runs (stdlib only)
+  systemd/               executor, report and memory-sample units for the gateway (§5.3)
   tests/                 pytest
 ```
 
@@ -229,7 +231,7 @@ The rules of catalog §1, plus the decisions the catalog leaves open (marked ⚑
 | `mix` | Runner syntax `news:0.4,messaging:0.4` (empty for calls, music, away) |
 | `duration` | Seconds (`--duration`) |
 | `pages`, `dwell`, `lookups` | Runner overrides, where set. `lookups` is drawn per row (e.g. `2` from the profile's `1-3`), so the plan records exactly what the runner does |
-| `platform`, `options` | Call platform (passed as `--platform`; the runner accepts it and runs every call on the peer's Jitsi); options (`mic_share=0.1`). An option reaches the runner only once it is listed in `catalog.RUNNER_OPTION_FLAGS`: add `"mic_share": "--mic-share"` there when the runner has the flag. Until then it is recorded only, because an unknown flag makes the runner exit without a log row |
+| `platform`, `options` | Call platform (passed as `--platform`; the runner accepts it and runs every call on the peer's Jitsi); options (`mic_share=0.1`). An option reaches the runner only if it is listed in `catalog.RUNNER_OPTION_FLAGS` (now: `mic_share` → `--mic-share`); others are recorded only, because an unknown flag makes the runner exit without a log row |
 | `day` | Day the block belongs to (a night block of day d can start on d+1) |
 | `phase` | `warmup`, `baseline` or `profile` |
 | `dataset`, `profile_block`, `companion_of` | Dataset; block ID in the profile YAML; host `block_id` of a companion |
@@ -266,24 +268,7 @@ python3 -m scheduler execute --commands … --state … --dry-run     # what wou
 | Stopping | SIGTERM stops the executor, not the running blocks (own session; in systemd `KillMode=process`), so their ground-truth rows are written |
 | Output | One log file per block with `--log-dir`, otherwise the executor's stdout (journald). Exit codes go into the state file (runner: 0 ok, 1 error, 2 usage, 3 not_implemented) |
 
-One executor per plan (= per dataset), e.g. as a systemd template unit `/etc/systemd/system/traffic-executor@.service`:
-
-```ini
-[Unit]
-Description=Traffic executor for %i
-After=docker.service network-online.target
-
-[Service]
-WorkingDirectory=/opt/can-my-network/scheduler
-ExecStart=/usr/bin/python3 -m scheduler execute --commands /var/lib/traffic-executor/%i.commands.tsv --state /var/lib/traffic-executor/%i.state.jsonl --log-dir /var/log/traffic-executor/%i
-Restart=on-failure
-KillMode=process
-
-[Install]
-WantedBy=multi-user.target
-```
-
-`sudo systemctl enable --now traffic-executor@gw_student_a`. After a reboot systemd starts it again, and the state file makes it continue where it stopped.
+One executor per plan (= per dataset), as the systemd template unit [`systemd/traffic-executor@.service`](systemd/traffic-executor@.service) (installation: §5.3). After a reboot systemd starts it again, and the state file makes it continue where it stopped.
 
 **Deploys.** `traffic-runner/scripts/deploy.sh` refuses while an activity runs, and a block that starts while the containers are being recreated fails (no ground-truth row). Deploy in a gap: `sudo systemctl stop traffic-executor@…`, wait until no activity runs (`--status`, or deploy.sh's own check), deploy, start the executor again. Blocks that fell into the gap run late or are missed, as above.
 
@@ -293,6 +278,42 @@ WantedBy=multi-user.target
 - `end` earlier than planned = `phone_check` done or video over; `start` later than planned = a late start
 
 Runner state 23.10 (after Karla's `04d776d`): calls and `gaming_session` run against the self-hosted peer (`peer-vm/`, Jitsi plus a WebSocket game); every `--platform` maps to it. Only `messaging` and `social_post` are still stubs (they need test accounts): their rows log `not_implemented` and produce no traffic. Measured over 10 seeds that is **5 % of the student's planned activity time** (messaging 4 %, posting 0.5 %) and **3 % of the 9-to-5's** (messaging). Away needs nothing from the executor: no run is the same as away in the data (Karla, 23.10).
+
+### 5.2 Push report
+
+`python -m scheduler report` compares, per dataset, every block that should have finished in the window with the runner's ground-truth log and the executor's state file. It also checks the gateway, prints the result and pushes it to [ntfy](https://ntfy.sh) (HTTP POST to a topic, shown as a push notification by the ntfy phone app). Stdlib only, like the executor.
+
+| What | Counted as a problem |
+|---|---|
+| Blocks due in the window | `error`; `not_implemented` other than the runner's stubs (`messaging`, `social_post`: e.g. calls when the peer stack is down); no log row: `missed`, `interrupted` (started, reboot), `not started`; logged twice. Starts more than 2 min late are counted, not flagged |
+| Executor | `traffic-executor@<dataset>` not active while blocks are still to come |
+| Data path | no new Parquet partition for 35 min although blocks ran (capture or ingest down) |
+| Gateway | memory below 300 MB available (minimum of the per-minute samples), any OOM kill (from the kernel log, with the process names), less than 5 GB free disk, `tapcap@eno1`, `tapcap@br-sim`, `tapingest` or `docker` not active |
+
+Two timers use it:
+- **Daily summary** at 08:00 for the last 24 h (always sent). Title "Gateway: all good" or "Gateway: N problem(s)". The body has one block per dataset (run day, phase, blocks ok/stub/problems/late, newest partition, next block), the gateway lines and the list of problems.
+- **Hourly watch** for the last hour, sent only when there is a problem.
+
+The report contains counts, block IDs, activity names and gateway figures, no domains or IPs. Anyone who knows the topic name can read an ntfy.sh topic, so use a long random name (`openssl rand -hex 16`) or a self-hosted ntfy with a token (`NTFY_TOKEN`).
+
+### 5.3 Installation on the gateway
+
+After `git pull` in `/opt/can-my-network` (the scheduler lives in the clone):
+
+```bash
+sudo install -d -m 755 /var/lib/traffic-executor /var/log/traffic-executor
+# plans from the laptop: gw_<x>.csv (for the report) and gw_<x>.commands.tsv (for the executor)
+sudo install -m 644 /tmp/gw_*.csv /tmp/gw_*.commands.tsv /var/lib/traffic-executor/
+sudo install -m 644 /opt/can-my-network/scheduler/systemd/traffic-* /etc/systemd/system/
+printf 'NTFY_URL=https://ntfy.sh/%s\n' "$(openssl rand -hex 16)" | sudo tee /etc/traffic-report.env >/dev/null
+sudo chmod 600 /etc/traffic-report.env && sudo cat /etc/traffic-report.env   # subscribe to this topic in the ntfy app
+sudo systemctl daemon-reload
+sudo systemctl enable --now traffic-sample.timer traffic-report.timer traffic-watch.timer
+sudo systemctl start traffic-report.service      # test push right away
+sudo systemctl enable --now traffic-executor@gw_insomnia_a traffic-executor@gw_mdd_a traffic-executor@gw_sad_a
+```
+
+The executors wait until each plan's first block. `systemctl status 'traffic-executor@*'` and `python3 -m scheduler execute --commands … --state … --status` show where they are.
 
 **Synthetic (later).** The synthesizer reads `plan.csv` directly. For each row it takes a recorded snippet of the same `activity_id`, role and `mix` (from the live runs' PCAPs, cut by the ground-truth rows). It trims or loops the snippet to `duration`, shifts it to `start` and rewrites the addresses to the device's IP/MAC from `devices.csv`. Nothing is added outside planned rows: idle stays empty and away is a gap. The synthetic PCAPs then go through the same ingest (`tapingest --once`) as the live ones. Every packet stays traceable to a `block_id` → profile block → profile, which is the traceability the project objective asks for.
 
@@ -322,7 +343,7 @@ Each item says what the scheduler does now. All are small to change.
 - **C5 "Evening blocks"** (for "replaces evening blocks") are not defined. Now: the blocks under the `# evening` comment in §9 (`group: evening`); `bedtime_check` is not one.
 - **C6 Noise lines. Decided 23.10: yes.** One duration factor per day (§3). Open: whether it should be per block instead.
 - **C7 Last night.** Activity after midnight of the last plan day is dropped (it would count for a day outside the plan anyway).
-- **C8 Calls in the runner.** The commands pass `--platform`, which the runner accepts and ignores: every call runs on the peer's Jitsi. Consequence for the 9-to-5: `teams.microsoft.com` would have counted as PRODUCTIVITY (C2_F6), the peer's host does not. SAD's mic share still has no runner option (§8).
+- **C8 Calls in the runner.** The commands pass `--platform`, which the runner accepts and ignores: every call runs on the peer's Jitsi. Consequence for the 9-to-5: `teams.microsoft.com` would have counted as PRODUCTIVITY (C2_F6), the peer's host does not. SAD's mic share is passed as `--mic-share 0.1`.
 
 **Student**
 - **S1 Campus start on late-lecture days (accepted 23.10).** The profile says `U("08:00", "14:00")` for all days, but the late-lecture wake is N(09:30, 30m), so campus could start before waking. Now: `U("10:30", "14:00")` on late days, 08:00 on early days, and never earlier than wake + 20 min (`not_before`).
@@ -360,7 +381,7 @@ Their §9 patches use constructs without defined semantics. These defaults were 
 - `weekend_anchors`: weekend wake N(09:30, 30m), Fri/Sat sleep N(00:30, 45m), then the shifts.
 
 **Social anxiety**
-- `group_call` `camera: false`, `mic: "on only 10% of the time"`: the person attends mandatory calls with the camera off and stays muted except for ~10 % of the call. Camera off → `voice_call`. The mic share is recorded as `options: mic_share=0.1`. Calls run since 23.10; the share reaches the runner as `--mic-share 0.1` as soon as Karla's flag exists and is listed in `catalog.RUNNER_OPTION_FLAGS` (§4).
+- `group_call` `camera: false`, `mic: "on only 10% of the time"`: the person attends mandatory calls with the camera off and stays muted except for ~10 % of the call. Camera off → `voice_call`. The mic share is recorded as `options: mic_share=0.1` and passed as `--mic-share 0.1` (runner since `dca94cd`).
 - `going_out` `keep_per_window: 0-1` + `home_instead_of_out` `replaces: going_out`: the baseline's going-out evenings are drawn as for the student. 0–1 per window are kept, the others are spent at home in the would-be period.
 - `split: {video_stream: .5, gaming_session: .3, social_passive: .2}`: consecutive parts by share, in this order (option b).
 - On a home evening the laptop evening blocks (`gaming`, `evening_stream`) give way (`cancels`), the phone evening blocks stay, and sleep onset = end of the home block (`sleep_when_replaced: end`).

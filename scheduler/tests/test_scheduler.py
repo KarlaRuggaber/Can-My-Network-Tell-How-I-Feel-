@@ -611,6 +611,6 @@ def test_options_reach_the_runner_only_when_it_knows_them(monkeypatch):
     plan = clinical("social-anxiety-moderate", 1)
     rows = [r for r in output.rows(plan, ROLES, "gw_x_a") if r["options"]]
     assert rows and all(r["options"] == "mic_share=0.1" for r in rows)
+    assert output.command(rows[0]).endswith("--mic-share 0.1")   # runner flag since dca94cd
+    monkeypatch.delitem(catalog.RUNNER_OPTION_FLAGS, "mic_share")
     assert "--mic-share" not in output.command(rows[0])
-    monkeypatch.setitem(catalog.RUNNER_OPTION_FLAGS, "mic_share", "--mic-share")
-    assert output.command(rows[0]).endswith("--mic-share 0.1")

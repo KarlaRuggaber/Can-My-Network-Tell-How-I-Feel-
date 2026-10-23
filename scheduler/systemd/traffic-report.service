@@ -1,0 +1,10 @@
+# Daily summary of the last 24 h, always sent. NTFY_URL (and optional NTFY_TOKEN) come from /etc/traffic-report.env.
+[Unit]
+Description=Daily traffic report (push)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/can-my-network/scheduler
+EnvironmentFile=/etc/traffic-report.env
+ExecStart=/usr/bin/python3 -m scheduler report --hours 24
