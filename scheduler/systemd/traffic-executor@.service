@@ -1,4 +1,4 @@
-# One executor per plan (= dataset): traffic-executor@gw_mdd_a reads /var/lib/traffic-executor/gw_mdd_a.commands.tsv.
+# One executor per plan (= dataset): traffic-executor@gw_insomnia_a reads /var/lib/traffic-executor/gw_insomnia_a.commands.tsv.
 # Install: scheduler/README.md §5.3.
 [Unit]
 Description=Traffic executor for %i

@@ -310,7 +310,7 @@ sudo chmod 600 /etc/traffic-report.env && sudo cat /etc/traffic-report.env   # s
 sudo systemctl daemon-reload
 sudo systemctl enable --now traffic-sample.timer traffic-report.timer traffic-watch.timer
 sudo systemctl start traffic-report.service      # test push right away
-sudo systemctl enable --now traffic-executor@gw_insomnia_a traffic-executor@gw_mdd_a traffic-executor@gw_sad_a
+sudo systemctl enable --now traffic-executor@gw_insomnia_a traffic-executor@gw_mdd_suicidality_a traffic-executor@gw_social_anxiety_a
 ```
 
 The executors wait until each plan's first block. `systemctl status 'traffic-executor@*'` and `python3 -m scheduler execute --commands … --state … --status` show where they are.
