@@ -1,5 +1,16 @@
 # Simulated devices (traffic runner) and dataset map of the ingest (tapingest reads this file).
 # Naming (activity-catalog §1): dataset gw_<profile>_<letter>, device <profile>_<letter>_<role>.
+# IP 10.42.1.x, MAC 02:00:0a:2a:01:<x in hex>. Persona names only here, as comments.
 device,role,mac,ip,dataset
+# student (healthy baseline)
 student_a_phone,phone,02:00:0a:2a:01:0b,10.42.1.11,gw_student_a
 student_a_laptop,laptop,02:00:0a:2a:01:0c,10.42.1.12,gw_student_a
+# Ben: insomnia-moderate (baseline 9to5-worker)
+insomnia_a_phone,phone,02:00:0a:2a:01:15,10.42.1.21,gw_insomnia_a
+insomnia_a_laptop,laptop,02:00:0a:2a:01:16,10.42.1.22,gw_insomnia_a
+# Maria: mdd-severe-suicidality (baseline student)
+mdd_suicidality_a_phone,phone,02:00:0a:2a:01:1f,10.42.1.31,gw_mdd_suicidality_a
+mdd_suicidality_a_laptop,laptop,02:00:0a:2a:01:20,10.42.1.32,gw_mdd_suicidality_a
+# Carl: social-anxiety-moderate (baseline student)
+social_anxiety_a_phone,phone,02:00:0a:2a:01:29,10.42.1.41,gw_social_anxiety_a
+social_anxiety_a_laptop,laptop,02:00:0a:2a:01:2a,10.42.1.42,gw_social_anxiety_a

@@ -198,6 +198,15 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
         - `peer.sim` in the feed
       - **RAM:** with two parallel calls, 1.3 GB of 7.1 GB was left, so watch it once more persons run in parallel.
     - **For Thierry:** the scheduler should pass `--lookups` (`sh_adjacent_lookup`). `--platform` is accepted but has no effect.
+  - **Devices for the clinical personas** in `traffic-runner/config/devices.csv`. Datasets are named after the profiles (decided 23.10); the persona names appear only as comments:
+
+    | Persona | Profile | Dataset | IPs |
+    |---|---|---|---|
+    | Ben | `insomnia-moderate` | `gw_insomnia_a` | 10.42.1.21/.22 |
+    | Maria | `mdd-severe-suicidality` | `gw_mdd_suicidality_a` | 10.42.1.31/.32 |
+    | Carl | `social-anxiety-moderate` | `gw_social_anxiety_a` | 10.42.1.41/.42 |
+
+    Checked: runner validator, ingest name rule, and the scheduler builds plans for all three.
   - **`--mic-share` for calls** (SAD profile: mic on only 10 % of the time). The call starts muted, then speaking turns of 3–15 s alternate with muted pauses drawn from the seed.
     - Two problems found while testing and fixed:
       - Jitsi keeps sending 50 silence packets/s after muting (fixed with Opus DTX, ~5 packets/s).

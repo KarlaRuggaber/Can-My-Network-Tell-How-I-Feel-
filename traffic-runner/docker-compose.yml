@@ -66,6 +66,174 @@ services:
         ipv4_address: 10.42.1.12
         mac_address: "02:00:0a:2a:01:0c"
 
+  insomnia_a_phone:
+    image: traffic-runner:0.1.0
+    pull_policy: never  # built by the first service
+    container_name: insomnia_a_phone
+    hostname: insomnia-a-phone
+    init: true
+    command: ["sleep", "infinity"]
+    restart: unless-stopped
+    environment:
+      RUNNER_DEVICE: insomnia_a_phone
+      RUNNER_STRICT_IP: "1"
+      TZ: Europe/Zurich
+    # Peer VM address and token (calls, gaming): root-only file on the gateway, not in git.
+    env_file:
+      - path: peer.env
+        required: false
+    dns: [10.42.1.1]
+    volumes:
+      - ./logs:/logs
+      - ./config/resolv.conf:/etc/resolv.conf:ro
+    shm_size: 1gb
+    mem_limit: 2g
+    cpus: "2.0"
+    networks:
+      sim:
+        ipv4_address: 10.42.1.21
+        mac_address: "02:00:0a:2a:01:15"
+
+  insomnia_a_laptop:
+    image: traffic-runner:0.1.0
+    pull_policy: never  # built by the first service
+    container_name: insomnia_a_laptop
+    hostname: insomnia-a-laptop
+    init: true
+    command: ["sleep", "infinity"]
+    restart: unless-stopped
+    environment:
+      RUNNER_DEVICE: insomnia_a_laptop
+      RUNNER_STRICT_IP: "1"
+      TZ: Europe/Zurich
+    # Peer VM address and token (calls, gaming): root-only file on the gateway, not in git.
+    env_file:
+      - path: peer.env
+        required: false
+    dns: [10.42.1.1]
+    volumes:
+      - ./logs:/logs
+      - ./config/resolv.conf:/etc/resolv.conf:ro
+    shm_size: 1gb
+    mem_limit: 2g
+    cpus: "2.0"
+    networks:
+      sim:
+        ipv4_address: 10.42.1.22
+        mac_address: "02:00:0a:2a:01:16"
+
+  mdd_suicidality_a_phone:
+    image: traffic-runner:0.1.0
+    pull_policy: never  # built by the first service
+    container_name: mdd_suicidality_a_phone
+    hostname: mdd-suicidality-a-phone
+    init: true
+    command: ["sleep", "infinity"]
+    restart: unless-stopped
+    environment:
+      RUNNER_DEVICE: mdd_suicidality_a_phone
+      RUNNER_STRICT_IP: "1"
+      TZ: Europe/Zurich
+    # Peer VM address and token (calls, gaming): root-only file on the gateway, not in git.
+    env_file:
+      - path: peer.env
+        required: false
+    dns: [10.42.1.1]
+    volumes:
+      - ./logs:/logs
+      - ./config/resolv.conf:/etc/resolv.conf:ro
+    shm_size: 1gb
+    mem_limit: 2g
+    cpus: "2.0"
+    networks:
+      sim:
+        ipv4_address: 10.42.1.31
+        mac_address: "02:00:0a:2a:01:1f"
+
+  mdd_suicidality_a_laptop:
+    image: traffic-runner:0.1.0
+    pull_policy: never  # built by the first service
+    container_name: mdd_suicidality_a_laptop
+    hostname: mdd-suicidality-a-laptop
+    init: true
+    command: ["sleep", "infinity"]
+    restart: unless-stopped
+    environment:
+      RUNNER_DEVICE: mdd_suicidality_a_laptop
+      RUNNER_STRICT_IP: "1"
+      TZ: Europe/Zurich
+    # Peer VM address and token (calls, gaming): root-only file on the gateway, not in git.
+    env_file:
+      - path: peer.env
+        required: false
+    dns: [10.42.1.1]
+    volumes:
+      - ./logs:/logs
+      - ./config/resolv.conf:/etc/resolv.conf:ro
+    shm_size: 1gb
+    mem_limit: 2g
+    cpus: "2.0"
+    networks:
+      sim:
+        ipv4_address: 10.42.1.32
+        mac_address: "02:00:0a:2a:01:20"
+
+  social_anxiety_a_phone:
+    image: traffic-runner:0.1.0
+    pull_policy: never  # built by the first service
+    container_name: social_anxiety_a_phone
+    hostname: social-anxiety-a-phone
+    init: true
+    command: ["sleep", "infinity"]
+    restart: unless-stopped
+    environment:
+      RUNNER_DEVICE: social_anxiety_a_phone
+      RUNNER_STRICT_IP: "1"
+      TZ: Europe/Zurich
+    # Peer VM address and token (calls, gaming): root-only file on the gateway, not in git.
+    env_file:
+      - path: peer.env
+        required: false
+    dns: [10.42.1.1]
+    volumes:
+      - ./logs:/logs
+      - ./config/resolv.conf:/etc/resolv.conf:ro
+    shm_size: 1gb
+    mem_limit: 2g
+    cpus: "2.0"
+    networks:
+      sim:
+        ipv4_address: 10.42.1.41
+        mac_address: "02:00:0a:2a:01:29"
+
+  social_anxiety_a_laptop:
+    image: traffic-runner:0.1.0
+    pull_policy: never  # built by the first service
+    container_name: social_anxiety_a_laptop
+    hostname: social-anxiety-a-laptop
+    init: true
+    command: ["sleep", "infinity"]
+    restart: unless-stopped
+    environment:
+      RUNNER_DEVICE: social_anxiety_a_laptop
+      RUNNER_STRICT_IP: "1"
+      TZ: Europe/Zurich
+    # Peer VM address and token (calls, gaming): root-only file on the gateway, not in git.
+    env_file:
+      - path: peer.env
+        required: false
+    dns: [10.42.1.1]
+    volumes:
+      - ./logs:/logs
+      - ./config/resolv.conf:/etc/resolv.conf:ro
+    shm_size: 1gb
+    mem_limit: 2g
+    cpus: "2.0"
+    networks:
+      sim:
+        ipv4_address: 10.42.1.42
+        mac_address: "02:00:0a:2a:01:2a"
+
 networks:
   sim:
     external: true
