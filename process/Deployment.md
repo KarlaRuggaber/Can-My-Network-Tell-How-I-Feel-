@@ -321,6 +321,15 @@ The command prints nothing and keeps running. That is the open tunnel. Then open
 
 ### Check the status
 
+Peer stack for the runner's calls and gaming (on the gateway since 23.10, [HardwareSetup.md §16](HardwareSetup.md)):
+
+```bash
+cd /opt/can-my-network/peer-vm && sudo docker compose ps          # caddy, jicofo, jvb, peer, prosody, web
+sudo docker compose -f /opt/can-my-network/traffic-runner/docker-compose.yml exec -T student_a_phone \
+  python3 -c "import ssl, urllib.request as u; print(u.urlopen('https://peer.sim/peer/health', context=ssl._create_unverified_context()).read().decode())" < /dev/null
+cd /opt/can-my-network/peer-vm && sudo docker compose up -d --build   # after a pull that changed peer-vm/
+```
+
 ```bash
 systemctl is-active tapcap@eno1 tapfeed@eno1 tapingest docker
 journalctl -u tapingest -f                                    # one "Ingested 1 file(s)" line per minute
