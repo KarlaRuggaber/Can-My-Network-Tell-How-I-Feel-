@@ -163,6 +163,12 @@ REDDIT_TITLE = re.compile(r"(title|titel)", re.I)
 REDDIT_IMAGE_INPUT = 'post-composer-toolbar-button-image input[type="file"]'
 
 
+def reddit_sub_root(url: str, subreddit: str) -> bool:
+    """True only for the front page of exactly this subreddit (where phones land after posting)."""
+    parts = [p for p in urlsplit(url).path.lower().split("/") if p]
+    return host_of(url).endswith("reddit.com") and parts == ["r", subreddit.lower()]
+
+
 def reddit_target_ok(url: str, subreddit: str, page: str) -> bool:
     """True if `url` is the given page ("submit" or "comments") of exactly `subreddit`."""
     parts = [p for p in urlsplit(url).path.lower().split("/") if p]
@@ -527,14 +533,17 @@ class BrowserDriver:
             if not reddit_target_ok(self.page.url, subreddit, "submit"):
                 raise PageError(f"left the submit page of r/{subreddit}: {self.page.url}")
             self.page.get_by_role("button", name=REDDIT_POST_BUTTON).last.click()
-            self.page.wait_for_url(lambda u: "/comments/" in u, timeout=timeout * 1000)
+            # Success = Reddit leaves the submit page: to the new post (desktop) or, on phones,
+            # to the subreddit's front page (checked live 23.10). Errors keep the form open.
+            self.page.wait_for_url(lambda u: "/submit" not in u, timeout=timeout * 1000)
         except self._error_cls as e:
             shot = self._debug_screenshot("reddit-post")
             raise PageError(f"Reddit post failed: {str(e).splitlines()[0]} (url {self.page.url}, screenshot {shot})") from None
-        if not reddit_target_ok(self.page.url, subreddit, "comments"):
-            raise PageError(f"post ended up outside r/{subreddit}: {self.page.url}")
-        log.info("posted to r/%s: %s", subreddit, self.page.url)
-        return host_of(self.page.url)
+        url = self.page.url
+        if not (reddit_target_ok(url, subreddit, "comments") or reddit_sub_root(url, subreddit)):
+            raise PageError(f"post ended up outside r/{subreddit}: {url}")
+        log.info("posted to r/%s: %s", subreddit, url)
+        return host_of(url)
 
     def set_mic(self, on: bool) -> None:
         try:

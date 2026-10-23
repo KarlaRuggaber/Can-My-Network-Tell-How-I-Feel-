@@ -86,3 +86,13 @@ def test_accounts_config():
     acc = load_accounts()
     assert acc["reddit"]["subreddit"] == "CMNTHIF"
     assert set(acc["personas"]) == {"gw_student_a", "gw_insomnia_a", "gw_mdd_suicidality_a", "gw_social_anxiety_a"}
+
+
+def test_reddit_sub_root_only_exact_subreddit():
+    from runner.browser import reddit_sub_root
+    assert reddit_sub_root("https://www.reddit.com/r/CMNTHIF/", "CMNTHIF")
+    assert reddit_sub_root("https://www.reddit.com/r/cmnthif", "CMNTHIF")
+    assert not reddit_sub_root("https://www.reddit.com/r/CMNTHIF2/", "CMNTHIF")
+    assert not reddit_sub_root("https://www.reddit.com/r/CMNTHIF/submit/", "CMNTHIF")
+    assert not reddit_sub_root("https://www.reddit.com/", "CMNTHIF")
+    assert not reddit_sub_root("https://evil.example/r/CMNTHIF/", "CMNTHIF")
