@@ -504,7 +504,8 @@ class BrowserDriver:
             title_box = self.page.get_by_role("textbox", name=REDDIT_TITLE).first
             title_box.wait_for(state="visible", timeout=20_000)
             title_box.fill(title)
-            self.page.locator('input[type="file"]').first.set_input_files(str(image))
+            # the post's own media field; the page has three more (gallery editor, text toolbar)
+            self.page.locator('#post-composer_media input[type="file"]').first.set_input_files(str(image))
             self.page.wait_for_timeout(8_000)  # upload of 1-3 MB
             # Safety check right before the click: still exactly this subreddit's submit page.
             if not reddit_target_ok(self.page.url, subreddit, "submit"):
