@@ -488,6 +488,8 @@ The script opens your normal Google Chrome with a temporary, empty profile. Slac
 - When you press Enter, the script connects to the window over localhost, saves the session and deletes the temporary profile. If the wrong tab is open, it tells you and waits again.
 - Slack blocks email sign-ins for a while after too many attempts ("Try again in a few minutes"). Wait about an hour without retrying; every new try can restart the block.
 
+**Live-tested 23.10 on the gateway:** both activities log `ok`. On phones, Reddit ignores `?type=IMAGE` (the runner attaches the image through the toolbar's image button) and goes to `/r/CMNTHIF/` after posting, which counts as success. The bot needs the Slack event `message.im` (Event Subscriptions) and the scopes `im:history` and `chat:write`.
+
 A session captured in desktop Chrome works in the runner's headless browser (checked 23.10: the Slack DM with its message box, the Reddit submit page logged in on the Pixel 7 profile).
 
 **Which sessions are needed:**

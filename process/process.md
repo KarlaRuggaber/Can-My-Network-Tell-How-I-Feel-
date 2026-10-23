@@ -204,7 +204,17 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
     - **Runner:** `messaging` (Slack web, desktop profile because Slack refuses phone browsers) and `social_post` (generated 1–3 MB image, only into r/CMNTHIF, target checked before and after posting) are implemented and load per-device login sessions.
     - **Sessions** are captured by hand on the laptop (`scripts/capture_session.py`) and stored root-only on the gateway.
     - **Bot service:** `peer-vm/slackbot`, host network.
-    - 212 tests pass. Still to do: capture the sessions, enter the tokens, deploy, live test.
+    - **Live on the gateway (23.10, `student_a_phone`):**
+      - `messaging`: 4 messages in 3 min, `ok`; the bot answers.
+      - `social_post`: noise image posted to r/CMNTHIF, `ok`.
+    - **Fixes found while testing:**
+      - Slack's sign-in rejects Playwright browsers, so logins are captured in plain Chrome.
+      - Phone Reddit ignores `?type=IMAGE`, so the image is attached via the toolbar button.
+      - After posting, phones land on `/r/CMNTHIF/` instead of the post.
+      - The bot needed the `message.im` event.
+    - **Still to do:**
+      - Slack sessions for Ben, Maria and Carl (Slack's sign-in limit blocked further logins that day).
+      - Full deploy once the pilot pauses (only `student_a_phone` runs the new image).
   - **Devices for the clinical personas** in `traffic-runner/config/devices.csv`. Datasets are named after the profiles (decided 23.10); the persona names appear only as comments:
 
     | Persona | Profile | Dataset | IPs |
