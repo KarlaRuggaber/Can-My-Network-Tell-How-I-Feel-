@@ -3,10 +3,14 @@
 Steps:
 1. Phases: warm-up day(s), optional baseline days (tier-0 profile), profile days.
 2. Per day: tags (day types, timetable), wake, away periods, sleep, night sets, forbidden windows.
-3. Per block: which days, how many occurrences (count / per_week / per_window ...), where in the day.
+   Clinical extras: attend_share (skipped periods), keep_per_window (kept / replaced periods),
+   sd_scale and unless_after on anchors (the latter needs a second pass over the days).
+3. Per block: which days, how many occurrences (count / per_week / per_window ..., `scale`, `only_if`,
+   `replaces`, `cancels`), where in the day.
 4. Placement: calls first (exclusive on all devices), then all other blocks in list order.
    A conflict on the same device (or with a call) pushes the block to the end of the conflict; if it no
    longer fits its window it is dropped. Fill blocks and work/study blocks are cut around conflicts instead.
+   `split` blocks are cut into consecutive parts by share, `sequence` blocks run their steps back to back.
 5. Companions (`with: music_background`, gaming voice chat) are added next to their host.
 
 All instants are UTC datetimes; local times are converted with zoneinfo, so DST days are handled.
@@ -17,14 +21,14 @@ block does not reshuffle the others.
 from __future__ import annotations
 
 import random
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from . import catalog
 from .dist import Dist, sample_count
-from .spec import WEEKDAYS, Block, Freq, Profile, TimeRef
+from .spec import WEEKDAYS, Block, Freq, Profile, Step, TimeRef
 
 UTC = timezone.utc
 NOON = 12 * 3600
@@ -75,6 +79,8 @@ class DayCtx:
     nights: set[str]
     forbid: list[tuple[datetime, datetime]]
     duration_factor: float = 1.0
+    replaced: dict[str, tuple[datetime, datetime]] = field(default_factory=dict)   # away id -> its would-be period
+    skipped: list[tuple[str, datetime, datetime, frozenset[str]]] = field(default_factory=list)   # attend_share
 
 
 @dataclass
@@ -96,6 +102,8 @@ class Entry:
     platform: str | None = None
     exclusive: bool = False
     companion_of: str | None = None
+    options: str | None = None
+    flag: str | None = None
     window: tuple[datetime, datetime] | None = None   # for tests: where the block was allowed to run
 
 
@@ -212,19 +220,39 @@ def _night_sets(prof: Profile, seed: int, dates: list[date]) -> dict[date, set[s
     return out
 
 
-def _pick_days(freq: Freq, eligible, dates: list[date], r_key, seed: int,
-               window_start: date | None, window_days: int) -> dict[date, int]:
+def _sround(x: float, r: random.Random) -> int:
+    """Stochastic rounding: 3.4 -> 3 with 60 %, 4 with 40 % (keeps the mean of scaled counts)."""
+    n = int(x)
+    return n + (1 if r.random() < x - n else 0)
+
+
+def instance_factor(seed: int, kind: str, block_id: str, dist: Dist | None) -> float:
+    """A factor drawn once per seed (instance), e.g. `scale: 'U(0.6, 0.7)'`: the same in every window."""
+    return dist.sample(rng_for(seed, "instance", kind, block_id)) if dist is not None else 1.0
+
+
+def _windows(phase: Phase, window_days: int) -> list[tuple[date, list[date]]]:
+    """The 14-day windows of a phase as (first day, days incl. those after the plan end)."""
+    if phase.window_start is None:
+        return []
+    out, p, last = [], phase.window_start, max(phase.dates)
+    while p <= last:
+        out.append((p, [p + timedelta(days=i) for i in range(window_days)]))
+        p += timedelta(days=window_days)
+    return out
+
+
+def _pick_days(freq: Freq, eligible, phase: Phase, r_key, seed: int, window_days: int,
+               scale: float = 1.0) -> dict[date, int]:
     """date -> number of occurrences, for the dates of one phase."""
     out: dict[date, int] = {}
+    dates = phase.dates
     in_phase = set(dates)
 
     def count_on(d: date) -> int:
         r = rng_for(seed, *r_key, "count", d.isoformat())
         n = sample_count(r, freq.count, freq.clip if freq.clip_count else None)
-        if freq.scale != 1.0:   # stochastic rounding keeps the mean
-            x = n * freq.scale
-            n = int(x) + (1 if r.random() < x - int(x) else 0)
-        return n
+        return _sround(n * scale, r) if scale != 1.0 else n
 
     if freq.key == "count":
         for d in dates:
@@ -233,39 +261,54 @@ def _pick_days(freq: Freq, eligible, dates: list[date], r_key, seed: int,
         return out
 
     if freq.key in ("per_week", "days_per_week"):
-        periods = sorted({monday(d) for d in dates})
-        span = 7
-    else:   # per_window, nights_per_window, keep_per_window: 14-day windows of the phase
-        if window_start is None:
-            return out   # warm-up days get no per-window blocks
-        last = max(dates)
-        periods, p = [], window_start
-        while p <= last:
-            periods.append(p)
-            p += timedelta(days=window_days)
-        span = window_days
-    for p0 in periods:
-        period = [p0 + timedelta(days=i) for i in range(span)]   # whole period, also days outside the plan
+        periods = [(mon, [mon + timedelta(days=i) for i in range(7)]) for mon in sorted({monday(d) for d in dates})]
+    else:   # per_window, nights_per_window; warm-up days get none
+        periods = _windows(phase, window_days)
+    for p0, period in periods:   # whole period, also days outside the plan (partial periods get a pro-rated share)
         cands = [d for d in period if eligible(d)]
         r = rng_for(seed, *r_key, freq.key, p0.isoformat())
         n = sample_count(r, freq.period_n, None if freq.clip_count else freq.clip)
+        if scale != 1.0 and freq.key in ("per_week", "per_window"):
+            n = _sround(n * scale, r)
         for d in r.sample(cands, min(n, len(cands))):
             if d in in_phase:
                 out[d] = count_on(d) if freq.key in ("days_per_week", "nights_per_window") else 1
     return out
 
 
-def _build_days(phase: Phase, seed: int, tz: ZoneInfo, plan: Plan) -> list[DayCtx]:
+def _away_days(prof: Profile, phase: Phase, seed: int, eligible_for) -> tuple[dict[str, set], dict[str, set]]:
+    """Per away period: the days it happens, and the days it was drawn but not kept (keep_per_window).
+    The draw uses the same random streams as the tier-0 profile, so the replaced days are exactly the days
+    the baseline person would have been away."""
+    happens, replaced = {}, {}
+    for a in prof.away:
+        drawn = {d for d, n in _pick_days(a.freq, eligible_for(a.selector), phase, ("away", a.id), seed,
+                                          prof.window_days).items() if n}
+        if a.keep is not None:
+            chunks = _windows(phase, prof.window_days) or [(phase.dates[0], phase.dates)]
+            kept = set()
+            for c0, chunk in chunks:
+                cand = sorted(d for d in drawn if d in set(chunk))
+                r = rng_for(seed, "keep", a.id, c0.isoformat())
+                kept |= set(r.sample(cand, min(sample_count(r, a.keep), len(cand))))
+            replaced[a.id] = drawn - kept
+            drawn = kept
+        happens[a.id] = drawn
+    return happens, replaced
+
+
+def _build_days(phase: Phase, seed: int, tz: ZoneInfo, dropped: Counter,
+                suppress: dict[date, set[str]] | None = None) -> list[DayCtx]:
+    """`suppress`: date -> block ids whose occurrence switches off `unless_after` shifts on that date."""
     prof = phase.profile
+    suppress = suppress or {}
     tt_tags, tt_values = _timetable(prof, seed)
     nights = _night_sets(prof, seed, phase.dates) if prof.night_sets else {}
 
     def eligible_for(sel):
         return lambda d: sel.matches(static_tags(prof, weekday(d), tt_tags), weekday(d), nights.get(d, set()))
 
-    away_days = {a.id: _pick_days(a.freq, eligible_for(a.selector), phase.dates, ("away", a.id), seed,
-                                  phase.window_start, prof.window_days)
-                 for a in prof.away}
+    happens, replaced_days = _away_days(prof, phase, seed, eligible_for)
     out = []
     for d in phase.dates:
         wd = weekday(d)
@@ -274,13 +317,17 @@ def _build_days(phase: Phase, seed: int, tz: ZoneInfo, plan: Plan) -> list[DayCt
         timetable = tt_values[wd]
         res = _Resolver(d, tz, {}, timetable)
 
-        wake = _anchor(prof.wake, tags, wd, ns, seed, d, "wake", res, night=False)
+        wake = _anchor(prof.wake, tags, wd, ns, seed, d, "wake", res, night=False,
+                       suppress=suppress.get(d, set()))
         res.named["wake"] = wake
 
         away: list[AwayOcc] = []
+        replaced: dict[str, tuple[datetime, datetime]] = {}
+        skipped = []
         sleep_base = None
         for a in prof.away:
-            if not away_days[a.id].get(d):
+            is_replaced = d in replaced_days.get(a.id, ())
+            if d not in happens[a.id] and not is_replaced:
                 continue
             r = rng_for(seed, d.isoformat(), "away", a.id)
             start = res(a.start, r)
@@ -297,14 +344,24 @@ def _build_days(phase: Phase, seed: int, tz: ZoneInfo, plan: Plan) -> list[DayCt
             else:
                 end = start + _seconds(r, a.length)
             if end is None or end <= start:
-                plan.dropped[f"away {a.id}: empty"] += 1
+                dropped[f"away {a.id}: empty"] += 1
+                continue
+            if is_replaced:   # at home instead; blocks with `replaces` run in this period
+                replaced[a.id] = (start, end)
+                res.named[f"replaced.{a.id}.start"], res.named[f"replaced.{a.id}.end"] = start, end
+                if a.sleep_when_replaced:
+                    sleep_base = end
+                continue
+            if a.attend_share is not None and rng_for(seed, d.isoformat(), "attend", a.id).random() >= a.attend_share:
+                skipped.append((a.id, start, end, a.skipped_allow))   # stays home, mostly idle
                 continue
             away.append(AwayOcc(a.id, start, end, a.replaces))
             res.named[f"away.{a.id}.start"], res.named[f"away.{a.id}.end"] = start, end
             if a.sleep_after_return is not None:
                 sleep_base = end + _seconds(r, a.sleep_after_return)
 
-        sleep = _anchor(prof.sleep, tags, wd, ns, seed, d, "sleep", res, night=True, base=sleep_base)
+        sleep = _anchor(prof.sleep, tags, wd, ns, seed, d, "sleep", res, night=True, base=sleep_base,
+                        suppress=suppress.get(d, set()))
         baseline_sleep = _anchor(prof.sleep, tags, wd, ns, seed, d, "sleep", res, night=True, base=sleep_base,
                                  shifts=False)
         res.named.update(sleep=sleep, baseline_sleep=baseline_sleep)
@@ -317,23 +374,35 @@ def _build_days(phase: Phase, seed: int, tz: ZoneInfo, plan: Plan) -> list[DayCt
                 forbid.append((s, e))
         x = prof.duration_noise   # day-to-day volume noise: one factor per day (keyed by date, not by phase)
         factor = rng_for(seed, d.isoformat(), "noise").uniform(1 - x, 1 + x) if x else 1.0
-        out.append(DayCtx(d, phase, tags, timetable, wake, sleep, baseline_sleep, away, ns, forbid, factor))
+        out.append(DayCtx(d, phase, tags, timetable, wake, sleep, baseline_sleep, away, ns, forbid, factor,
+                          replaced, skipped))
     return out
 
 
-def _anchor(rules, tags, wd, nights, seed, d, name, res, *, night, base=None, shifts=True) -> datetime:
+def _anchor(rules, tags, wd, nights, seed, d, name, res, *, night, base=None, shifts=True,
+            suppress=frozenset()) -> datetime:
+    matching = [r for r in rules if r.selector.matches(tags, wd, nights)]
     if base is None:
-        rule = next((r for r in rules if r.value is not None and r.selector.matches(tags, wd, nights)), None)
+        rule = next((r for r in matching if r.value is not None), None)
         if rule is None:
             raise ValueError(f"no {name} anchor matches {d} ({wd}, {sorted(tags)})")
-        secs = rule.value.sample(rng_for(seed, d.isoformat(), name))
+        dist = rule.value
+        sd = 1.0
+        for r in matching:
+            sd *= r.sd_scale or 1.0
+        if sd != 1.0 and dist.kind == "normal":   # same draw, wider spread: mean + z * sd * factor
+            dist = Dist("normal", (dist.params[0], dist.params[1] * sd), dist.unit)
+        secs = dist.sample(rng_for(seed, d.isoformat(), name))
         if night and secs < NOON:
             secs += DAY
         base = local(d, secs, res.tz)
     if shifts:
         for i, rule in enumerate(rules):
-            if rule.shift is not None and rule.selector.matches(tags, wd, nights):
-                base += _seconds(rng_for(seed, d.isoformat(), name, "shift", i), rule.shift)
+            if rule.shift is None or rule not in matching:
+                continue
+            if rule.unless_after and rule.unless_after in suppress:
+                continue
+            base += _seconds(rng_for(seed, d.isoformat(), name, "shift", i), rule.shift)
     return base
 
 
@@ -348,13 +417,26 @@ class _Occ:
     lo: datetime
     hi: datetime
     n: int = 0
+    steps: list[tuple[int, Step, timedelta]] | None = None   # (position in the sequence, step, duration)
 
 
-def _duration(r: random.Random, block: Block, ctx: DayCtx) -> timedelta:
-    secs = block.duration.sample(r)
+def _duration(r: random.Random, dist: Dist, block: Block, ctx: DayCtx, inst: float) -> timedelta:
+    secs = dist.sample(r) * inst
     if block.noise:
         secs *= ctx.duration_factor
     return timedelta(seconds=round(secs))
+
+
+def _draw(r: random.Random, block: Block, ctx: DayCtx, inst: float):
+    """Duration of one occurrence; for a sequence also its steps (probability first, then duration)."""
+    if block.sequence is None:
+        return _duration(r, block.duration, block, ctx, inst), None
+    steps = []
+    for i, st in enumerate(block.sequence, start=1):
+        if st.probability < 1 and r.random() >= st.probability:
+            continue
+        steps.append((i, st, _duration(r, st.duration, block, ctx, inst)))
+    return sum((d for _, _, d in steps), timedelta()), steps
 
 
 def _occurrences(block: Block, ctx: DayCtx, k: int, seed: int, tz: ZoneInfo, plan: Plan) -> list[_Occ]:
@@ -362,9 +444,12 @@ def _occurrences(block: Block, ctx: DayCtx, k: int, seed: int, tz: ZoneInfo, pla
         plan.dropped["evening replaced (away)"] += k
         return []
     r = rng_for(seed, ctx.date.isoformat(), "block", block.id)
-    res = _Resolver(ctx.date, tz, {"wake": ctx.wake, "sleep": ctx.sleep, "baseline_sleep": ctx.baseline_sleep,
-                                   **{f"away.{a.id}.{p}": getattr(a, p) for a in ctx.away for p in ("start", "end")}},
-                    ctx.timetable)
+    named = {"wake": ctx.wake, "sleep": ctx.sleep, "baseline_sleep": ctx.baseline_sleep}
+    named.update({f"away.{a.id}.{p}": getattr(a, p) for a in ctx.away for p in ("start", "end")})
+    named.update({f"replaced.{i}.start": s for i, (s, _) in ctx.replaced.items()})
+    named.update({f"replaced.{i}.end": e for i, (_, e) in ctx.replaced.items()})
+    res = _Resolver(ctx.date, tz, named, ctx.timetable)
+    inst = instance_factor(seed, "duration_scale", block.id, block.duration_scale)
 
     def clip(lo, hi):
         if block.not_before is not None:
@@ -382,8 +467,9 @@ def _occurrences(block: Block, ctx: DayCtx, k: int, seed: int, tz: ZoneInfo, pla
             if start is None:
                 plan.dropped[f"{block.id}: reference missing that day"] += 1
                 continue
-            dur = _duration(r, block, ctx)
-            out.append(_Occ(block, ctx, start, dur, start, start + dur + timedelta(seconds=block.max_delay)))
+            dur, steps = _draw(r, block, ctx, inst)
+            out.append(_Occ(block, ctx, start, dur, start, start + dur + timedelta(seconds=block.max_delay),
+                            steps=steps))
     elif block.placement == "fill":
         if k:
             lo = res(block.at, r, night=block.night)
@@ -392,6 +478,8 @@ def _occurrences(block: Block, ctx: DayCtx, k: int, seed: int, tz: ZoneInfo, pla
                 plan.dropped[f"{block.id}: reference missing that day"] += 1
                 return []
             lo, hi = clip(lo, hi)
+            if inst != 1.0:   # duration_scale on a fill block: shorter window from its start
+                hi = min(hi, lo + (hi - lo) * inst)
             if hi - lo < timedelta(seconds=MIN_PIECE):
                 plan.dropped["window too short"] += 1
                 return []
@@ -405,7 +493,7 @@ def _occurrences(block: Block, ctx: DayCtx, k: int, seed: int, tz: ZoneInfo, pla
         lo, hi = clip(lo, hi)
         gap = timedelta(seconds=block.min_gap)
         for _ in range(k):
-            dur = _duration(r, block, ctx)
+            dur, steps = _draw(r, block, ctx, inst)
             room = (hi - lo - dur).total_seconds()
             if room < 0:
                 plan.dropped["window too short"] += 1
@@ -417,7 +505,7 @@ def _occurrences(block: Block, ctx: DayCtx, k: int, seed: int, tz: ZoneInfo, pla
             else:
                 plan.dropped["min_gap not satisfiable"] += 1
                 continue
-            out.append(_Occ(block, ctx, start, dur, lo, hi))
+            out.append(_Occ(block, ctx, start, dur, lo, hi, steps=steps))
     out.sort(key=lambda o: o.start)
     for i, o in enumerate(out, start=1):
         o.n = i
@@ -433,24 +521,26 @@ def _overlap(a0, a1, b0, b1) -> bool:
 class _Board:
     def __init__(self, horizon, blockers):
         self.horizon = horizon
-        self.blockers = blockers      # (start, end, reason): away periods and forbidden windows
+        # (start, end, reason, allowed block ids): away periods, forbidden windows, skipped periods
+        self.blockers = blockers
         self.placed: list[Entry] = []
 
-    def blocked(self, s, e) -> str | None:
+    def _blockers(self, s, e, block_id):
+        return [b for b in self.blockers if _overlap(s, e, b[0], b[1]) and block_id not in b[3]]
+
+    def blocked(self, s, e, block_id: str) -> str | None:
         if s < self.horizon[0] or e > self.horizon[1]:
             return "outside the plan"
-        for b0, b1, why in self.blockers:
-            if _overlap(s, e, b0, b1):
-                return why
-        return None
+        hits = self._blockers(s, e, block_id)
+        return hits[0][2] if hits else None
 
     def conflicts(self, s, e, role: str, exclusive: bool) -> list[Entry]:
         return [p for p in self.placed if _overlap(s, e, p.start, p.end)
                 and (p.role == role or p.exclusive or exclusive)]
 
-    def free_pieces(self, s, e, role, exclusive) -> list[tuple[datetime, datetime]]:
+    def free_pieces(self, s, e, role, exclusive, block_id) -> list[tuple[datetime, datetime]]:
         cuts = [(p.start, p.end) for p in self.conflicts(s, e, role, exclusive)]
-        cuts += [(b0, b1) for b0, b1, _ in self.blockers if _overlap(s, e, b0, b1)]
+        cuts += [(b[0], b[1]) for b in self._blockers(s, e, block_id)]
         cuts.append((datetime.min.replace(tzinfo=UTC), self.horizon[0]))
         cuts.append((self.horizon[1], datetime.max.replace(tzinfo=UTC)))
         pieces, t = [], s
@@ -467,47 +557,71 @@ class _Board:
         return [(a, b) for a, b in pieces if (b - a).total_seconds() >= MIN_PIECE]
 
 
-def _entry(o: _Occ, s, e, block_id, role) -> Entry:
-    b, ctx = o.block, o.ctx
-    return Entry(start=s, end=e, role=role, activity=b.activity, block_id=block_id, profile_block=b.id,
-                 day=ctx.date, phase=ctx.phase.name, profile=ctx.phase.profile.name,
-                 mix=b.mix or _default_mix(b.activity), pages=b.pages, dwell=b.dwell, lookups=b.lookups,
-                 platform=b.platform,
-                 exclusive=b.exclusive, window=(o.lo, o.hi))
-
-
 def _default_mix(activity: str) -> dict[str, float] | None:
     key = catalog.default_mix(activity)
     return {key: 1.0} if key else None
+
+
+def _entry(o: _Occ, s, e, block_id, *, activity: str | None = None, step: Step | None = None) -> Entry:
+    """A plan row of occurrence `o`. `activity`: a part of a split block; `step`: a step of a sequence."""
+    b, ctx = o.block, o.ctx
+    if step is not None:
+        act, mix, pages, dwell, lookups = step.activity, step.mix, step.pages, step.dwell, step.lookups
+    elif activity is not None:
+        act, mix, pages, dwell, lookups = activity, None, None, None, None
+    else:
+        act, mix, pages, dwell, lookups = b.activity, b.mix, b.pages, b.dwell, b.lookups
+    return Entry(start=s, end=e, role=b.device, activity=act, block_id=block_id, profile_block=b.id,
+                 day=ctx.date, phase=ctx.phase.name, profile=ctx.phase.profile.name,
+                 mix=mix or _default_mix(act), pages=pages, dwell=dwell, lookups=lookups,
+                 platform=b.platform, exclusive=b.exclusive if step is None and activity is None else False,
+                 options=b.options, flag=b.flag, window=(o.lo, o.hi))
+
+
+def _letter(i: int) -> str:
+    return chr(ord("a") + i) if i < 26 else f"z{i}"
 
 
 def _place(o: _Occ, board: _Board, plan: Plan) -> list[Entry]:
     b = o.block
     base_id = f"{o.ctx.date:%Y%m%d}-{b.id}-{o.n:02d}"
     if b.splittable:
-        pieces = board.free_pieces(o.start, o.start + o.dur, b.device, b.exclusive)
-        if not pieces:
+        pieces = board.free_pieces(o.start, o.start + o.dur, b.device, b.exclusive, b.id)
+        segs: list[tuple[datetime, datetime, str | None]] = [(s, e, None) for s, e in pieces]
+        if b.split:   # consecutive parts of the window by share, then cut by the free pieces
+            parts, t = [], o.start
+            for i, (act, share) in enumerate(b.split):
+                end = o.start + o.dur if i == len(b.split) - 1 else t + o.dur * share
+                parts.append((t, end, act))
+                t = end
+            segs = [(max(s, p0), min(e, p1), act) for s, e in pieces for p0, p1, act in parts
+                    if (min(e, p1) - max(s, p0)).total_seconds() >= MIN_PIECE]
+        if not segs:
             plan.dropped["no free time in window"] += 1
             return []
-        out = []
-        for i, (s, e) in enumerate(pieces):
-            bid = base_id if len(pieces) == 1 else f"{base_id}{chr(ord('a') + i)}"
-            out.append(_entry(o, s, e, bid, b.device))
-        return out
+        return [_entry(o, s, e, base_id if len(segs) == 1 else f"{base_id}{_letter(i)}", activity=act)
+                for i, (s, e, act) in enumerate(segs)]
     t = o.start
     while True:
         e = t + o.dur
         if e > o.hi:
             plan.dropped["no longer fits (overlap)"] += 1
             return []
-        why = board.blocked(t, e)
+        why = board.blocked(t, e, b.id)
         if why:
             plan.dropped[why] += 1
             return []
         c = board.conflicts(t, e, b.device, b.exclusive)
         if not c:
-            return [_entry(o, t, e, base_id, b.device)]
+            break
         t = max(p.end for p in c)
+    if o.steps is None:
+        return [_entry(o, t, e, base_id)]
+    out = []
+    for i, st, dur in o.steps:   # back to back; -s<n> = position in the profile's sequence
+        out.append(_entry(o, t, t + dur, f"{base_id}-s{i}", step=st))
+        t += dur
+    return out
 
 
 def _companions(entries: list[Entry], block: Block) -> list[Entry]:
@@ -542,6 +656,25 @@ def make_phases(profile: Profile, baseline: Profile | None, start: date, days: i
     return [p for p in phases if p.dates]
 
 
+def _select(block: Block, phase: Phase, by_date: dict[date, DayCtx], seed: int, tz: ZoneInfo,
+            tt_tags, nights) -> dict[date, int]:
+    """Days (and occurrences per day) of one block in one phase."""
+    prof = phase.profile
+    if block.replaces is not None:
+        return {d: 1 for d in phase.dates if block.replaces in by_date[d].replaced}
+    limit = block.only_sleep_before
+
+    def eligible(d: date) -> bool:
+        if not block.selector.matches(static_tags(prof, weekday(d), tt_tags), weekday(d), nights.get(d, set())):
+            return False
+        c = by_date.get(d)
+        if limit is not None and c is not None:   # days outside the phase: only the selector counts
+            return c.sleep <= local(d, limit + DAY if limit < NOON else limit, tz)
+        return True
+    scale = instance_factor(seed, "scale", block.id, block.freq.scale)
+    return _pick_days(block.freq, eligible, phase, ("block", block.id), seed, prof.window_days, scale)
+
+
 def build_plan(profile: Profile, seed: int, start: date, days: int, *, baseline: Profile | None = None,
                baseline_days: int = 0, any_start: bool = False) -> Plan:
     """`start` is the first warm-up day. The first window day must be the profile's `start_weekday`
@@ -566,23 +699,45 @@ def build_plan(profile: Profile, seed: int, start: date, days: int, *, baseline:
 
     occs: list[_Occ] = []
     for phase in phases:
-        ctxs = _build_days(phase, seed, tz, plan)
-        plan.days.extend(ctxs)
-        by_date = {c.date: c for c in ctxs}
         prof = phase.profile
         tt_tags, _ = _timetable(prof, seed)
         nights = _night_sets(prof, seed, phase.dates) if prof.night_sets else {}
-        for block in prof.blocks:
-            def eligible(d, sel=block.selector):
-                return sel.matches(static_tags(prof, weekday(d), tt_tags), weekday(d), nights.get(d, set()))
-            per_day = _pick_days(block.freq, eligible, phase.dates, ("block", block.id), seed,
-                                 phase.window_start, prof.window_days)
-            for d in phase.dates:
-                if per_day.get(d):
-                    occs.extend(_occurrences(block, by_date[d], per_day[d], seed, tz, plan))
+        blocks = {b.id: b for b in prof.blocks}
+        selection: dict[str, dict[date, int]] = {}
 
-    blockers = [(a.start, a.end, "away") for c in plan.days for a in c.away]
-    blockers += [(s, e, "forbidden window") for c in plan.days for s, e in c.forbid]
+        needed = {r.unless_after for r in prof.wake + prof.sleep if r.unless_after}
+        if needed:   # pass 1: which nights have the block; pass 2: rebuild the days without those shifts
+            ctxs = _build_days(phase, seed, tz, Counter())
+            by_date = {c.date: c for c in ctxs}
+            suppress: dict[date, set[str]] = defaultdict(set)
+            for bid in sorted(needed):
+                selection[bid] = _select(blocks[bid], phase, by_date, seed, tz, tt_tags, nights)
+                for d, n in selection[bid].items():
+                    if n:
+                        suppress[d + timedelta(days=1) if blocks[bid].night else d].add(bid)
+            ctxs = _build_days(phase, seed, tz, plan.dropped, suppress)
+        else:
+            ctxs = _build_days(phase, seed, tz, plan.dropped)
+        plan.days.extend(ctxs)
+        by_date = {c.date: c for c in ctxs}
+
+        for block in prof.blocks:
+            if block.id not in selection:
+                selection[block.id] = _select(block, phase, by_date, seed, tz, tt_tags, nights)
+        for block in prof.blocks:
+            for cid in block.cancels:
+                for d, n in selection[block.id].items():
+                    if n and selection[cid].get(d):
+                        plan.dropped[f"cancelled by {block.id}"] += selection[cid][d]
+                        selection[cid][d] = 0
+        for block in prof.blocks:
+            for d in phase.dates:
+                if selection[block.id].get(d):
+                    occs.extend(_occurrences(block, by_date[d], selection[block.id][d], seed, tz, plan))
+
+    blockers = [(a.start, a.end, "away", frozenset()) for c in plan.days for a in c.away]
+    blockers += [(s, e, "forbidden window", frozenset()) for c in plan.days for s, e in c.forbid]
+    blockers += [(s, e, f"{i} skipped (at home, idle)", allow) for c in plan.days for i, s, e, allow in c.skipped]
     board = _Board(horizon, blockers)
     occs.sort(key=lambda o: (not o.block.exclusive, o.block.index, o.start))
     for o in occs:

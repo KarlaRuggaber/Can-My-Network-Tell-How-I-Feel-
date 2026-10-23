@@ -1,0 +1,32 @@
+# Machine-readable §9 of profiles/tier2-clinical/social-anxiety-moderate.md (format: scheduler/README.md §2).
+# A patch on student.yaml; the same file is the baseline for --baseline-days. Defaults for the constructs §9
+# leaves open: README §8 (decided 23.10).
+profile: social-anxiety-moderate
+source: profiles/tier2-clinical/social-anxiety-moderate.md
+tier: 2
+extends: student
+
+patch:
+  modify:
+    # synchronous contact: avoided or reduced; "baseline × f": f drawn once per seed
+    group_call:     {activity: voice_call, scale: 'U(0.2, 0.4)', duration_scale: 0.7,
+                     options: {mic_share: 0.1}}   # camera off -> voice_call; mic on 10 %: recorded only (no runner option)
+    family_call:    {activity: voice_call, duration_scale: 0.7}    # kept (low-threat), but no camera
+    gaming:         {voice: false}                                 # same sessions, no voice chat
+    # asynchronous / passive: kept or increased
+    messaging_day:  {scale: 'U(1.0, 1.15)'}
+    evening_social: {scale: 'U(1.0, 1.2)'}
+    day_checks:     {mix: {messaging: .35, social_passive: .55, news: .05, search: .05}}
+    # active social use: reduced
+    social_post:    {scale: 'U(0.4, 0.6)'}                         # ≈ 2-4 per week
+    # remove_away: of the baseline's going-out evenings 0-1 per window remain; the others are spent at home
+    going_out:      {keep_per_window: 0-1, sleep_when_replaced: end}
+
+  add:
+    # the evenings the baseline would be out (same draw), from the would-be leaving time to the would-be return;
+    # consecutive parts by share (decided 23.10: option b). Laptop evening blocks give way, phone ones stay.
+    - {id: home_instead_of_out, replaces: going_out, from: replaced.going_out.start, to: replaced.going_out.end,
+       device: laptop, split: {video_stream: .5, gaming_session: .3, social_passive: .2},
+       cancels: [gaming, evening_stream]}
+
+# unchanged: anchors (wake/sleep), campus away blocks, weekend_out, study blocks, domain diversity

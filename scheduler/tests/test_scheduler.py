@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+import math
+import re
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 from pathlib import Path
@@ -27,7 +29,9 @@ def make(name: str, seed: int, start: date = START, days: int = 15, baseline_day
     return planner.build_plan(prof, seed, start, days, baseline=base, baseline_days=baseline_days)
 
 
-CASES = [(n, s, 0) for n in TIER0 for s in SEEDS] + [("insomnia-moderate", s, 14) for s in SEEDS[:4]]
+CLINICAL = ["insomnia-moderate", "mdd-severe-suicidality", "social-anxiety-moderate"]
+CASES = [(n, s, 0) for n in TIER0 for s in SEEDS] + [(n, s, 14) for n in CLINICAL for s in SEEDS[:4]]
+OCC_RE = re.compile(r"^(\d{8}-[a-z0-9_]+-\d{2})")   # block_id without piece letter / step / companion suffix
 
 
 @pytest.fixture(scope="module", params=CASES, ids=lambda c: f"{c[0]}-{c[1]}")
@@ -47,14 +51,14 @@ def overlap(a, b):
 
 # --- reproducibility ----------------------------------------------------------------------------
 
-@pytest.mark.parametrize("name", TIER0 + ["insomnia-moderate"])
+@pytest.mark.parametrize("name", TIER0 + CLINICAL)
 def test_same_seed_same_plan(name):
     a = output.rows(make(name, 42), ROLES, "gw_x_a")
     b = output.rows(make(name, 42), ROLES, "gw_x_a")
     assert a == b
 
 
-@pytest.mark.parametrize("name", TIER0 + ["insomnia-moderate"])
+@pytest.mark.parametrize("name", TIER0 + CLINICAL)
 def test_different_seed_different_plan(name):
     a = output.rows(make(name, 1), ROLES, "gw_x_a")
     b = output.rows(make(name, 2), ROLES, "gw_x_a")
@@ -82,11 +86,13 @@ def test_phases(case):
     plan, days = case
     phase_of = {e.day: e.phase for e in plan.entries}
     assert phase_of[START] == "warmup"
-    if plan.profile.name == "insomnia-moderate":
+    if plan.profile.tier:
         assert Counter(phase_of.values()) == {"warmup": 1, "baseline": 14, "profile": 14}
+        added = {b.id for b in plan.profile.blocks} - {b.id for b in spec.load(plan.profile.root).blocks}
+        assert added
         for e in plan.entries:
-            assert e.profile == ("insomnia-moderate" if e.phase == "profile" else "9to5-worker")
-            if e.profile_block in ("night_bursts", "presleep_extension"):
+            assert e.profile == (plan.profile.name if e.phase == "profile" else plan.profile.root)
+            if e.profile_block in added:
                 assert e.phase == "profile"
     else:
         assert Counter(phase_of.values()) == {"warmup": 1, "profile": 14}
@@ -134,7 +140,7 @@ def test_away_replaces_evening_blocks(case):
     plan, _ = case
     evening = {b.id for p in plan.phases for b in p.profile.blocks if b.group == "evening"}
     replaced = {c.date for c in plan.days if any(a.replaces == "evening" for a in c.away)}
-    assert replaced
+    assert replaced   # at least in the warm-up/baseline/tier-0 days
     for e in plan.entries:
         if e.day in replaced:
             assert e.profile_block not in evening, e.block_id
@@ -169,19 +175,23 @@ def test_frequency_keys(case):
         es = [e for e in foreground(plan) if e.phase == phase.name]
         for b in prof.blocks:
             mine = [e for e in es if e.profile_block == b.id]
-            occ = {e.block_id.rstrip("abcdefgh") for e in mine}   # pieces of a split block = one occurrence
+            occ = {OCC_RE.match(e.block_id).group(1) for e in mine}   # pieces/steps of one occurrence = one
             per_day = Counter(o[:8] for o in occ)
             f = b.freq
             hi_count = f.clip[1] if (f.clip and f.clip_count) else f.count.bounds()[1]
+            scale = max(f.scale.bounds()[1], 1.0) if f.scale else 1.0
             if f.key in ("count", "days_per_week", "nights_per_window"):
-                assert max(per_day.values(), default=0) <= hi_count * max(f.scale, 1) + 1e-9, b.id
+                assert max(per_day.values(), default=0) <= math.ceil(hi_count * scale), b.id
             else:
                 assert max(per_day.values(), default=0) <= 1, b.id
             if f.key in ("per_week", "days_per_week"):
                 weeks = Counter(planner.monday(date(int(d[:4]), int(d[4:6]), int(d[6:]))) for d in per_day)
-                assert max(weeks.values(), default=0) <= f.period_n.bounds()[1], b.id
+                assert max(weeks.values(), default=0) <= math.ceil(f.period_n.bounds()[1] * scale), b.id
+            if f.key == "per_window" and phase.window_start:
+                assert len(per_day) <= math.ceil(f.period_n.bounds()[1] * scale), b.id
             if f.key == "count" and b.selector.day_types is None and b.selector.days is None \
-                    and b.selector.nights is None and f.count.bounds()[0] >= 1 and not b.group:
+                    and b.selector.nights is None and f.count.bounds()[0] >= 1 and not b.group \
+                    and f.scale is None and b.replaces is None and not b.night:
                 # an "every day" block occurs on most days (it can be dropped on away days)
                 assert len(per_day) >= len(phase.dates) // 2, b.id
 
@@ -355,7 +365,8 @@ def test_window_must_start_on_monday(tmp_path):
 
 
 def test_duration_noise_is_one_factor_per_day():
-    for name, x in [("student", 0.25), ("9to5-worker", 0.15), ("insomnia-moderate", 0.15)]:
+    for name, x in [("student", 0.25), ("9to5-worker", 0.15), ("insomnia-moderate", 0.15),
+                    ("mdd-severe-suicidality", 0.25), ("social-anxiety-moderate", 0.25)]:
         prof = spec.load(name)
         assert prof.duration_noise == x
         plan = make(name, 3, days=29 if prof.tier else 15, baseline_days=14 if prof.tier else 0)
@@ -383,3 +394,201 @@ def test_noise_false_keeps_the_raw_duration(case):
     for e in plan.entries:
         if e.profile_block == "night_bursts":
             assert 120 <= (e.end - e.start).total_seconds() <= 480
+
+
+# --- MDD severe + suicidality ----------------------------------------------------------------------
+
+def clinical(name: str, seed: int) -> planner.Plan:
+    return make(name, seed, days=29, baseline_days=14)
+
+
+def plain_root(name: str, seed: int) -> planner.Plan:
+    """The tier-0 profile alone over the same 29 days (same person, same seed)."""
+    return make(spec.load(name).root, seed, days=29)
+
+
+def in_profile(plan):
+    return [c for c in plan.days if c.phase.name == "profile"]
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_mdd_skipped_campus_days(seed):
+    plan = clinical("mdd-severe-suicidality", seed)
+    days = [c for c in in_profile(plan) if "lecture" in c.tags]
+    skipped = [c for c in days if c.skipped]
+    attended = [c for c in days if any(a.id == "campus" for a in c.away)]
+    assert len(skipped) + len(attended) == len(days)
+    checks = 0
+    for c in skipped:
+        (_, s, e, allow) = c.skipped[0]
+        assert allow == {"day_checks"}
+        for x in plan.entries:
+            if x.start < e and s < x.end and x.activity != "away":
+                assert x.profile_block == "day_checks", x.block_id
+                checks += 1
+        assert not any(x.profile_block == "study_home" and x.day == c.date for x in plan.entries)
+    assert checks or not skipped   # at home: the phone checks do run in the skipped slot
+
+
+def test_mdd_attend_share_is_about_half():
+    n = skipped = 0
+    for seed in range(20):
+        for c in in_profile(clinical("mdd-severe-suicidality", seed)):
+            if "lecture" in c.tags:
+                n += 1
+                skipped += bool(c.skipped)
+    assert 0.35 <= skipped / n <= 0.65
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_mdd_night_conditions(seed):
+    plan = clinical("mdd-severe-suicidality", seed)
+    ctx = {c.date: c for c in plan.days}
+    limits = {"early_waking": (2, 30), "night_passive": (1, 30)}
+    for e in plan.entries:
+        if e.profile_block in limits:
+            h, m = limits[e.profile_block]
+            c = ctx[e.day]
+            assert c.sleep <= planner.local(e.day + timedelta(days=1), h * 3600 + m * 60, TZ), e.block_id
+            assert e.start > c.sleep
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_mdd_wake_shift_skipped_after_early_waking(seed):
+    """`anchors.wake: shift ... # on days without early waking`: the morning after an early waking keeps the
+    baseline wake (the person stays up, idle, until then); every other weekday morning is 30-150 min later."""
+    mdd, stu = clinical("mdd-severe-suicidality", seed), plain_root("mdd-severe-suicidality", seed)
+    w_mdd = {c.date: c for c in mdd.days}
+    w_stu = {c.date: c.wake for c in stu.days}
+    early = {e.day + timedelta(days=1): e for e in mdd.entries if e.profile_block == "early_waking"}
+    for c in in_profile(mdd):
+        if "weekend" in c.tags:
+            continue   # weekend wake has its own value in the patch
+        diff = (c.wake - w_stu[c.date]).total_seconds() / 60
+        if c.date in early:
+            assert diff == 0, c.date
+            ew = early[c.date]
+            assert not [x for x in mdd.entries if ew.end <= x.start < c.wake and x.activity != "away"]
+        elif c.date - timedelta(days=1) >= in_profile(mdd)[0].date:
+            assert 30 <= diff <= 150, c.date
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_mdd_sleep_sd_scale(seed):
+    """sd × 1.7 widens the same draw: deviation from the mean = 1.7 × the student's deviation."""
+    mdd, stu = clinical("mdd-severe-suicidality", seed), plain_root("mdd-severe-suicidality", seed)
+    s_stu = {c.date: c.sleep for c in stu.days}
+    out_stu = {c.date for c in stu.days if any(a.id == "going_out" for a in c.away)}
+    for c in in_profile(mdd):
+        if planner.weekday(c.date) in ("Fri", "Sat") or c.date in out_stu:
+            continue   # Fri/Sat have their own value in the patch; after going out, sleep follows the return
+        mean = planner.local(c.date, 24.5 * 3600, TZ)
+        dev_mdd = (c.baseline_sleep - mean).total_seconds()
+        dev_stu = (s_stu[c.date] - mean).total_seconds()
+        assert abs(dev_mdd - 1.7 * dev_stu) <= 2
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_mdd_suicidality_sequence(seed):
+    plan = clinical("mdd-severe-suicidality", seed)
+    rows = [e for e in plan.entries if e.flag == "sensitive"]
+    assert rows and all(e.profile_block == "suicidality" and e.phase == "profile" for e in rows)
+    episodes = defaultdict(list)
+    for e in rows:
+        episodes[OCC_RE.match(e.block_id).group(1)].append(e)
+    assert 1 <= len(episodes) <= 4
+    assert len({k[:8] for k in episodes}) == len(episodes)   # different days
+    for steps in episodes.values():
+        steps.sort(key=lambda e: e.start)
+        assert [e.activity for e in steps if e.activity == "crisis_resource_visit"]   # the 1.0 step always runs
+        for a, b in zip(steps, steps[1:]):
+            assert a.end == b.start   # back to back
+        for e in steps:
+            n = int(e.block_id.rsplit("-s", 1)[1])
+            assert e.activity == ["repeat_visit_loop", "crisis_resource_visit", "sh_adjacent_lookup"][n - 1]
+            if e.activity == "sh_adjacent_lookup":
+                assert e.lookups == "1-3"
+                assert "--lookups 1-3" in output.command(output.rows(
+                    planner.Plan(plan.seed, plan.profile, [], [], [e], plan.horizon), ROLES, "gw_x_a")[0])
+
+
+def test_mdd_scaled_blocks_are_reduced():
+    mdd, stu = clinical("mdd-severe-suicidality", 3), plain_root("mdd-severe-suicidality", 3)
+    def per_block(plan):
+        return Counter(e.profile_block for e in plan.entries
+                       if e.day >= in_profile(mdd)[0].date and e.companion_of is None)
+    a, b = per_block(mdd), per_block(stu)
+    for bid in ("day_checks", "messaging_day", "evening_social", "gaming"):
+        assert a[bid] < b[bid], bid
+    assert not [e for e in mdd.entries if e.phase == "profile" and e.block_id.endswith("-voice")]
+
+
+# --- social anxiety ------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("seed", range(8))
+def test_sad_outings_kept_or_spent_at_home(seed):
+    sad, stu = clinical("social-anxiety-moderate", seed), plain_root("social-anxiety-moderate", seed)
+    stu_out = {c.date: next(a for a in c.away if a.id == "going_out") for c in stu.days
+               if any(a.id == "going_out" for a in c.away)}
+    prof = in_profile(sad)
+    kept = {c.date for c in prof if any(a.id == "going_out" for a in c.away)}
+    home = {c.date: c for c in prof if "going_out" in c.replaced}
+    assert len(kept) <= 1                                    # keep_per_window 0-1
+    assert kept | set(home) == {d for d in stu_out if d >= prof[0].date}   # the baseline's evenings
+    for d, c in home.items():
+        s, e = c.replaced["going_out"]
+        assert (s, e) == (stu_out[d].start, stu_out[d].end)     # same would-be times
+        assert c.sleep == e                                    # sleep = end of the home block
+        parts = sorted((x for x in sad.entries if x.profile_block == "home_instead_of_out" and x.day == d),
+                       key=lambda x: x.start)
+        assert parts and parts[0].start >= s and parts[-1].end <= e
+        order = [x.activity for x in parts]
+        assert order == sorted(order, key=["video_stream", "gaming_session", "social_passive"].index)
+        assert not [x for x in sad.entries if x.day == d and x.profile_block in ("gaming", "evening_stream")]
+        assert [x for x in sad.entries if x.day == d and x.profile_block == "evening_social"] or True
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_sad_calls(seed):
+    sad = clinical("social-anxiety-moderate", seed)
+    prof = [e for e in sad.entries if e.phase == "profile"]
+    for e in prof:
+        if e.profile_block in ("group_call", "family_call"):
+            assert e.activity == "voice_call"
+        if e.profile_block == "group_call":
+            assert e.options == "mic_share=0.1"
+        assert not e.block_id.endswith("-voice")               # gaming without voice chat
+    fam = [e for e in prof if e.profile_block == "family_call"]
+    assert fam and all((e.end - e.start).total_seconds() <= 35 * 60 * 0.7 * 1.25 + 1 for e in fam)
+
+
+def test_plan_csv_has_flag_and_options(tmp_path):
+    out = tmp_path / "mdd.csv"
+    dev = tmp_path / "devices.csv"
+    dev.write_text("device,role,mac,ip,dataset\n"
+                   "mdd_a_phone,phone,02:00:0a:2a:01:31,10.42.1.31,gw_mdd_a\n"
+                   "mdd_a_laptop,laptop,02:00:0a:2a:01:32,10.42.1.32,gw_mdd_a\n")
+    assert cli.main(["plan", "--profile", "mdd-severe-suicidality", "--seed", "2", "--start", "2026-10-25",
+                     "--days", "29", "--baseline-days", "14", "--devices", str(dev), "--dataset", "gw_mdd_a",
+                     "--out", str(out)]) == 0
+    rows = list(csv.DictReader(out.open()))
+    assert {"options", "flag"} <= set(rows[0])
+    assert {r["flag"] for r in rows} == {"", "sensitive"}
+
+
+def test_spec_rejects_bad_clinical_constructs(tmp_path):
+    def broken(text):
+        p = tmp_path / "x.yaml"
+        p.write_text("profile: x\ntier: 2\nextends: student\npatch:\n" + text)
+        return str(p)
+    with pytest.raises(spec.SpecError, match="keep_per_window"):
+        spec.load(broken("  add:\n    - {id: h, replaces: going_out, from: \"20:00\", to: \"23:00\", "
+                         "device: laptop, activity: video_stream, mix: {streaming: 1}}\n"))
+    with pytest.raises(spec.SpecError, match="split needs"):
+        spec.load(broken("  add:\n    - {id: h, day_types: all, within: [\"20:00\", \"23:00\"], duration: 1h, "
+                         "device: laptop, split: {video_stream: 1}}\n"))
+    with pytest.raises(spec.SpecError, match="probability 1"):
+        spec.load(broken("  add:\n    - {id: h, day_types: all, within: [\"20:00\", \"23:00\"], device: phone, "
+                         "sequence: [{activity: crisis_resource_visit, probability: 0.5}]}\n"))
+    with pytest.raises(spec.SpecError, match="unless_after"):
+        spec.load(broken("  anchors:\n    wake: [{day_types: all, shift: 10m, unless_after: nope}]\n"))

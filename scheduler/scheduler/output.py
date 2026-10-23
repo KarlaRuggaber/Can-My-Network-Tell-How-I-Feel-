@@ -13,8 +13,8 @@ from .planner import Entry, Plan
 # The runner's ground-truth columns first (catalog §1, without `status`), then what the runner needs and
 # what traces a row back to the profile.
 PLAN_COLUMNS = ["start", "end", "device", "activity_id", "domains", "profile", "seed", "block_id",
-                "mix", "duration", "pages", "dwell", "lookups", "platform", "day", "phase", "dataset", "profile_block",
-                "companion_of"]
+                "mix", "duration", "pages", "dwell", "lookups", "platform", "options", "day", "phase", "dataset",
+                "profile_block", "companion_of", "flag"]
 COMMAND_COLUMNS = ["start", "end", "device", "block_id", "command"]
 RUN_SCRIPT = "scripts/run-activity.sh"   # relative to traffic-runner/
 
@@ -43,9 +43,9 @@ def rows(plan: Plan, devices: dict[str, str], dataset: str) -> list[dict[str, st
             "profile": e.profile, "seed": str(plan.seed), "block_id": e.block_id,
             "mix": runner_mix(e), "duration": str(int((e.end - e.start).total_seconds())),
             "pages": e.pages or "", "dwell": e.dwell or "", "lookups": e.lookups or "",
-            "platform": e.platform or "",
+            "platform": e.platform or "", "options": e.options or "",
             "day": e.day.isoformat(), "phase": e.phase, "dataset": dataset, "profile_block": e.profile_block,
-            "companion_of": e.companion_of or "",
+            "companion_of": e.companion_of or "", "flag": e.flag or "",
         })
     return out
 
