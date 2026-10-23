@@ -53,7 +53,7 @@ cd traffic-runner
 python3 -m pytest -q                       # needs PyYAML + pytest; no network, no Playwright
 python3 -m runner validate
 python3 -m runner list
-python3 -m runner run --device student01_phone --activity browse --duration 10m \
+python3 -m runner run --device student_a_phone --activity browse --duration 10m \
     --mix news,shopping --seed 42 --profile student --block-id b001 --dry-run
 ```
 
@@ -64,7 +64,7 @@ A real run on a laptop (default Docker network, no fixed IP, traffic is **not** 
 ```bash
 docker build -t traffic-runner:0.1.0 .
 docker run --rm --shm-size 1g -v "$PWD/logs:/logs" traffic-runner:0.1.0 \
-    python3 -m runner run --device student01_laptop --activity phone_check --duration 2m \
+    python3 -m runner run --device student_a_laptop --activity phone_check --duration 2m \
     --mix news --seed 42 --profile test --block-id local001
 docker run --rm traffic-runner:0.1.0 python3 -m pytest -q
 ```
@@ -72,7 +72,7 @@ docker run --rm traffic-runner:0.1.0 python3 -m pytest -q
 ## 3. Running activities
 
 ```bash
-sudo scripts/run-activity.sh student01_phone \
+sudo scripts/run-activity.sh student_a_phone \
     --activity phone_check --duration 300 --mix news,social_passive \
     --seed 42 --profile student --block-id b001
 ```
@@ -141,7 +141,7 @@ SRF Play only starts its player after a choice. Whether the simulated users shou
 
 ```csv
 start,end,device,activity_id,domains,profile,seed,block_id,status
-2026-10-16T18:02:11+02:00,2026-10-16T18:04:11+02:00,student01_phone,phone_check,www.20min.ch;www.reddit.com,student,42,b001,ok
+2026-10-16T18:02:11+02:00,2026-10-16T18:04:11+02:00,student_a_phone,phone_check,www.20min.ch;www.reddit.com,student,42,b001,ok
 ```
 
 | Column | Content |
@@ -153,8 +153,6 @@ start,end,device,activity_id,domains,profile,seed,block_id,status
 Every run that gets past argument checking writes a row, including on error or interrupt. The exception is a container stopped mid-run (`docker compose down`), which kills the exec'd process with SIGKILL.
 
 ## 5. devices.csv and adding a device
-
-The example uses the naming convention agreed on 23.10. `config/devices.csv` itself is switched over in the next step (section 9, item 4).
 
 ```csv
 device,role,mac,ip,dataset
@@ -342,17 +340,17 @@ cd ~/traffic-runner
 sudo docker compose build        # only the small pip layer (pinned packages)
 sudo docker compose up -d
 sudo docker compose ps
-sudo docker compose exec -T student01_phone python3 -m pytest -q < /dev/null
+sudo docker compose exec -T student_a_phone python3 -m pytest -q < /dev/null
 # H.264/AAC support of the amd64 Chromium (expect true true; SRF needs it):
-sudo docker compose exec -T student01_phone python3 -c "from playwright.sync_api import sync_playwright as s; p = s().start(); b = p.chromium.launch(channel='chromium'); pg = b.new_page(); print([pg.evaluate('t => MediaSource.isTypeSupported(t)', t) for t in ('video/mp4; codecs=\"avc1.42E01E\"', 'audio/mp4; codecs=\"mp4a.40.2\"')]); b.close(); p.stop()" < /dev/null
+sudo docker compose exec -T student_a_phone python3 -c "from playwright.sync_api import sync_playwright as s; p = s().start(); b = p.chromium.launch(channel='chromium'); pg = b.new_page(); print([pg.evaluate('t => MediaSource.isTypeSupported(t)', t) for t in ('video/mp4; codecs=\"avc1.42E01E\"', 'audio/mp4; codecs=\"mp4a.40.2\"')]); b.close(); p.stop()" < /dev/null
 ```
 
 ### Step 7: acceptance
 
 ```bash
 cd ~/traffic-runner
-sudo scripts/run-activity.sh student01_phone  --activity phone_check --duration 2m --mix news,social_passive --seed 42 --profile student --block-id t001 &
-sudo scripts/run-activity.sh student01_laptop --activity browse --duration 2m --mix news,shopping --seed 42 --profile student --block-id t002 &
+sudo scripts/run-activity.sh student_a_phone  --activity phone_check --duration 2m --mix news,social_passive --seed 42 --profile student --block-id t001 &
+sudo scripts/run-activity.sh student_a_laptop --activity browse --duration 2m --mix news,shopping --seed 42 --profile student --block-id t002 &
 wait
 sudo grep -E '"src":"10\.42\.1\.1[12]"' /var/lib/tapcap/meta/feed.ndjson | tail -20
 sudo bash -c 'tcpdump -nn -r "$(ls -t /var/lib/tapcap/sim/ready/*.pcap | head -1)" host 10.42.1.11 | head'
@@ -387,7 +385,7 @@ State 2026-10-16. The same list is in `process/process.md` (week 5).
 1. **Watch the sim folder (done 23.10).** `tapingest` also watches `/var/lib/tapcap/sim/ready` (Deployment.md §7.6).
 2. **One devices.csv (done 23.10).** The ingest reads this runner's `config/devices.csv` from the clone; `/etc/tapingest/devices.csv` is no longer used (Deployment.md §7.6). Both sides accept `#` comment lines.
 3. **Retention (done 23.10).** The age `2d` on `/var/lib/tapcap/ready` was removed from `/etc/tmpfiles.d/tapcap.conf`, so raw pcaps are kept. Backup: `/root/tapgw-backup-20261023/`.
-4. **Dataset names (decided 23.10).** Convention `gw_<profile>_<letter>` / `<profile>_<letter>_<role>` (catalog §1). Next step: rename the devices in `config/devices.csv` and add a check to the validator (dataset starts with `gw_`, does not end with a digit, contains no `onu`/`bras`). Data already ingested under `gw_student_01` (pilot) stays under that name.
+4. **Dataset names (done 23.10).** Convention `gw_<profile>_<letter>` / `<profile>_<letter>_<role>` (catalog §1). The devices are renamed (`student_a_phone`, `student_a_laptop` → `gw_student_a`), and the validator rejects dataset names that do not start with `gw_`, end with a digit or contain `onu`/`bras`. Data ingested before the rename (acceptance runs, pilot) stays under `gw_student_01`.
 
 **Runner**
 

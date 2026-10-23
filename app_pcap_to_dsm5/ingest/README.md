@@ -67,8 +67,8 @@ repo); do not change the format without agreeing on it.
 
 ```csv
 device,role,mac,ip,dataset
-student01_phone,phone,02:00:0a:2a:01:0b,10.42.1.11,gw_student_01
-student01_laptop,laptop,02:00:0a:2a:01:0c,10.42.1.12,gw_student_01
+student_a_phone,phone,02:00:0a:2a:01:0b,10.42.1.11,gw_student_a
+student_a_laptop,laptop,02:00:0a:2a:01:0c,10.42.1.12,gw_student_a
 ```
 
 | Column | Meaning |

@@ -1,3 +1,5 @@
+# Simulated devices (traffic runner) and dataset map of the ingest (tapingest reads this file).
+# Naming (activity-catalog §1): dataset gw_<profile>_<letter>, device <profile>_<letter>_<role>.
 device,role,mac,ip,dataset
-student01_phone,phone,02:00:0a:2a:01:0b,10.42.1.11,gw_student_01
-student01_laptop,laptop,02:00:0a:2a:01:0c,10.42.1.12,gw_student_01
+student_a_phone,phone,02:00:0a:2a:01:0b,10.42.1.11,gw_student_a
+student_a_laptop,laptop,02:00:0a:2a:01:0c,10.42.1.12,gw_student_a

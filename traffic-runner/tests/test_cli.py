@@ -19,7 +19,7 @@ def rows(logdir):
     return list(csv.DictReader((logdir / "ground_truth.csv").open()))
 
 
-BASE = ["run", "--device", "student01_phone", "--seed", "42", "--profile", "student", "--block-id", "b001"]
+BASE = ["run", "--device", "student_a_phone", "--seed", "42", "--profile", "student", "--block-id", "b001"]
 
 
 def test_stub_logs_not_implemented(logdir):
@@ -40,7 +40,7 @@ def test_login_only_mix_logs_not_implemented(logdir):
 def test_idle_connected_real_clock(logdir):
     assert cli.main(BASE + ["--activity", "idle_connected", "--duration", "1"]) == cli.EXIT_OK
     r = rows(logdir)[0]
-    assert r["status"] == "ok" and r["device"] == "student01_phone" and r["seed"] == "42"
+    assert r["status"] == "ok" and r["device"] == "student_a_phone" and r["seed"] == "42"
 
 
 @pytest.mark.parametrize("extra", [
@@ -56,7 +56,7 @@ def test_usage_errors_write_no_row(logdir, extra):
 
 
 def test_container_device_mismatch(logdir, monkeypatch):
-    monkeypatch.setenv("RUNNER_DEVICE", "student01_laptop")
+    monkeypatch.setenv("RUNNER_DEVICE", "student_a_laptop")
     assert cli.main(BASE + ["--activity", "idle_connected", "--duration", "1"]) == cli.EXIT_USAGE
 
 

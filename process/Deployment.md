@@ -46,7 +46,7 @@ The work was done with the support of an AI assistant (Claude), which wrote and 
 | Python venv for the ingest | scapy 2.8.0, pandas 3.0.6, pyarrow 26.0.0, Python 3.14.4 | `/opt/can-my-network/app_pcap_to_dsm5/.venv` |
 | Ingest service | `tapingest.service`, user `tapingest` (member of group `tapcap`), enabled at boot | `/etc/systemd/system/tapingest.service` |
 | Device map | `devices.csv` (IP → dataset), in git, the same file the runner containers are generated from | `/opt/can-my-network/traffic-runner/config/devices.csv` |
-| Runner containers | `student01_phone`, `student01_laptop` (Karla, see `traffic-runner/README.md`), image `traffic-runner:0.1.0` | `/opt/can-my-network/traffic-runner` |
+| Runner containers | `student_a_phone`, `student_a_laptop` (until 23.10: `student01_*`) (Karla, see `traffic-runner/README.md`), image `traffic-runner:0.1.0` | `/opt/can-my-network/traffic-runner` |
 | Ingest state | SQLite list of processed capture files | `/var/lib/tapingest/state.sqlite` |
 | App data | Parquet partitions, owned by `tapingest` | `/opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet/` |
 | App feature cache | Daily metric CSVs written by the app | `/opt/can-my-network/app_pcap_to_dsm5/app/feature_cache/` |
@@ -93,8 +93,8 @@ One row per device. Since 23.10 the ingest reads the runner's own file, `traffic
 
 ```csv
 device,role,mac,ip,dataset
-student01_phone,phone,02:00:0a:2a:01:0b,10.42.1.11,gw_student_01
-student01_laptop,laptop,02:00:0a:2a:01:0c,10.42.1.12,gw_student_01
+student_a_phone,phone,02:00:0a:2a:01:0b,10.42.1.11,gw_student_a
+student_a_laptop,laptop,02:00:0a:2a:01:0c,10.42.1.12,gw_student_a
 ```
 
 | Column | Meaning |
@@ -107,7 +107,7 @@ student01_laptop,laptop,02:00:0a:2a:01:0c,10.42.1.12,gw_student_01
 
 The file is validated when loaded (columns, valid IPv4, unique ip/device/mac, safe dataset name) and reloaded automatically when it changes. Lines starting with `#` are ignored. A change only applies to files ingested afterwards.
 
-It lists the two runner containers (`student01_phone`, `student01_laptop` → `gw_student_01`). Traffic of all other devices, including the real phones on `eno1`, goes to `gw_unassigned`.
+It lists the two runner containers (`student_a_phone`, `student_a_laptop` → `gw_student_a`; until 23.10 `student01_*` → `gw_student_01`). Traffic of all other devices, including the real phones on `eno1`, goes to `gw_unassigned`.
 
 ### App changes (folder `app_pcap_to_dsm5/` in this repository)
 
@@ -419,7 +419,7 @@ sudo systemctl start tapingest
 8. **Throughput:** 1500–3500 packets/s on the mini-PC. Enough for a few devices; a high-quality video stream alone can reach 500–1000 packets/s. Watch "still pending" in the log during runner tests.
 9. **Retention policy.** Decided 23.10: raw pcaps are kept in both folders (the `2d` age on `ready/` was removed, HardwareSetup §15). Still open: a policy for Parquet and for when the disk fills up.
 10. **Real devices in the device map.** The ingest reads one `devices.csv`, which also generates runner containers. Real test phones need either a second `--devices` file or a role the runner's generator skips.
-11. **Dataset names.** Decided 23.10: `gw_<profile>_<letter>`, devices `<profile>_<letter>_<role>` (activity-catalog §1), because the app groups `gw_student_01` and `gw_student_02` as `gw_student`. Next: rename the devices in `traffic-runner/config/devices.csv`. The pilot data under `gw_student_01` keeps its name.
+11. **Dataset names.** Done 23.10: `gw_<profile>_<letter>`, devices `<profile>_<letter>_<role>` (activity-catalog §1), because the app groups `gw_student_01` and `gw_student_02` as `gw_student`. The runner's devices are renamed (`student_a_*` → `gw_student_a`), and its validator enforces the rule. Data ingested before the rename stays under `gw_student_01`.
 
 ## 12. Appendix: configuration and commands
 

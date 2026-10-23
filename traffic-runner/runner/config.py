@@ -79,6 +79,8 @@ def load_devices(path: Path | None = None) -> dict[str, Device]:
         errors.extend(f"{where}: {e}" for e in _ip_errors(ip))
         if not _NAME_RE.match(dataset):
             errors.append(f"{where}: dataset '{dataset}' must match [a-z0-9_]+")
+        else:
+            errors.extend(f"{where}: {e}" for e in _dataset_errors(dataset))
 
         if mac in seen_mac:
             errors.append(f"{where}: MAC {mac} already used by {seen_mac[mac]}")
@@ -104,6 +106,21 @@ def _mac_errors(mac: str) -> list[str]:
         errors.append(f"MAC {mac} must be locally administered (first octet like 02, 06, 0a, ...)")
     if first & 0x01:
         errors.append(f"MAC {mac} is a multicast address")
+    return errors
+
+
+def _dataset_errors(dataset: str) -> list[str]:
+    """Naming rules of activity-catalog §1 (gw_<profile>_<letter>)."""
+    errors = []
+    if not dataset.startswith("gw_"):
+        errors.append(f"dataset '{dataset}' must start with gw_")
+    if dataset[-1].isdigit():
+        errors.append(f"dataset '{dataset}' must not end with a digit: the app strips trailing digits"
+                      " and would merge it with other datasets (use gw_<profile>_<letter>)")
+    for word in ("onu", "bras"):
+        if word in dataset:
+            errors.append(f"dataset '{dataset}' must not contain '{word}': the app would treat it"
+                          f" as an {word.upper()} dataset")
     return errors
 
 

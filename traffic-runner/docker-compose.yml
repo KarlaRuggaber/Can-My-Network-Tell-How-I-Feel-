@@ -8,18 +8,18 @@
 name: traffic-runner
 
 services:
-  student01_phone:
+  student_a_phone:
     image: traffic-runner:0.1.0
     build:
       context: .
       network: host
-    container_name: student01_phone
-    hostname: student01-phone
+    container_name: student_a_phone
+    hostname: student-a-phone
     init: true
     command: ["sleep", "infinity"]
     restart: unless-stopped
     environment:
-      RUNNER_DEVICE: student01_phone
+      RUNNER_DEVICE: student_a_phone
       RUNNER_STRICT_IP: "1"
       TZ: Europe/Zurich
     dns: [10.42.1.1]
@@ -35,16 +35,16 @@ services:
         ipv4_address: 10.42.1.11
         mac_address: "02:00:0a:2a:01:0b"
 
-  student01_laptop:
+  student_a_laptop:
     image: traffic-runner:0.1.0
     pull_policy: never  # built by the first service
-    container_name: student01_laptop
-    hostname: student01-laptop
+    container_name: student_a_laptop
+    hostname: student-a-laptop
     init: true
     command: ["sleep", "infinity"]
     restart: unless-stopped
     environment:
-      RUNNER_DEVICE: student01_laptop
+      RUNNER_DEVICE: student_a_laptop
       RUNNER_STRICT_IP: "1"
       TZ: Europe/Zurich
     dns: [10.42.1.1]
