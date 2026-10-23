@@ -164,8 +164,21 @@ def enrich_with_hostnames(df: pd.DataFrame) -> pd.DataFrame:
         return out
 
     ip2host = build_dns_map(out)
-    # Fill ResolvedHost via IP map where available
-    out["ResolvedHost"] = out["Destination IP"].map(ip2host) if ip2host else None
+    # Fill ResolvedHost via IP map where available. Look up the remote side of each
+    # packet: the destination for outgoing packets, the source for incoming ones
+    # (server -> client). Looking up the destination only left every inbound packet
+    # without a hostname, so e.g. streaming_inbound_mask never matched.
+    if ip2host:
+        remote = out["Destination IP"]
+        if "Source IP" in out.columns:
+            ips = pd.unique(pd.concat([out["Source IP"], out["Destination IP"]]).dropna())
+            private = {ip: is_private_ip(ip) for ip in ips}
+            src_priv = out["Source IP"].map(private).fillna(False).astype(bool)
+            dst_priv = out["Destination IP"].map(private).fillna(False).astype(bool)
+            remote = remote.where(~(dst_priv & ~src_priv), out["Source IP"])
+        out["ResolvedHost"] = remote.map(ip2host)
+    else:
+        out["ResolvedHost"] = None
 
     # If we still have gaps, optionally fall back to DNS_QNAME/ANS_NAME on DNS rows themselves
     if "ResolvedHost" in out.columns:
