@@ -248,10 +248,31 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
     - `repeat_visit_loop` uses a new context instead of a new browser.
     - Only one `accounts.google.com` request per browser start remains (runner README §8).
     - Real Chrome/Android devices send the same hosts; that is a case for the ingest filter.
-  - Scheduler.
+  - ~~Scheduler~~ done 23.10 (entry below).
 - **Blockers / notes:**
   - The SRF radio page offers no quality levels, so `music_background` streams 192 kbit/s (≈ 85 MiB/h).
   - The thesis lists do not know `notion.com` or `cloud.microsoft`, so real Notion/Office users would not count as productive. This is a limitation to mention in thesis-alignment.
+
+
+**Scheduler, executor, push report and the run setup (Thierry):** Fri 23.10
+- **Done:**
+  - **Scheduler** (`scheduler/`, PRs #3–#5): profile + seed → ground-truth plan (one row per block, `block_id` traceable into the runner's log) and runner commands. YAML for all five profiles, clinical ones as patches on their tier-0 profile, `--baseline-days 14`. 430 tests. Details: [scheduler/README.md](../scheduler/README.md).
+  - **Decisions:** warm-up on the Sunday before the window; day-to-day duration noise (±25 % student, ±15 % 9-to-5); calls placed first, work/study cut around them; fixed-start blocks may slip 30 min; MDD/SAD defaults (README §8), SAD home evenings split stream → gaming → social.
+  - **Executor** (`python -m scheduler execute`): replays the commands live, never starts a block twice (state file), late blocks run with the remaining time. **Push report** (`python -m scheduler report`): daily at 08:00 and hourly on problems via ntfy; test push arrived.
+  - **Run plans** for Ben (`gw_insomnia_a`, seed 1), Maria (`gw_mdd_suicidality_a`, seed 2) and Carl (`gw_social_anxiety_a`, seed 3): warm-up Sun 25.10, baseline 26.10–08.11, profile 09.11–22.11. On the gateway in `/var/lib/traffic-executor/`.
+  - **Silent time:** with Karla's new activities only messaging and posting are stubs, 5 % / 3 % of the planned time (was 23 % / 11 %).
+  - **Pilot** 16:00–17:00: the plans' busiest hour (two gaming sessions with voice chat, a stream, social, phone checks) on the six new devices. 12/12 blocks on time, 10 `ok`, 1 expected stub, 1 YouTube stall (`error`); data in all three datasets; memory 1.07–2.58 GB available, no OOM; CPU load up to 11. Pilot data moved aside. Details: [Deployment.md](Deployment.md) §7.8.
+  - **Run switched on** at 17:04: three executors waiting for Sun 25.10, daily report 08:00 and hourly watch enabled; the first report arrived.
+  - **Tailscale** (`can-my-network-gw`): SSH to the gateway from any network; only SSH is open on `tailscale0`. A real phone on the AP kept internet access.
+- **Findings:**
+  - **tapfeed kept a growing capture file in RAM** (`/tmp` is a tmpfs): 1.5 GB after 7 h on eno1, ~100 MB/min on br-sim during the pilot. Would have run the gateway out of memory in the first hour of the live run. Fixed the same day (PRs #6/#7): disk-backed `/tmp` per tapfeed instance plus an hourly tshark restart. The first install failed (`226/NAMESPACE`), so the feed was down for about one minute (16:09:40–16:10:30). Details: Deployment.md §7.8, HardwareSetup §17.
+  - tshark's own memory also grows with traffic (410 MB after 30 min of the pilot). Decided: tshark restarts every 10 min (`TAPFEED_ROTATE=600`).
+  - Capacity: with all three personas, 0–3 runs overlap most of the time, peaks of 7–8; CPU load reached 11 on 6 cores when the pilot's blocks started.
+- **Next / open:**
+  - Lukasz reviews the MDD profile before 09.11
+  - Remove the temporary sudo rule after the setup
+  - Runner (Karla): `video_stream` aborts the block when YouTube stalls; reload or pick another video instead
+  - Synthesizer
 
 </details>
 

@@ -568,3 +568,32 @@ On 23.10 the gateway got a third virtual network for the counterpart of the runn
 The 3.5 GB baseline before the stack comes from the existing services (UniFi controller, app, capture). With more simulated persons running in parallel this gets tight. Options then: limit the number of devices active at the same time, or stop the UniFi controller (an adopted AP keeps working without it).
 
 **Rollback.** `cd /opt/can-my-network/peer-vm && sudo docker compose down`. Then restore `nftables.conf` from the backup, remove `/etc/dnsmasq.d/peer.conf` and run `docker network rm peer`. Without `peer.env`, the runner logs calls and gaming as `not_implemented` again.
+
+## 17. Addendum (23.10.2026): tapfeed temp file, live-run units, Tailscale
+
+On 23.10 the gateway was prepared for the live runs from 25.10 ([Deployment.md §7.8](Deployment.md)). The pilot showed that tapfeed's tshark kept a growing capture file in RAM, which was fixed the same day, and Tailscale was added for access from outside the hotspot.
+
+**Changes.** Backups in `/root/tapgw-backup-20261023-1409/` (tapfeed) and the nftables backup of the Tailscale step (Deployment.md §8). A real phone on the AP kept internet access after the nftables step (checked by Thierry).
+
+| # | Area | Change | Check |
+| --- | --- | --- | --- |
+| 1 | tapfeed | `/usr/local/bin/tapfeed` = `traffic-runner/gateway/tapfeed`: tshark restarts every `TAPFEED_ROTATE` seconds (default 3600 s; set to 600 s in the drop-in) | both instances active, SNI lines of 10.42.1.x arrive |
+| 2 | systemd | `/etc/systemd/system/tapfeed@.service.d/tmp-on-disk.conf` = `traffic-runner/gateway/tapfeed@.tmp-on-disk.conf`: `StateDirectory=tapfeed/%i`, `BindPaths=/var/lib/tapfeed/%i:/tmp`, `Environment=TAPFEED_ROTATE=600` | temp files in `/var/lib/tapfeed/<iface>/`, none in `/tmp`; tshark runs with `-a duration:600` |
+| 3 | Live runs | Units from `scheduler/systemd/` in `/etc/systemd/system/`; `traffic-sample.timer` enabled; `/var/lib/traffic-executor/`, `/var/log/traffic-executor/`; `/etc/traffic-report.env` (ntfy topic, mode 600) | memory samples every minute; a test push arrived |
+| 4 | Tailscale | Package from pkgs.tailscale.com; `tailscale up --netfilter-mode=off --accept-dns=false --hostname can-my-network-gw` (Thierry's tailnet, 100.124.37.62) | `tailscale status`; SSH from outside the hotspot works |
+| 5 | nftables | `/etc/nftables.conf` = `traffic-runner/gateway/nftables.conf`: `iifname "tailscale0" tcp dport 22 accept`, nothing else new | `diff` showed only the Tailscale lines; `nft -c` before loading |
+
+**Problems and solutions.**
+
+| # | Problem | Cause | Solution |
+| --- | --- | --- | --- |
+| 24 | Only 1.9 GB available with nothing running; during the pilot ~90–100 MB/min less | tshark (through dumpcap) stores every captured packet in a temporary pcapng in `/tmp` that only grows; `/tmp` is a tmpfs. After 7 h: 1.5 GB for eno1, 144 MB for br-sim | Disk-backed `/tmp` per tapfeed instance (2) and an hourly tshark restart (1) |
+| 25 | `TMPDIR` for tshark had no effect | `dumpcap` has file capabilities (`cap_net_admin,cap_net_raw=eip`), and the C library ignores `TMPDIR` for such programs | Bind mount instead of an environment variable |
+| 26 | Both tapfeed instances failed with `226/NAMESPACE` after the first install (feed down ~1 min, 16:09:40–16:10:30) | The bind mount's source folder was created in an `ExecStartPre`, which runs after the namespace is set up | `StateDirectory`, which systemd creates before the namespace |
+
+**Memory after the fix.** The 3.5 GB baseline of §16 included the eno1 temp file, which had been growing since the last boot. Besides the runs, the largest consumers are the UniFi controller (Java, about 0.7–1.1 GB), tapcap (0.8 GB for both instances) and the ingest (0.5 GB). A 4 GB swap file (`/swap.img`) already exists.
+
+**tshark's own memory also grows.** Even with the temp file on disk, tshark's process grows with the traffic it dissects: after 30 min of the pilot, 410 MB (br-sim) and 302 MB (eno1). The hourly restart frees it, but at pilot load the br-sim instance would reach about 0.8 GB before each restart. Decided 23.10: `TAPFEED_ROTATE=600` (10 min) in the drop-in, which keeps it near 140 MB; the gap per restart stays well under a second.
+
+**Rollback.** tapfeed: remove `/etc/systemd/system/tapfeed@.service.d/tmp-on-disk.conf`, copy `tapfeed` back from `/root/tapgw-backup-20261023-1409/`, `systemctl daemon-reload`, restart `tapfeed@eno1` and `tapfeed@br-sim` (without the drop-in, the temp files grow in RAM again). Tailscale: `sudo tailscale down`, restore `/etc/nftables.conf` from the backup and restart nftables.
+
