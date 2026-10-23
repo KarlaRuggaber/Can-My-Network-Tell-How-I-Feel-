@@ -577,8 +577,8 @@ On 23.10 the gateway was prepared for the live runs from 25.10 ([Deployment.md ย
 
 | # | Area | Change | Check |
 | --- | --- | --- | --- |
-| 1 | tapfeed | `/usr/local/bin/tapfeed` = `traffic-runner/gateway/tapfeed`: tshark restarts every hour (`TAPFEED_ROTATE`, default 3600 s) | both instances active, SNI lines of 10.42.1.x arrive |
-| 2 | systemd | `/etc/systemd/system/tapfeed@.service.d/tmp-on-disk.conf` = `traffic-runner/gateway/tapfeed@.tmp-on-disk.conf`: `StateDirectory=tapfeed/%i`, `BindPaths=/var/lib/tapfeed/%i:/tmp` | temp files in `/var/lib/tapfeed/<iface>/`, none in `/tmp` |
+| 1 | tapfeed | `/usr/local/bin/tapfeed` = `traffic-runner/gateway/tapfeed`: tshark restarts every `TAPFEED_ROTATE` seconds (default 3600 s; set to 600 s in the drop-in) | both instances active, SNI lines of 10.42.1.x arrive |
+| 2 | systemd | `/etc/systemd/system/tapfeed@.service.d/tmp-on-disk.conf` = `traffic-runner/gateway/tapfeed@.tmp-on-disk.conf`: `StateDirectory=tapfeed/%i`, `BindPaths=/var/lib/tapfeed/%i:/tmp`, `Environment=TAPFEED_ROTATE=600` | temp files in `/var/lib/tapfeed/<iface>/`, none in `/tmp`; tshark runs with `-a duration:600` |
 | 3 | Live runs | Units from `scheduler/systemd/` in `/etc/systemd/system/`; `traffic-sample.timer` enabled; `/var/lib/traffic-executor/`, `/var/log/traffic-executor/`; `/etc/traffic-report.env` (ntfy topic, mode 600) | memory samples every minute; a test push arrived |
 | 4 | Tailscale | Package from pkgs.tailscale.com; `tailscale up --netfilter-mode=off --accept-dns=false --hostname can-my-network-gw` (Thierry's tailnet, 100.124.37.62) | `tailscale status`; SSH from outside the hotspot works |
 | 5 | nftables | `/etc/nftables.conf` = `traffic-runner/gateway/nftables.conf`: `iifname "tailscale0" tcp dport 22 accept`, nothing else new | `diff` showed only the Tailscale lines; `nft -c` before loading |
@@ -593,7 +593,7 @@ On 23.10 the gateway was prepared for the live runs from 25.10 ([Deployment.md ย
 
 **Memory after the fix.** The 3.5 GB baseline of ยง16 included the eno1 temp file, which had been growing since the last boot. Besides the runs, the largest consumers are the UniFi controller (Java, about 0.7โ€“1.1 GB), tapcap (0.8 GB for both instances) and the ingest (0.5 GB). A 4 GB swap file (`/swap.img`) already exists.
 
-**tshark's own memory also grows.** Even with the temp file on disk, tshark's process grows with the traffic it dissects: after 30 min of the pilot, 410 MB (br-sim) and 302 MB (eno1). The hourly restart frees it, but at pilot load the br-sim instance would reach about 0.8 GB before each restart. Recommended: `TAPFEED_ROTATE=600` (10 min) in the drop-in, which keeps it near 140 MB; the gap per restart stays well under a second. Not applied yet (open decision, Deployment.md ยง11).
+**tshark's own memory also grows.** Even with the temp file on disk, tshark's process grows with the traffic it dissects: after 30 min of the pilot, 410 MB (br-sim) and 302 MB (eno1). The hourly restart frees it, but at pilot load the br-sim instance would reach about 0.8 GB before each restart. Decided 23.10: `TAPFEED_ROTATE=600` (10 min) in the drop-in, which keeps it near 140 MB; the gap per restart stays well under a second.
 
 **Rollback.** tapfeed: remove `/etc/systemd/system/tapfeed@.service.d/tmp-on-disk.conf`, copy `tapfeed` back from `/root/tapgw-backup-20261023-1409/`, `systemctl daemon-reload`, restart `tapfeed@eno1` and `tapfeed@br-sim` (without the drop-in, the temp files grow in RAM again). Tailscale: `sudo tailscale down`, restore `/etc/nftables.conf` from the backup and restart nftables.
 

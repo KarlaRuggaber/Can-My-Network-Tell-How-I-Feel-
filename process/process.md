@@ -249,11 +249,11 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - **Tailscale** (`can-my-network-gw`): SSH to the gateway from any network; only SSH is open on `tailscale0`. A real phone on the AP kept internet access.
 - **Findings:**
   - **tapfeed kept a growing capture file in RAM** (`/tmp` is a tmpfs): 1.5 GB after 7 h on eno1, ~100 MB/min on br-sim during the pilot. Would have run the gateway out of memory in the first hour of the live run. Fixed the same day (PRs #6/#7): disk-backed `/tmp` per tapfeed instance plus an hourly tshark restart. The first install failed (`226/NAMESPACE`), so the feed was down for about one minute (16:09:40–16:10:30). Details: Deployment.md §7.8, HardwareSetup §17.
-  - tshark's own memory also grows with traffic (410 MB after 30 min of the pilot); a 10-min rotation is recommended.
+  - tshark's own memory also grows with traffic (410 MB after 30 min of the pilot). Decided: tshark restarts every 10 min (`TAPFEED_ROTATE=600`).
   - Capacity: with all three personas, 0–3 runs overlap most of the time, peaks of 7–8; CPU load reached 11 on 6 cores when the pilot's blocks started.
 - **Next / open:**
   - Lukasz reviews the MDD profile before 09.11
-  - Decide the 10-min tapfeed rotation; remove the temporary sudo rule after the setup
+  - Remove the temporary sudo rule after the setup
   - Runner (Karla): `video_stream` aborts the block when YouTube stalls; reload or pick another video instead
   - Synthesizer
 

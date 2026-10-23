@@ -389,7 +389,7 @@ Without a fix, the live runs would have run the gateway out of memory within the
 - First install at 16:09 failed: the drop-in created the folder in an `ExecStartPre`, but systemd sets up the bind mount before that runs, so both instances failed with `226/NAMESPACE`. With `StateDirectory` (created by systemd before the namespace) both were active again at 16:10. **The feed had a gap of about one minute (16:09:40–16:10:30).**
 - Check: both instances active; temp files in `/var/lib/tapfeed/br-sim` and `/var/lib/tapfeed/eno1`, none in `/tmp`; SNI lines of the runner devices (10.42.1.x) arrive again; the gateway's files equal the repository (`cfd242a`). Backup of the old script: `/root/tapgw-backup-20261023-1409/`.
 - Rollback: remove the drop-in, copy `tapfeed` back from the backup, `systemctl daemon-reload`, restart both instances.
-- **tshark's own memory** grows too: after 30 min of the pilot 410 MB (br-sim) and 302 MB (eno1). The hourly restart frees it, but at peak load br-sim's tshark would reach about 0.8 GB before each restart. Recommended: `TAPFEED_ROTATE=600` (open issue 16).
+- **tshark's own memory** grows too: after 30 min of the pilot 410 MB (br-sim) and 302 MB (eno1). The hourly restart frees it, but at peak load br-sim's tshark would reach about 0.8 GB before each restart. **Decided 23.10: restart every 10 min** (`Environment=TAPFEED_ROTATE=600` in the drop-in), which keeps it near 140 MB.
 
 **Remote access.** Thierry installed Tailscale at 16:31 (Section 8, HardwareSetup §17): the gateway is `can-my-network-gw` (100.124.37.62) in his tailnet, tailscaled runs with `--netfilter-mode=off`, and `/etc/nftables.conf` opens only SSH on `tailscale0`. Tested from outside the hotspot (Thierry, and SSH from another network at 16:40).
 
@@ -580,7 +580,7 @@ sudo systemctl start tapingest
 13. **MDD review** by Lukasz before 09.11, when the MDD phase starts. A changed profile only needs a new plan; the baseline rows stay identical (same seed), so the executor continues.
 14. **YouTube stalls end the block.** In the pilot, `video_stream` aborted with `state=stalled` after 2 min and the block's remaining 29 min stayed silent. Runner (Karla): reload or switch to another video on a stall instead of failing.
 15. **CPU at peaks.** The load reached 11 (6 cores) while the pilot's six blocks started. Watch the push report's load figure; if pages time out at peaks, stop the UniFi controller during the run (an adopted AP keeps working).
-16. **tapfeed rotation** every 10 min instead of 1 h (`Environment=TAPFEED_ROTATE=600` in the drop-in), so tshark's own memory stays near 140 MB at peak load (Section 7.8).
+16. ~~tapfeed rotation~~ Done 23.10: tshark restarts every 10 min (`TAPFEED_ROTATE=600` in the drop-in, Section 7.8).
 
 ## 12. Appendix: configuration and commands
 
