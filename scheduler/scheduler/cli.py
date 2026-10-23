@@ -1,7 +1,7 @@
-"""Command line: python -m scheduler {plan,validate,execute}.
+"""Command line: python -m scheduler {plan,validate,execute,report}.
 
-`execute` runs on the gateway and needs only the standard library; the planning modules (PyYAML) are
-imported inside `plan` and `validate`.
+`execute` and `report` run on the gateway and need only the standard library; the planning modules (PyYAML)
+are imported inside `plan` and `validate`.
 """
 
 from __future__ import annotations
@@ -66,6 +66,11 @@ def cmd_execute(args) -> int:
     return executor.main(args)
 
 
+def cmd_report(args) -> int:
+    from . import report
+    return report.main(args)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m scheduler", description="Profile + seed -> ground-truth plan")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -99,6 +104,19 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--dry-run", action="store_true", help="print what would happen now, write nothing")
     e.add_argument("--dry-run-rows", type=int, default=20)
     e.set_defaults(func=cmd_execute)
+    g = sub.add_parser("report", help="push report: plan vs. ground truth, executors, data, gateway (stdlib only)")
+    g.add_argument("--plans", default="/var/lib/traffic-executor",
+                   help="folder with gw_*.csv plans and their .state.jsonl files (default: the executor folder)")
+    g.add_argument("--ground-truth", default="/opt/can-my-network/traffic-runner/logs/ground_truth.csv")
+    g.add_argument("--parquet", default="/opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet")
+    g.add_argument("--samples", default="/var/lib/traffic-executor/gateway-samples.csv",
+                   help="memory samples written by --sample")
+    g.add_argument("--hours", type=float, default=24.0, help="window to check (default 24)")
+    g.add_argument("--only-problems", action="store_true", help="send only if there is a problem (hourly watch)")
+    g.add_argument("--ntfy", help="ntfy topic URL, e.g. https://ntfy.sh/<random topic> (default: $NTFY_URL)")
+    g.add_argument("--ntfy-token", help="ntfy access token (default: $NTFY_TOKEN)")
+    g.add_argument("--sample", action="store_true", help="append one memory sample and exit (every minute)")
+    g.set_defaults(func=cmd_report)
     v = sub.add_parser("validate", help="load and check profile YAMLs")
     v.add_argument("profiles", nargs="*")
     v.set_defaults(func=cmd_validate)

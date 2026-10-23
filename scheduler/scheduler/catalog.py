@@ -47,8 +47,11 @@ CALL_PLATFORMS = {"zoom", "teams", "jitsi", "discord"}
 
 # Block `options` the runner understands, option -> runner flag. Options not listed here are only recorded in the
 # plan: an unknown flag would make the runner exit with a usage error and write no ground-truth row.
-# Add "mic_share": "--mic-share" once the runner has it (Karla, announced 23.10).
-RUNNER_OPTION_FLAGS: dict[str, str] = {}
+RUNNER_OPTION_FLAGS: dict[str, str] = {"mic_share": "--mic-share"}   # runner since dca94cd (23.10)
+
+# Activities that are still stubs in the runner (they log not_implemented by design). Any other activity that
+# logs not_implemented is a problem, e.g. calls when the peer stack is down (report.py).
+RUNNER_STUBS = {"messaging", "social_post"}
 
 GAMING_VOICE_PLATFORM = "discord"
 

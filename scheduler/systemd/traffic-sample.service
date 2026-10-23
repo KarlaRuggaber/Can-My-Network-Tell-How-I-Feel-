@@ -1,0 +1,8 @@
+# One memory sample per run; the report takes the minimum of its window from these.
+[Unit]
+Description=Gateway memory sample for the traffic report
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/can-my-network/scheduler
+ExecStart=/usr/bin/python3 -m scheduler report --sample
