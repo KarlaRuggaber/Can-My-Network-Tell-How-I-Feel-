@@ -158,6 +158,7 @@ MEDIA_STARTED = """
 SLACK_COMPOSER = '[data-qa="message_input"] [contenteditable="true"], div[role="textbox"][contenteditable="true"]'
 REDDIT_POST_BUTTON = re.compile(r"^\s*(post|posten|veröffentlichen)\s*$", re.I)
 REDDIT_TITLE = re.compile(r"(title|titel)", re.I)
+REDDIT_IMAGE_INPUT = 'post-composer-toolbar-button-image input[type="file"]'
 
 
 def reddit_target_ok(url: str, subreddit: str, page: str) -> bool:
@@ -504,8 +505,10 @@ class BrowserDriver:
             title_box = self.page.get_by_role("textbox", name=REDDIT_TITLE).first
             title_box.wait_for(state="visible", timeout=20_000)
             title_box.fill(title)
-            # the post's own media field; the page has three more (gallery editor, text toolbar)
-            self.page.locator('#post-composer_media input[type="file"]').first.set_input_files(str(image))
+            # On phones Reddit ignores ?type=IMAGE and shows the text form without an image tab.
+            # Its toolbar image button attaches the picture as the post's image (checked 23.10).
+            self.page.locator(REDDIT_IMAGE_INPUT).first.set_input_files(str(image))
+            self.page.locator('img[src^="blob:"]').first.wait_for(state="visible", timeout=20_000)
             self.page.wait_for_timeout(8_000)  # upload of 1-3 MB
             # Safety check right before the click: still exactly this subreddit's submit page.
             if not reddit_target_ok(self.page.url, subreddit, "submit"):
