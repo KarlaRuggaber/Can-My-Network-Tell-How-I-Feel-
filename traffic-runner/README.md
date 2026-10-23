@@ -393,6 +393,8 @@ Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `
 
 ### Step 8: peer stack for calls and gaming (gateway mode)
 
+**Status: applied on 23.10.** Calls and gaming are live; details and measurements in `process/HardwareSetup.md` §16.
+
 The counterpart for `video_call`, `voice_call` and `gaming_session` runs on the mini-PC itself (`peer-vm/`, gateway mode, see its README). As always: back up first, check after each step, and test a real phone after the nftables and dnsmasq steps.
 
 ```bash

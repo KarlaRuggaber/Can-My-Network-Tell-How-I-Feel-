@@ -526,3 +526,45 @@ The files are versioned in [traffic-runner/gateway/](../traffic-runner/gateway/)
 - ~~The ingest service still watches only `/var/lib/tapcap/ready`.~~ Done 23.10: it also watches `/var/lib/tapcap/sim/ready` (Deployment.md §7.6).
 - ~~`/etc/tapingest/devices.csv` and the runner's `config/devices.csv` must list the same devices.~~ Done 23.10: the ingest reads the runner's file, the copy in `/etc/tapingest` is gone.
 - The Docker default address pools contain 172.20.0.0/16, which overlaps the hotspot subnet 172.20.10.0/28. This is harmless for `sim`, whose subnet is fixed. Set `default-address-pools` in `/etc/docker/daemon.json` before more Docker networks are created automatically.
+
+## 16. Addendum (23.10.2026): peer stack for calls and gaming (`br-peer`)
+
+On 23.10 the gateway got a third virtual network for the counterpart of the runner's calls and games (`peer-vm/`, gateway mode). A cloud VM would have needed new hardware and would have sent all call media over the hotspot.
+
+```
+ runner containers ── br-sim (10.42.1.1) ── gateway routing ── br-peer (10.43.0.1) ── Caddy 10.43.0.10 (peer.sim, 443)
+                         ▲ tapcap@br-sim records everything        (no internet,          videobridge 10.43.0.13 (UDP 10000)
+                                                                    no access to eno1)     peer service, Jitsi
+```
+
+**Changes.** Applied with backups in `/root/tapgw-backup-20261023-1119/`. A real phone kept internet access throughout.
+
+| # | Area | Change | Check |
+| --- | --- | --- | --- |
+| 1 | Docker | Network `peer`: `docker network create -o com.docker.network.bridge.name=br-peer --subnet 10.43.0.0/24 --gateway 10.43.0.1 peer` | `br-peer 10.43.0.1/24` |
+| 2 | nftables | `/etc/nftables.conf` = `traffic-runner/gateway/nftables.conf`: `define PEER = "br-peer"`, forward `br-sim → br-peer` only to 10.43.0.10 tcp/443 and 10.43.0.13 udp/10000. The peer stack gets no forward rule at all | `diff` showed only the PEER lines; `nft -c` before loading |
+| 3 | dnsmasq | `/etc/dnsmasq.d/peer.conf`: `address=/peer.sim/10.43.0.10` | `systemd-helper checkconfig`; a runner container resolves `peer.sim → 10.43.0.10` |
+| 4 | Stack | `/opt/can-my-network/peer-vm`: `setup.sh --gateway` (secrets in `.env`, root, mode 600), `docker compose up -d --build`. No published host ports; 8080/8443 belong to the UniFi controller. Restart policy `unless-stopped` | 6 services up; `jicofo: Added new videobridge` |
+| 5 | Runner | `traffic-runner/peer.env` (root, mode 600): URL `https://peer.sim`, token, `RUNNER_PEER_INSECURE_TLS=1` (Caddy's internal CA), then `deploy.sh` | `/peer/health` from a runner container: `{"calls": 0}` |
+
+**Problems and solutions.**
+
+| # | Problem | Cause | Solution |
+| --- | --- | --- | --- |
+| 22 | prosody (Jitsi's XMPP server) restarted in a loop: `/var/lib/prosody is not writable by the container user (uid 1000)` | Docker creates missing bind-mount folders as root. Docker Desktop on the laptop ignores ownership, so the local test did not show it | `chown -R 1000:1000 jitsi-cfg`. `setup.sh` now creates the folders with that owner |
+| 23 | `jicofo`/`jvb`: `SASLError … not-authorized` right after the start | Start order: prosody creates their accounts a few seconds later | None needed: both retry and connect |
+
+**Live test** (23.10, 14:06–14:12):
+- **Calls:** a video call (laptop) and a voice call (phone) ran in parallel for 2 min, then gaming for 4 min. All three are `ok` in the ground-truth log.
+- **PCAPs** (`sim/ready`): about 24 000–27 000 media packets per minute to/from `10.43.0.13:10000` during the calls, and about 6 700 packets per minute to `10.43.0.10:443` during the game (53 ticks/s each way).
+- **Feed:** shows `peer.sim` as SNI with the device MAC, and as DNS.
+
+**Memory.** With two calls in parallel (a worst case; profiles never overlap calls), 1.3 GB of 7.1 GB remained available. The largest consumers were:
+- peer at 0.9 GB
+- runner containers at 0.4–0.5 GB each
+- videobridge at 0.3 GB
+- jicofo at 0.2 GB
+
+The 3.5 GB baseline before the stack comes from the existing services (UniFi controller, app, capture). With more simulated persons running in parallel this gets tight. Options then: limit the number of devices active at the same time, or stop the UniFi controller (an adopted AP keeps working without it).
+
+**Rollback.** `cd /opt/can-my-network/peer-vm && sudo docker compose down`. Then restore `nftables.conf` from the backup, remove `/etc/dnsmasq.d/peer.conf` and run `docker network rm peer`. Without `peer.env`, the runner logs calls and gaming as `not_implemented` again.
