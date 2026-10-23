@@ -25,11 +25,11 @@ _SELECTOR_KEYS = {"day_types", "days", "nights"}
 _FREQ_KEYS = {"count", "clip", "scale", *PERIOD_KEYS}
 BLOCK_KEYS = _SELECTOR_KEYS | _FREQ_KEYS | {
     "id", "group", "at", "from", "to", "within", "duration", "device", "activity", "mix", "pages", "dwell",
-    "with", "voice", "platform", "max_delay", "min_gap", "not_before", "night"}
+    "with", "voice", "platform", "max_delay", "min_gap", "not_before", "night", "noise", "lookups"}
 AWAY_KEYS = _SELECTOR_KEYS | _FREQ_KEYS | {
     "id", "from", "to", "length", "not_before", "replaces", "sleep_after_return"}
 TOP_KEYS = {"profile", "source", "tier", "extends", "timezone", "window_days", "warmup_days", "start_weekday",
-            "devices", "day_types", "timetable", "anchors", "away", "blocks", "night_sets", "patch"}
+            "devices", "day_types", "timetable", "anchors", "away", "blocks", "night_sets", "patch", "noise"}
 PATCH_KEYS = {"anchors", "modify", "add", "remove", "scale", "forbid"}
 
 _REF_RE = re.compile(r"^(wake|sleep|baseline_sleep|timetable\.[a-z_][a-z0-9_]*|away\.[a-z_][a-z0-9_]*\.(?:start|end))"
@@ -96,6 +96,7 @@ class Block:
     mix: dict[str, float] | None
     pages: str | None
     dwell: str | None
+    lookups: str | None
     with_: str | None
     voice: bool
     platform: str | None
@@ -104,6 +105,7 @@ class Block:
     not_before: TimeRef | None
     night: bool
     group: str | None
+    noise: bool                  # False: the day's duration noise does not apply (e.g. thresholds like <= 5 min)
 
     @property
     def exclusive(self) -> bool:
@@ -162,6 +164,7 @@ class Profile:
     away: list[Away]
     blocks: list[Block]
     night_sets: dict[str, Freq] = field(default_factory=dict)
+    duration_noise: float = 0.0  # ± share; one factor U(1 - x, 1 + x) per day on all block durations
     forbid: list[Forbid] = field(default_factory=list)
 
 
@@ -378,6 +381,8 @@ def _block(d: dict, index: int, prof: dict) -> Block:
     platform = d.get("platform")
     if activity in catalog.CALLS and platform not in catalog.CALL_PLATFORMS:
         raise SpecError(f"{what}: calls need platform in {sorted(catalog.CALL_PLATFORMS)}")
+    if "lookups" in d and activity != "sh_adjacent_lookup":
+        raise SpecError(f"{what}: lookups is only for sh_adjacent_lookup")
     if d.get("voice") and activity != "gaming_session":
         raise SpecError(f"{what}: voice is only for gaming_session")
 
@@ -389,11 +394,12 @@ def _block(d: dict, index: int, prof: dict) -> Block:
         within=within, duration=duration, device=device, activity=activity, mix=mix,
         pages=str(d["pages"]) if "pages" in d else None,
         dwell=str(d["dwell"]) if "dwell" in d else None,
+        lookups=str(d["lookups"]) if "lookups" in d else None,
         with_=with_, voice=bool(d.get("voice", False)), platform=platform,
         max_delay=parse_duration(d["max_delay"]).bounds()[1] if "max_delay" in d else DEFAULT_MAX_DELAY,
         min_gap=parse_duration(d["min_gap"]).bounds()[1] if "min_gap" in d else 0.0,
         not_before=_time_ref(d["not_before"], what) if "not_before" in d else None,
-        night=bool(d.get("night", False)), group=d.get("group"),
+        night=bool(d.get("night", False)), group=d.get("group"), noise=bool(d.get("noise", True)),
     )
 
 
@@ -497,6 +503,13 @@ def _build(raw: dict) -> Profile:
         forbid.append(Forbid(_time_ref(f["within"][0], "forbid"), _time_ref(f["within"][1], "forbid"),
                              bool(f.get("night", False))))
 
+    noise = raw.get("noise") or {}
+    if not isinstance(noise, dict) or set(noise) - {"duration"}:
+        raise SpecError("noise: only {duration: <share>} is supported")
+    duration_noise = float(noise.get("duration", 0.0))
+    if not 0 <= duration_noise < 1:
+        raise SpecError("noise.duration must be in [0, 1)")
+
     prof = Profile(
         name=raw["profile"], source=raw.get("source", ""), tier=int(raw.get("tier", 0)),
         extends=raw.get("extends"), root=raw["_root"], timezone=raw["timezone"],
@@ -504,6 +517,7 @@ def _build(raw: dict) -> Profile:
         start_weekday=raw.get("start_weekday", "Mon"), devices=list(raw["devices"]),
         day_types=all_types, timetable_tags=tags, timetable_values=values,
         wake=wake, sleep=sleep, away=away, blocks=blocks, night_sets=night_sets, forbid=forbid,
+        duration_noise=duration_noise,
     )
     _check_refs(prof)
     return prof

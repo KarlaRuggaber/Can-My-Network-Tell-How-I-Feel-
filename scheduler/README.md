@@ -27,7 +27,7 @@ Python 3.11+, stdlib + PyYAML (tests: pytest).
 cd scheduler
 python3 -m pytest -q
 python3 -m scheduler validate
-python3 -m scheduler plan --profile student --seed 42 --start 2026-10-26 --days 15 \
+python3 -m scheduler plan --profile student --seed 42 --start 2026-10-25 --days 15 \
     --devices ../traffic-runner/config/devices.csv --dataset gw_student_a --out plan.csv
 ```
 
@@ -37,7 +37,8 @@ This writes `plan.csv` and `plan.commands.tsv`. A summary goes to stderr (rows, 
 |---|---|
 | `--profile` | Name in `profiles/` (`student`, `9to5-worker`, `insomnia-moderate`) or a path to a `.yaml` |
 | `--seed` | Instance seed. Same seed = same plan; different seeds = different instances of the profile |
-| `--start` | First plan day = **warm-up day** (`YYYY-MM-DD`, Europe/Zurich) |
+| `--start` | First plan day = **warm-up day** (`YYYY-MM-DD`, Europe/Zurich). Must be a **Sunday**, so the 14-day window starts on Monday (catalog §1, decided 23.10); anything else is refused |
+| `--any-start` | Allow any start day (pilots, tests); prints a warning instead |
 | `--days` | Total days in the plan, including warm-up and baseline (default 15 = 1 warm-up + 14) |
 | `--baseline-days` | Clinical profiles only: this many days after the warm-up run the tier-0 profile they extend (catalog §6). Example: `--days 29 --baseline-days 14` = 1 warm-up + 14 baseline + 14 profile days on the same dataset |
 | `--devices` | `traffic-runner/config/devices.csv` |
@@ -49,7 +50,7 @@ Exit code 0 = ok, 2 = usage, profile or devices error (message on stderr).
 A clinical instance with its baseline (needs a dataset with two devices in `devices.csv`, e.g. `gw_insomnia_a`):
 
 ```bash
-python3 -m scheduler plan --profile insomnia-moderate --seed 7 --start 2026-10-26 --days 29 --baseline-days 14 \
+python3 -m scheduler plan --profile insomnia-moderate --seed 7 --start 2026-10-25 --days 29 --baseline-days 14 \
     --devices ../traffic-runner/config/devices.csv --dataset gw_insomnia_a --out insomnia_a.csv
 ```
 
@@ -67,7 +68,8 @@ extends: null                         # clinical: name of the profile it patches
 timezone: Europe/Zurich
 window_days: 14                       # length of a window (per_window keys)
 warmup_days: 1
-start_weekday: Mon                    # the first window day should be this weekday (warning otherwise)
+start_weekday: Mon                    # the first window day must be this weekday (--start = the day before)
+noise: {duration: 0.25}               # day-to-day volume noise: one factor U(0.75, 1.25) per day on all durations
 devices: [phone, laptop]              # roles; mapped to devices.csv rows by dataset + role
 day_types: {lecture: [Mon, Tue, Wed, Thu], self_study: [Fri], weekend: [Sat, Sun]}
 timetable: ...                        # optional, §2.2
@@ -145,6 +147,8 @@ blocks:                                # list order = priority for overlaps (§3
 | `device`, `activity` | Role (`phone`/`laptop`) and catalog §2 activity ID. The catalog's device column is enforced |
 | `mix` | Catalog §3 categories with weights. Required for `phone_check`, `browse`, `repeat_visit_loop`; the other activities default to their own category (`study_block` → `study`, ...) |
 | `pages`, `dwell` | Passed to the runner (`--pages`, `--dwell`). For `phone_check`, `pages` makes `duration` an upper bound (catalog §2) |
+| `lookups` | `sh_adjacent_lookup`: number of DNS lookups (`--lookups 1-3`) |
+| `noise: false` | The day's duration noise (§3) does not apply, for durations a threshold depends on (insomnia's ≤ 5 min night bursts) |
 | `with: music_background` | Companion on the same device for the whole block (and each of its pieces) |
 | `voice: true` | `gaming_session` with a parallel `voice_call` on `discord` |
 | `platform` | Calls: `zoom`, `teams`, `jitsi` (`discord` for gaming voice) |
@@ -182,7 +186,8 @@ The rules of catalog §1, plus the decisions the catalog leaves open (marked ⚑
 - **Randomness:** only `random.Random(f"{seed}/<key>")`, with one stream per day, block, week, etc. (the runner uses `f"{seed}/{block_id}"`). Same seed gives the same plan, byte for byte. Changing one block does not reshuffle the others. Because the keys contain date and block, never the phase, the baseline days of a clinical plan are the same schedule as the tier-0 profile run alone with the same seed (tested).
 - **Time zone:** profile times are Europe/Zurich wall times. Instants are computed in UTC and written with the local offset, so DST days (25.10.2026, 28.03.2027) get correct durations.
 - **Day boundary:** day d owns the night after it (catalog: nights are labelled by the day they start on). Evening blocks may run past midnight. The plan covers `[start 00:00, start + days 00:00)` local time. A block that doesn't fit completely inside is dropped (⚑ the last night of a plan is cut). The first night (before the warm-up day) is empty.
-- **Warm-up:** `--start` is the warm-up day (phase `warmup`). It is scheduled like any other day of its weekday, but it gets no per-window blocks. ⚑ A Monday `--start` makes the 14-day window start on a Tuesday (warning). Use the Sunday before (`--start 2026-10-25`) to start the window on a Monday.
+- **Warm-up:** `--start` is the warm-up day (phase `warmup`) and must be the **Sunday** before the window, so the 14 days run Monday to Sunday (decided 23.10). It is scheduled like any other Sunday, but it gets no per-window blocks. 25.10.2026 is a Sunday warm-up and also the DST switch (a 25-hour day), which zoneinfo handles.
+- **Noise (decided 23.10):** on top of the ranges and SDs, every day draws one factor U(1 − x, 1 + x) (student x = 0.25, 9-to-5 x = 0.15, from the profiles' "±25 % / ±15 % on durations") and multiplies all block durations of that day with it. One factor per day, not per block, because it is meant as *day-to-day* volume noise (profile §8): per-block jitter would average out over the ~25 blocks of a day. Fill blocks (`from` + `to`) are time windows and keep their bounds. Blocks with `noise: false` are exempt.
 - **Wake/sleep:** blocks of day d don't start before `wake(d)`. `within` and fill windows are clipped to `[wake, sleep]` unless `night: true`.
 - **Away vs. idle:** idle = no row (the device stays connected; the ingest filter handles background traffic). Away = an `away` row. An occurrence that overlaps an away period is **dropped**, not moved (counts mean "while at home"). `replaces: evening` cancels the day's `group: evening` blocks.
 - **Overlaps on one device:** blocks are placed in list order. A later-listed block that overlaps one already placed on the same device starts when that one ends. If it then no longer fits its window (`within`: the window; `at`/`from`+`duration`: ⚑ start + duration + `max_delay`, default 30 min), it is dropped. It never jumps over an away period.
@@ -197,7 +202,7 @@ The rules of catalog §1, plus the decisions the catalog leaves open (marked ⚑
 
 | Column | Content |
 |---|---|
-| `start`, `end` | Planned start/end, ISO-8601 with offset (`2026-10-26T07:02:20+01:00`) |
+| `start`, `end` | Planned start/end, ISO-8601 with offset (`2026-10-25T09:19:58+01:00`) |
 | `device` | Device name from `devices.csv` |
 | `activity_id` | Catalog §2 ID; `away` for away periods (one row per device) |
 | `domains` | Planned mix keys, `;`-separated (`messaging;social_passive;news`; calls: `call`; music: `audio`). The runner's log writes the real hosts in this column |
@@ -205,7 +210,7 @@ The rules of catalog §1, plus the decisions the catalog leaves open (marked ⚑
 | `block_id` | `<yyyymmdd>-<profile block>-<nn>[a-z][-bg\|-voice]`, unique within the plan, e.g. `20261026-work_pm-01b`. Letters = pieces of a split block; `-bg`/`-voice` = companions |
 | `mix` | Runner syntax `news:0.4,messaging:0.4` (empty for calls, music, away) |
 | `duration` | Seconds (`--duration`) |
-| `pages`, `dwell` | Runner overrides, where set |
+| `pages`, `dwell`, `lookups` | Runner overrides, where set |
 | `platform` | Call platform |
 | `day` | Day the block belongs to (a night block of day d can start on d+1) |
 | `phase` | `warmup`, `baseline` or `profile` |
@@ -216,7 +221,7 @@ The first eight columns are the runner's ground-truth columns (catalog §1) with
 `plan.commands.tsv`: one line per plan row, `start<TAB>end<TAB>device<TAB>block_id<TAB>command`, where `command` is a runner call to run from `traffic-runner/` at `start`:
 
 ```
-2026-10-26T07:02:20+01:00	2026-10-26T07:08:52+01:00	student_a_phone	20261026-wake_check-01	scripts/run-activity.sh student_a_phone --activity phone_check --duration 392 --mix messaging:0.4,social_passive:0.4,news:0.2 --seed 42 --profile student --block-id 20261026-wake_check-01
+2026-10-25T09:19:58+01:00	2026-10-25T09:29:01+01:00	student_a_phone	20261025-wake_check-01	scripts/run-activity.sh student_a_phone --activity phone_check --duration 543 --mix messaging:0.4,social_passive:0.4,news:0.2 --seed 42 --profile student --block-id 20261025-wake_check-01
 ```
 
 `away` rows are written as `#` comments: a container cannot leave the Wi-Fi, so live, "away" simply means no runs.
@@ -228,7 +233,7 @@ The first eight columns are the runner's ground-truth columns (catalog §1) with
 - `status` ≠ `ok` = failed or stub
 - `end` earlier than planned = `phone_check` done or video over
 
-As long as calls, messaging, `social_passive`, `work_block`, `study_block` and `gaming_session` are stubs in the runner, their rows log `not_implemented` and produce no traffic. For live runs this is the main gap between plan and data.
+Runner state 23.10 (after Karla's `4132a06`): `messaging`, `social_post`, `video_call`, `voice_call` (test accounts / call counterpart) and `gaming_session` are still stubs. Their rows log `not_implemented` and produce no traffic. Measured over 10 seeds, that is **23 % of the student's planned activity time** (gaming 7 %, its voice chat 7 %, messaging 4 %, calls 4 %) and **11 % of the 9-to-5's** (work/private calls 8 %, messaging 3 %). For live runs this is the main gap between plan and data: the calls carry the upstream signal that the SAD profile reduces. `away` is the executor's job: the runner README proposes disconnecting the container from `br-sim` for the period.
 
 **Synthetic (later).** The synthesizer reads `plan.csv` directly. For each row it takes a recorded snippet of the same `activity_id`, role and `mix` (from the live runs' PCAPs, cut by the ground-truth rows). It trims or loops the snippet to `duration`, shifts it to `start` and rewrites the addresses to the device's IP/MAC from `devices.csv`. Nothing is added outside planned rows: idle stays empty and away is a gap. The synthetic PCAPs then go through the same ingest (`tapingest --once`) as the live ones. Every packet stays traceable to a `block_id` → profile block → profile, which is the traceability the project objective asks for.
 
@@ -251,17 +256,17 @@ Not done: an executor (§5), and the synthesizer.
 Each item says what the scheduler does now. All are small to change.
 
 **Catalog §1 / all profiles**
-- **C1 Window start.** "14 days starting on a Monday, plus ≥1 warm-up day", while the requested CLI starts on Monday with the first day as warm-up, so the window starts Tuesday. Now: warning only. Decide: warm-up on the Sunday before (`--start` = Sunday), or treat the warm-up as day 0 of the window.
+- **C1 Window start. Decided 23.10:** the warm-up is the Sunday before; `--start` must be a Sunday (`--any-start` for pilots).
 - **C2 Overlap priority vs. calls.** "The later-listed block starts when the earlier one ends" would push every work call out of the work blocks. Now: calls first, fill and work/study blocks cut around them (§3).
-- **C3 Anchored blocks.** `at:` blocks have no window, so "dropped if it no longer fits its window" is undefined. Now: they may slip by 30 min (`max_delay`). Measured over 20 seeds, strict pushing would leave 45 % of the student's days without a `bedtime_check` (with the slip: 10 %, mostly going-out nights, C4) and 13 % of the worker's (with the slip: 0 %).
+- **C3 Anchored blocks (accepted 23.10).** `at:` blocks have no window, so "dropped if it no longer fits its window" is undefined. Now: they may slip by 30 min (`max_delay`). Measured over 20 seeds, strict pushing would leave 45 % of the student's days without a `bedtime_check` (with the slip: 10 %, mostly going-out nights, C4) and 13 % of the worker's (with the slip: 0 %).
 - **C4 Partial overlap with away.** Now: dropped, fill blocks trimmed. Side effect: after going out, `sleep = return + 15–30m` and `bedtime_check` at `sleep − 15/20m` often starts before the return and is dropped.
 - **C5 "Evening blocks"** (for "replaces evening blocks") are not defined. Now: the blocks under the `# evening` comment in §9 (`group: evening`); `bedtime_check` is not one.
-- **C6 Noise lines** ("±25 % on durations", "±15 % on volume"): no extra jitter is applied beyond the ranges and SDs in the blocks. Should durations get an extra ±25 %?
+- **C6 Noise lines. Decided 23.10: yes.** One duration factor per day (§3). Open: whether it should be per block instead.
 - **C7 Last night.** Activity after midnight of the last plan day is dropped (it would count for a day outside the plan anyway).
-- **C8 Calls in the runner.** `platform` has no runner option and calls are stubs. Camera/mic options will be needed (see §8, SAD).
+- **C8 Calls in the runner.** `platform` has no runner option and calls are stubs. A platform option, and for SAD a mic share, will be needed (§8).
 
 **Student**
-- **S1 Campus start on late-lecture days.** The profile says `U("08:00", "14:00")` for all days, but the late-lecture wake is N(09:30, 30m), so campus could start before waking. Now: `U("10:30", "14:00")` on late days, 08:00 on early days, and never earlier than wake + 20 min (`not_before`).
+- **S1 Campus start on late-lecture days (accepted 23.10).** The profile says `U("08:00", "14:00")` for all days, but the late-lecture wake is N(09:30, 30m), so campus could start before waking. Now: `U("10:30", "14:00")` on late days, 08:00 on early days, and never earlier than wake + 20 min (`not_before`).
 - **S2 Early-lecture days.** Wake N(07:30, 30m) can be after the 08:00 campus start. Now: campus starts at max(08:00, wake + 20m).
 - **S3 `evening_stream` has no count:** exactly one per evening, also on gaming evenings (it then runs after the gaming session, if it still fits before sleep).
 - **S4 `study_home` "after campus":** starts at the campus return. On a day without campus it doesn't run (relevant for MDD's skipped lecture days).
@@ -292,11 +297,11 @@ Their §9 patches use constructs without defined semantics. Proposed defaults ar
 - `then: "idle_connected until wake"` [nothing scheduled until `wake`; `wake_check` still runs].
 - `rumination` `count_per_day` and window 14:00–02:00 [`count`; clipped to sleep].
 - `evening_stream` `may_cross_midnight` [may pass midnight, still ends by sleep].
-- `suicidality_overlay` sequence: back to back? probabilities per step? `lookups: 1-3` has no runner option; `log_flag: sensitive` [plan column `flag`].
+- `suicidality_overlay` sequence: back to back? probabilities per step? `lookups: 1-3` → runner `--lookups` (since `4132a06`); `log_flag: sensitive` [plan column `flag`].
 - `weekend_anchors` "same distributions as ... after the modifications above" [weekend wake N(09:30, 30m), Fri/Sat sleep N(00:30, 45m), then the shifts].
 
 **Social anxiety**
-- `group_call` `camera: false`, `mic: "on only 10% of the time"` [becomes `voice_call`; the mic share has no runner option].
+- `group_call` `camera: false`, `mic: "on only 10% of the time"`: the person attends mandatory calls with the camera off and stays muted except for ~10 % of the call. Camera off → `voice_call`. The mic share needs a runner option (e.g. `--mic-share 0.1`: the fake microphone sends audio only in that share of the time, muted otherwise), so upstream drops further. Until calls are implemented the scheduler only records it.
 - `going_out` `keep_per_window: 0-1` + `home_instead_of_out` `replaces: going_out` [draw the baseline's going-out evenings, keep 0–1, the others become home evenings].
-- `split: {video_stream: .5, gaming_session: .3, social_passive: .2}`: (a) one activity per evening by weight, or (b) consecutive parts by share [b].
+- `split: {video_stream: .5, gaming_session: .3, social_passive: .2}`: **decided 23.10: (b)**, consecutive parts by share.
 - Which baseline evening blocks still run on a home evening [laptop evening blocks replaced, phone evening blocks kept, sleep = end of the home block].

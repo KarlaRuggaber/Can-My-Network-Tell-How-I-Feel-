@@ -74,6 +74,7 @@ class DayCtx:
     away: list[AwayOcc]
     nights: set[str]
     forbid: list[tuple[datetime, datetime]]
+    duration_factor: float = 1.0
 
 
 @dataclass
@@ -91,6 +92,7 @@ class Entry:
     mix: dict[str, float] | None = None
     pages: str | None = None
     dwell: str | None = None
+    lookups: str | None = None
     platform: str | None = None
     exclusive: bool = False
     companion_of: str | None = None
@@ -313,7 +315,9 @@ def _build_days(phase: Phase, seed: int, tz: ZoneInfo, plan: Plan) -> list[DayCt
             e = res(f.end, r, night=f.night, after=s)
             if s and e:
                 forbid.append((s, e))
-        out.append(DayCtx(d, phase, tags, timetable, wake, sleep, baseline_sleep, away, ns, forbid))
+        x = prof.duration_noise   # day-to-day volume noise: one factor per day (keyed by date, not by phase)
+        factor = rng_for(seed, d.isoformat(), "noise").uniform(1 - x, 1 + x) if x else 1.0
+        out.append(DayCtx(d, phase, tags, timetable, wake, sleep, baseline_sleep, away, ns, forbid, factor))
     return out
 
 
@@ -346,6 +350,13 @@ class _Occ:
     n: int = 0
 
 
+def _duration(r: random.Random, block: Block, ctx: DayCtx) -> timedelta:
+    secs = block.duration.sample(r)
+    if block.noise:
+        secs *= ctx.duration_factor
+    return timedelta(seconds=round(secs))
+
+
 def _occurrences(block: Block, ctx: DayCtx, k: int, seed: int, tz: ZoneInfo, plan: Plan) -> list[_Occ]:
     if block.group == "evening" and any(a.replaces == "evening" for a in ctx.away):
         plan.dropped["evening replaced (away)"] += k
@@ -371,7 +382,7 @@ def _occurrences(block: Block, ctx: DayCtx, k: int, seed: int, tz: ZoneInfo, pla
             if start is None:
                 plan.dropped[f"{block.id}: reference missing that day"] += 1
                 continue
-            dur = _seconds(r, block.duration)
+            dur = _duration(r, block, ctx)
             out.append(_Occ(block, ctx, start, dur, start, start + dur + timedelta(seconds=block.max_delay)))
     elif block.placement == "fill":
         if k:
@@ -394,7 +405,7 @@ def _occurrences(block: Block, ctx: DayCtx, k: int, seed: int, tz: ZoneInfo, pla
         lo, hi = clip(lo, hi)
         gap = timedelta(seconds=block.min_gap)
         for _ in range(k):
-            dur = _seconds(r, block.duration)
+            dur = _duration(r, block, ctx)
             room = (hi - lo - dur).total_seconds()
             if room < 0:
                 plan.dropped["window too short"] += 1
@@ -460,7 +471,8 @@ def _entry(o: _Occ, s, e, block_id, role) -> Entry:
     b, ctx = o.block, o.ctx
     return Entry(start=s, end=e, role=role, activity=b.activity, block_id=block_id, profile_block=b.id,
                  day=ctx.date, phase=ctx.phase.name, profile=ctx.phase.profile.name,
-                 mix=b.mix or _default_mix(b.activity), pages=b.pages, dwell=b.dwell, platform=b.platform,
+                 mix=b.mix or _default_mix(b.activity), pages=b.pages, dwell=b.dwell, lookups=b.lookups,
+                 platform=b.platform,
                  exclusive=b.exclusive, window=(o.lo, o.hi))
 
 
@@ -531,7 +543,9 @@ def make_phases(profile: Profile, baseline: Profile | None, start: date, days: i
 
 
 def build_plan(profile: Profile, seed: int, start: date, days: int, *, baseline: Profile | None = None,
-               baseline_days: int = 0) -> Plan:
+               baseline_days: int = 0, any_start: bool = False) -> Plan:
+    """`start` is the first warm-up day. The first window day must be the profile's `start_weekday`
+    (catalog §1; decided 23.10: warm-up on the Sunday before), unless `any_start` (tests, pilots)."""
     if baseline_days and baseline is None:
         raise ValueError("baseline_days needs a baseline profile")
     tz = ZoneInfo(profile.timezone)
@@ -541,9 +555,14 @@ def build_plan(profile: Profile, seed: int, start: date, days: int, *, baseline:
 
     first_window = start + timedelta(days=profile.warmup_days)
     if weekday(first_window) != profile.start_weekday:
-        plan.warnings.append(f"the first day after the warm-up ({first_window}, {weekday(first_window)}) is not a "
-                             f"{profile.start_weekday}; catalog §1 starts the 14-day window on a "
-                             f"{profile.start_weekday}")
+        want = WEEKDAYS[(WEEKDAYS.index(profile.start_weekday) - profile.warmup_days) % 7]
+        earlier = start - timedelta(days=(start.weekday() - WEEKDAYS.index(want)) % 7)
+        msg = (f"the 14-day window would start on {first_window} ({weekday(first_window)}), catalog §1 wants a "
+               f"{profile.start_weekday}: with {profile.warmup_days} warm-up day(s) --start must be a {want}, "
+               f"e.g. {earlier}")
+        if not any_start:
+            raise ValueError(msg + " (--any-start allows other days, e.g. for pilots)")
+        plan.warnings.append(msg)
 
     occs: list[_Occ] = []
     for phase in phases:

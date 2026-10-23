@@ -13,7 +13,7 @@ from .planner import Entry, Plan
 # The runner's ground-truth columns first (catalog §1, without `status`), then what the runner needs and
 # what traces a row back to the profile.
 PLAN_COLUMNS = ["start", "end", "device", "activity_id", "domains", "profile", "seed", "block_id",
-                "mix", "duration", "pages", "dwell", "platform", "day", "phase", "dataset", "profile_block",
+                "mix", "duration", "pages", "dwell", "lookups", "platform", "day", "phase", "dataset", "profile_block",
                 "companion_of"]
 COMMAND_COLUMNS = ["start", "end", "device", "block_id", "command"]
 RUN_SCRIPT = "scripts/run-activity.sh"   # relative to traffic-runner/
@@ -42,7 +42,8 @@ def rows(plan: Plan, devices: dict[str, str], dataset: str) -> list[dict[str, st
             "activity_id": e.activity, "domains": ";".join(e.mix) if e.mix else "",
             "profile": e.profile, "seed": str(plan.seed), "block_id": e.block_id,
             "mix": runner_mix(e), "duration": str(int((e.end - e.start).total_seconds())),
-            "pages": e.pages or "", "dwell": e.dwell or "", "platform": e.platform or "",
+            "pages": e.pages or "", "dwell": e.dwell or "", "lookups": e.lookups or "",
+            "platform": e.platform or "",
             "day": e.day.isoformat(), "phase": e.phase, "dataset": dataset, "profile_block": e.profile_block,
             "companion_of": e.companion_of or "",
         })
@@ -58,6 +59,8 @@ def command(row: dict[str, str]) -> str:
         args += ["--pages", row["pages"]]
     if row["dwell"]:
         args += ["--dwell", row["dwell"]]
+    if row["lookups"]:
+        args += ["--lookups", row["lookups"]]
     return shlex.join(args)
 
 

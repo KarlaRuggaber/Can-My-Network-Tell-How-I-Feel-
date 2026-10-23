@@ -24,7 +24,7 @@ def cmd_plan(args) -> int:
     roles = devmod.map_roles(rows_, args.dataset, profile.devices)
 
     plan = planner.build_plan(profile, args.seed, args.start, args.days, baseline=baseline,
-                              baseline_days=args.baseline_days)
+                              baseline_days=args.baseline_days, any_start=args.any_start)
     for w in plan.warnings:
         print(f"warning: {w}", file=sys.stderr)
     plan_rows = output.rows(plan, roles, args.dataset)
@@ -58,10 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("plan", help="write the plan CSV and the runner commands")
     r.add_argument("--profile", required=True, help="name in scheduler/profiles/ (e.g. student) or a .yaml path")
     r.add_argument("--seed", required=True, type=int, help="profile instance seed")
-    r.add_argument("--start", required=True, type=date.fromisoformat, help="first plan day = warm-up day, YYYY-MM-DD")
+    r.add_argument("--start", required=True, type=date.fromisoformat, help="first plan day = warm-up day, YYYY-MM-DD (a Sunday: the window starts on Monday)")
     r.add_argument("--days", type=int, default=15, help="total days in the plan, incl. warm-up (default 15)")
     r.add_argument("--baseline-days", type=int, default=0,
                    help="clinical profiles: days after the warm-up that run the tier-0 baseline (e.g. 14)")
+    r.add_argument("--any-start", action="store_true",
+                   help="allow a --start that does not put the window on the profile's start weekday (pilots, tests)")
     r.add_argument("--devices", required=True, help="traffic-runner/config/devices.csv")
     r.add_argument("--dataset", required=True, help="dataset in devices.csv, e.g. gw_student_a")
     r.add_argument("--out", required=True, help="plan CSV")

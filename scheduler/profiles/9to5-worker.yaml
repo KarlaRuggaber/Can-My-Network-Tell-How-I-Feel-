@@ -8,6 +8,7 @@ window_days: 14
 warmup_days: 1
 start_weekday: Mon
 devices: [phone, laptop]
+noise: {duration: 0.15}          # "±15 % on durations": one factor U(0.85, 1.15) per day (day-to-day volume noise)
 
 day_types:
   home_office: [Mon, Fri]

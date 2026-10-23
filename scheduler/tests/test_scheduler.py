@@ -15,7 +15,7 @@ from scheduler import cli, devices, dist, output, planner, spec
 ROOT = Path(__file__).resolve().parent.parent
 RUNNER_DEVICES = ROOT.parent / "traffic-runner" / "config" / "devices.csv"
 TZ = ZoneInfo("Europe/Zurich")
-START = date(2026, 10, 26)
+START = date(2026, 10, 25)   # Sunday warm-up (also the DST switch), window from Monday
 SEEDS = range(8)
 TIER0 = ["student", "9to5-worker"]
 ROLES = {"phone": "x_a_phone", "laptop": "x_a_laptop"}
@@ -228,7 +228,7 @@ def test_insomnia_nights(case):
 
 # --- time zone / DST ------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("start", [date(2026, 10, 19), date(2027, 3, 22)])
+@pytest.mark.parametrize("start", [date(2026, 10, 18), date(2027, 3, 21)])
 def test_dst_weeks(start):
     plan = make("9to5-worker", 5, start=start)
     rows = output.rows(plan, ROLES, "gw_x_a")
@@ -304,7 +304,7 @@ def test_all_profiles_validate():
 
 def test_cli_writes_plan_and_commands(tmp_path):
     out = tmp_path / "plan.csv"
-    rc = cli.main(["plan", "--profile", "student", "--seed", "42", "--start", "2026-10-26", "--days", "15",
+    rc = cli.main(["plan", "--profile", "student", "--seed", "42", "--start", "2026-10-25", "--days", "15",
                    "--devices", str(RUNNER_DEVICES), "--dataset", "gw_student_a", "--out", str(out)])
     assert rc == 0
     rows = list(csv.DictReader(out.open()))
@@ -320,7 +320,7 @@ def test_cli_writes_plan_and_commands(tmp_path):
 
 
 def test_cli_baseline_only_for_clinical(tmp_path):
-    args = ["plan", "--profile", "student", "--seed", "1", "--start", "2026-10-26", "--days", "29",
+    args = ["plan", "--profile", "student", "--seed", "1", "--start", "2026-10-25", "--days", "29",
             "--baseline-days", "14", "--devices", str(RUNNER_DEVICES), "--dataset", "gw_student_a",
             "--out", str(tmp_path / "p.csv")]
     assert cli.main(args) == 2
@@ -338,3 +338,48 @@ def test_baseline_phase_equals_plain_tier0_plan():
     a = [key(e) for e in clinical.entries if e.day <= last]
     b = [key(e) for e in plain.entries if e.day <= last]
     assert a == b
+
+
+# --- decisions 23.10: Sunday warm-up, day-to-day duration noise -----------------------------------
+
+def test_window_must_start_on_monday(tmp_path):
+    with pytest.raises(ValueError, match="must be a Sun, e.g. 2026-10-25"):
+        make("student", 1, start=date(2026, 10, 26))
+    prof = spec.load("student")
+    plan = planner.build_plan(prof, 1, date(2026, 10, 26), 15, any_start=True)
+    assert plan.warnings
+    args = ["plan", "--profile", "student", "--seed", "1", "--start", "2026-10-26", "--devices", str(RUNNER_DEVICES),
+            "--dataset", "gw_student_a", "--out", str(tmp_path / "p.csv")]
+    assert cli.main(args) == 2
+    assert cli.main(args + ["--any-start"]) == 0
+
+
+def test_duration_noise_is_one_factor_per_day():
+    for name, x in [("student", 0.25), ("9to5-worker", 0.15), ("insomnia-moderate", 0.15)]:
+        prof = spec.load(name)
+        assert prof.duration_noise == x
+        plan = make(name, 3, days=29 if prof.tier else 15, baseline_days=14 if prof.tier else 0)
+        factors = [c.duration_factor for c in plan.days]
+        assert all(1 - x <= f <= 1 + x for f in factors)
+        assert len(set(factors)) == len(factors)          # differs from day to day
+        assert max(factors) - min(factors) > x            # and actually spreads
+
+
+def test_duration_noise_scales_durations():
+    """A within-block's duration = its own draw × the day's factor: without noise every wake check lies in
+    5-15 min, with noise the range widens by the factor."""
+    prof = spec.load("student")
+    plan = make("student", 4)
+    ctx = {c.date: c for c in plan.days}
+    lo, hi = next(b for b in prof.blocks if b.id == "wake_check").duration.bounds()
+    for e in plan.entries:
+        if e.profile_block == "wake_check":
+            f = ctx[e.day].duration_factor
+            assert lo * f - 1 <= (e.end - e.start).total_seconds() <= hi * f + 1
+
+
+def test_noise_false_keeps_the_raw_duration(case):
+    plan, _ = case
+    for e in plan.entries:
+        if e.profile_block == "night_bursts":
+            assert 120 <= (e.end - e.start).total_seconds() <= 480
