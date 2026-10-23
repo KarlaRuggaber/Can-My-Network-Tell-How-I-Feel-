@@ -49,6 +49,15 @@ class Driver(Protocol):
     def dwell(self, seconds: float, rng: random.Random) -> None:
         """Stay on the current page for `seconds`, scrolling like a reader."""
 
+    def scroll_feed(self, seconds: float, rng: random.Random) -> None:
+        """Scroll an endless feed for `seconds`, loading more content every 5-15 s."""
+
+    def download(self, page_url: str, file_url: str, timeout: float) -> str:
+        """Open page_url and download file_url from it completely; return the page host."""
+
+    def dns_lookup(self, name: str) -> bool:
+        """DNS lookup only, no connection. True if the name resolved."""
+
     def follow_link(self, rng: random.Random, timeout: float) -> str | None:
         """Open one same-site link of the current page; return its host or None."""
 
@@ -135,6 +144,27 @@ class RunContext:
         left = min(seconds, self.remaining())
         if left > 0:
             self.driver.dwell(left, random.Random(seed))
+
+    def scroll_feed(self, seconds: float, seed) -> None:
+        left = min(seconds, self.remaining())
+        if left > 0:
+            self.driver.scroll_feed(left, random.Random(seed))
+
+    def download(self, page_url: str, file_url: str) -> str | None:
+        timeout = self._nav_timeout()
+        if timeout is None:
+            return None
+        try:
+            return self._record(self.driver.download(page_url, file_url, timeout))
+        except PageError as e:
+            self.page_errors += 1
+            log.warning("%s", e)
+            return None
+
+    def dns_lookup(self, name: str) -> bool:
+        """Records the queried name as visited, whether it resolves or not."""
+        self._record(name)
+        return self.driver.dns_lookup(name)
 
     def follow_link(self, seed: float) -> str | None:
         timeout = self._nav_timeout()

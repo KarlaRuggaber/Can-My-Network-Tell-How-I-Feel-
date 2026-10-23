@@ -16,6 +16,11 @@ CASES = [
     ("video_stream", "streaming", 3600),
     ("music_background", None, 1800),
     ("idle_connected", None, 600),
+    ("social_passive", "social_passive", 1800),
+    ("work_block", "work", 3600),
+    ("study_block", "study", 3600),
+    ("crisis_resource_visit", "crisis_help", 600),
+    ("sh_adjacent_lookup", None, 30),
 ]
 
 
@@ -39,7 +44,8 @@ def test_same_seed_same_sequence(activity_id, mix_spec, duration):
 
 
 @pytest.mark.parametrize("activity_id, mix_spec, duration", [c for c in CASES if c[0] in
-                         ("phone_check", "browse", "repeat_visit_loop", "video_stream")])
+                         ("phone_check", "browse", "repeat_visit_loop", "video_stream", "social_passive",
+                          "work_block", "study_block", "crisis_resource_visit", "sh_adjacent_lookup")])
 def test_different_seeds_differ(activity_id, mix_spec, duration):
     runs = {repr(run_once(activity_id, mix_spec, duration, seed=s)[0]) for s in range(1, 9)}
     assert len(runs) > 1
@@ -139,3 +145,56 @@ def test_music_background_uses_radio_page():
     assert calls[0][0] == "audio_page" and calls[0][1].startswith("https://www.srf.ch/audio/")
     assert visited == ["www.srf.ch"]
     assert end == pytest.approx(600)
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_social_passive_feed_and_videos(seed):
+    calls, _, end = run_once("social_passive", "social_passive,news", 3600, seed=seed)
+    assert end == pytest.approx(3600)
+    feeds = [c for c in calls if c[0] == "feed"]
+    assert feeds and all(c[2] >= 1 for c in feeds)
+    assert len([c for c in calls if c[0] == "follow"]) <= 2  # catalog: 0-2 videos
+    assert len([c for c in calls if c[0] == "open"]) >= 2  # 1 h switches sites (3-10 min segments)
+
+
+def test_work_block_refreshes_home_and_opens_pages():
+    calls, _, end = run_once("work_block", "work", 7200, seed=4)
+    opens = [c[1] for c in calls if c[0] == "open"]
+    home = opens[0]
+    assert end == pytest.approx(7200)
+    assert opens.count(home) >= 7200 // 300  # reloaded at least every 5 min
+    assert not [c for c in calls if c[0] == "download"]
+
+
+def test_study_block_downloads_pdfs():
+    downloads = 0
+    for seed in range(10):
+        calls, visited, _ = run_once("study_block", "study", 7200, seed=seed)
+        downloads += len([c for c in calls if c[0] == "download"])
+    assert 10 <= downloads <= 70  # 1-3 per hour on average, 2 h x 10 runs
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_crisis_resource_visit(seed):
+    calls, visited, end = run_once("crisis_resource_visit", "crisis_help", 600, seed=seed)
+    opens = [c for c in calls if c[0] == "open"]
+    dwells = [c[1] for c in calls if c[0] == "dwell"]
+    assert 1 <= len(opens) <= 3
+    assert all(o[1].split("/")[2].endswith(("143.ch", "147.ch", "depression.ch")) for o in opens)
+    assert all(60 <= d <= 240 for d in dwells[:-1])
+    assert end <= 600
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_sh_adjacent_lookup_placeholders_only(seed):
+    calls, visited, _ = run_once("sh_adjacent_lookup", None, 30, seed=seed)
+    names = [c[1] for c in calls if c[0] == "dns"]
+    assert 1 <= len(names) <= 3
+    assert all(n.startswith("sh-adjacent-") and n.endswith(".invalid") for n in names)
+    assert visited == list(dict.fromkeys(names))
+    assert not [c for c in calls if c[0] == "open"]
+
+
+def test_sh_adjacent_lookup_override():
+    calls, _, _ = run_once("sh_adjacent_lookup", None, 60, seed=1, overrides={"lookups": (3, 3)})
+    assert len([c for c in calls if c[0] == "dns"]) == 3

@@ -10,6 +10,7 @@ from __future__ import annotations
 import html
 import logging
 import re
+import socket
 import time
 from urllib.parse import parse_qs, quote_plus, urlsplit
 
@@ -246,6 +247,41 @@ class BrowserDriver:
             except self._error_cls:
                 pass  # page is navigating; keep waiting
             self.page.wait_for_timeout(min(step, left) * 1000)
+
+    def scroll_feed(self, seconds: float, rng) -> None:
+        """Scroll an endless feed: jump to the end every 5-15 s so the site loads more."""
+        self._ensure()
+        end = time.monotonic() + seconds
+        while (left := end - time.monotonic()) > 0:
+            step = rng.uniform(5.0, 15.0)
+            try:
+                self.page.evaluate("() => window.scrollTo({top: document.documentElement.scrollHeight, behavior: 'smooth'})")
+            except self._error_cls:
+                pass  # page is navigating; keep waiting
+            self.page.wait_for_timeout(min(step, left) * 1000)
+
+    def download(self, page_url: str, file_url: str, timeout: float) -> str:
+        """Open page_url, then fetch file_url from that page (same origin) and read it
+        completely, like a click on a PDF link. Returns the page's host."""
+        host = self.open(page_url, timeout)
+        try:
+            size = self.page.evaluate(
+                "async u => { const r = await fetch(u, {credentials: 'include'}); "
+                "if (!r.ok) throw new Error('HTTP ' + r.status); return (await r.arrayBuffer()).byteLength; }",
+                file_url,
+            )
+        except self._error_cls as e:
+            raise PageError(f"download failed: {file_url}: {str(e).splitlines()[0]}") from None
+        log.info("downloaded %s (%.1f MB)", file_url, size / 1e6)
+        return host
+
+    def dns_lookup(self, name: str) -> bool:
+        """Resolve a name through the system resolver (dnsmasq on the gateway), no connection."""
+        try:
+            socket.getaddrinfo(name, 443)
+            return True
+        except OSError:
+            return False
 
     def follow_link(self, rng, timeout: float) -> str | None:
         if self.page is None:

@@ -124,6 +124,8 @@ def cmd_run(args) -> int:
         overrides["pages"] = parse_range(args.pages, integer=True)
     if args.dwell:
         overrides["dwell"] = parse_range(args.dwell)
+    if args.lookups:
+        overrides["lookups"] = parse_range(args.lookups, integer=True)
 
     mix = None
     status = None
@@ -256,6 +258,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--block-id", required=True, help="block ID for the log, e.g. b001")
     r.add_argument("--pages", help="override page count range, e.g. 2-4")
     r.add_argument("--dwell", help="override dwell range, e.g. 20-90 or 1m-3m")
+    r.add_argument("--lookups", help="override lookup count range (sh_adjacent_lookup), e.g. 1-3")
     r.add_argument("--dry-run", action="store_true", help="no network: print the planned sequence")
     r.add_argument("--headed", action="store_true", help="show the browser (needs a display)")
     r.set_defaults(func=cmd_run)
