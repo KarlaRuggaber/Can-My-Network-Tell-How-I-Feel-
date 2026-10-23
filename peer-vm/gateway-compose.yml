@@ -36,6 +36,11 @@ services:
       network: host
     mem_limit: 2g
 
+  slackbot:
+    build:
+      context: ./slackbot
+      network: host
+
 networks:
   peer:
     external: true

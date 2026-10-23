@@ -123,7 +123,8 @@ sudo scripts/run-activity.sh student_a_phone \
 | `sh_adjacent_lookup` | ok | 1–3 DNS lookups of `sh-adjacent-NN.invalid` placeholders, no browser, no connection. `domains` lists the queried names. | seconds |
 | `video_call`, `voice_call` | ok | WebRTC call against the peer on the peer VM ([peer-vm/](../peer-vm/README.md)). The runner asks the peer to join a room derived from `profile/seed/block_id` and the token, then joins with a fake camera/mic (voice: audio only). It stays until the block ends; three failed connection checks in a row are an error. Every `--platform` runs on this self-hosted Jitsi. Needs `peer.env`, otherwise `not_implemented` | as block |
 | `gaming_session` | ok | Store pages of the `gaming` mix (Steam, Riot) for 2–5 min (at most a quarter of the block), then the game page of the peer VM: a WebSocket game at 20–60 messages per second in each direction (tick drawn with the RNG). Voice chat is a separate `voice_call` row of the scheduler. Needs `peer.env` | 60–120 min |
-| `messaging`, `social_post` | stub | Writes `not_implemented` (needs test accounts) | |
+| `messaging` | ok | Slack web in the project workspace: the persona's member account sends 3–10 messages, 10–60 s apart, to the bot "CMNTHIF Partner", which replies after 5–40 s (`peer-vm/slackbot`). Always uses a desktop browser profile, because Slack refuses phone browsers. Needs the device's Slack session (section "Test accounts"), otherwise `not_implemented` | 2–10 min |
+| `social_post` | ok | Reddit with the shared account u/CMNTHIF: one generated test image (1–3 MB of random pixels) **only into the private r/CMNTHIF**. The target is checked right before "Post" and again afterwards. Needs the device's Reddit session | 2–5 min |
 | `away` | stub | Catalog only, writes `not_implemented`. It belongs to the scheduler, where away means no runs. | |
 
 **Mixes:**
@@ -456,6 +457,63 @@ Checks after step 5:
 - **Live pages change.** The sequence of start URLs and choices is reproducible. Link targets depend on the page content at that moment.
 - **Redirects.** `domains` shows real hosts: `notion.so` → `www.notion.com` and `office.com` → `www.microsoft365.com`, both outside the thesis PRODUCTIVITY list.
 - **Containers run as root** (Playwright image default; Chromium without its own sandbox). They are isolated on br-sim and can only reach DNS and the internet.
+
+## 8a. Test accounts (messaging, social_post)
+
+Decided 23.10: email only, no phone numbers.
+
+**The accounts.** One project mailbox `cmnthif@gmail.com` with plus addresses (`cmnthif+<tag>@gmail.com`). The tags are in `config/accounts.yaml`.
+
+| Platform | Account | Used by |
+|---|---|---|
+| **Slack** | own workspace "CMNTHIF Test": Admin plus members Student, Maria, Ben, Carl, and the official app "CMNTHIF Partner" (reply bot) | `messaging` |
+| **Reddit** | one shared account u/CMNTHIF and the **private** subreddit r/CMNTHIF | `social_post` |
+
+Passwords and 2FA codes live only in the team's password manager. The runner works with **sessions**:
+- Each session is the login state of one device, captured once by hand. It holds cookies and local storage, never a password.
+- **Location:** `traffic-runner/sessions/<device>.<platform>.json` (+ `.meta.json`) on the gateway, root-only, not in git, mounted read-only into the containers.
+- Each block still starts in a fresh browser context; only the login comes from the file.
+
+**Capture a session on the laptop.** Playwright 1.63.0 is needed once:
+
+```bash
+python3 -m venv traffic-runner/.venv-capture
+traffic-runner/.venv-capture/bin/pip install playwright==1.63.0 PyYAML==6.0.3
+traffic-runner/.venv-capture/bin/playwright install chromium
+traffic-runner/.venv-capture/bin/python traffic-runner/scripts/capture_session.py --device mdd_suicidality_a_phone --platform slack
+```
+
+The script opens a visible browser that looks like the runner device. You log in by hand (Slack: the persona's plus address and the email code; then open the DM with "CMNTHIF Partner"), and it saves the session when you press Enter.
+
+**Which sessions are needed:**
+
+| Activity | Devices | Sessions |
+|---|---|---|
+| `messaging` | the phones of all 4 datasets | one Slack session each, logged in as that persona |
+| `social_post` | the phones of student, Maria, Carl (the 9-to-5/insomnia profiles do not post) | the same shared Reddit account; capture once, copy the files for the other two phones (rename to the device name) |
+
+**Copy to the gateway**, from the laptop:
+
+```bash
+scp traffic-runner/sessions/*.json kathy@172.20.10.10:/tmp/
+ssh kathy@172.20.10.10 'sudo install -d -m 700 /opt/can-my-network/traffic-runner/sessions && sudo install -m 600 /tmp/*_phone.*.json /opt/can-my-network/traffic-runner/sessions/ && rm /tmp/*_phone.*.json'
+```
+
+Delete the laptop copies afterwards, or keep them only in the git-ignored `sessions/` folder.
+
+**Bot tokens** go into the peer stack's `.env` on the gateway, typed in without echo:
+
+```bash
+read -rsp "Slack app token (xapp-…): " A; echo; read -rsp "Slack bot token (xoxb-…): " B; echo
+printf 'SLACK_APP_TOKEN=%s\nSLACK_BOT_TOKEN=%s\n' "$A" "$B" | sudo tee -a /opt/can-my-network/peer-vm/.env > /dev/null; unset A B
+cd /opt/can-my-network/peer-vm && sudo docker compose up -d --build slackbot && sudo docker compose logs --tail 3 slackbot
+```
+
+**Expiry and revoking:**
+- A session that expired or was signed out makes the run fail with "session expired: capture it again".
+- To revoke all sessions: Slack admin → member → sign out of all sessions; Reddit → Settings → sign out everywhere.
+
+**At the end of the project:** delete the Slack workspace, the app, the subreddit, the Reddit account and the sessions on the gateway.
 
 ## 9. Open points
 

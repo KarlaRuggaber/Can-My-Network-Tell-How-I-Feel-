@@ -198,6 +198,13 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
         - `peer.sim` in the feed
       - **RAM:** with two parallel calls, 1.3 GB of 7.1 GB was left, so watch it once more persons run in parallel.
     - **For Thierry:** the scheduler should pass `--lookups` (`sh_adjacent_lookup`). `--platform` is accepted but has no effect.
+  - **Test accounts (email only, no phone numbers).** Project mailbox `cmnthif@gmail.com` with plus addresses per persona.
+    - **Slack:** workspace "CMNTHIF Test" with members Student/Maria/Ben/Carl and the official reply bot "CMNTHIF Partner".
+    - **Reddit:** shared account u/CMNTHIF with the private subreddit r/CMNTHIF.
+    - **Runner:** `messaging` (Slack web, desktop profile because Slack refuses phone browsers) and `social_post` (generated 1–3 MB image, only into r/CMNTHIF, target checked before and after posting) are implemented and load per-device login sessions.
+    - **Sessions** are captured by hand on the laptop (`scripts/capture_session.py`) and stored root-only on the gateway.
+    - **Bot service:** `peer-vm/slackbot`, host network.
+    - 212 tests pass. Still to do: capture the sessions, enter the tokens, deploy, live test.
   - **Devices for the clinical personas** in `traffic-runner/config/devices.csv`. Datasets are named after the profiles (decided 23.10); the persona names appear only as comments:
 
     | Persona | Profile | Dataset | IPs |

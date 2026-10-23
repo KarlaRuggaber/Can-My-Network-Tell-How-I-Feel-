@@ -145,6 +145,17 @@ def load_roles(path: Path | None = None) -> dict:
     return data
 
 
+# --- accounts.yaml -----------------------------------------------------------------------
+
+def load_accounts(path: Path | None = None) -> dict:
+    path = Path(path or CONFIG_DIR / "accounts.yaml")
+    data = _load_yaml(path)
+    sub = str((data.get("reddit") or {}).get("subreddit", ""))
+    if not sub or not re.match(r"^[A-Za-z0-9_]{3,21}$", sub):
+        raise ConfigError(f"{path}: reddit.subreddit must be a subreddit name, got {sub!r}")
+    return data
+
+
 # --- mixes.yaml --------------------------------------------------------------------------
 
 @dataclass(frozen=True)

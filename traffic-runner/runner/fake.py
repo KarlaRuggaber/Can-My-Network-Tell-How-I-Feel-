@@ -117,6 +117,15 @@ class FakeDriver:
         self._media_started = self.clock.now()
         return self._load(url, timeout)
 
+    def send_message(self, text):
+        self.calls.append(("message", text))
+        self.clock.sleep(len(text) * 0.06)
+
+    def reddit_post(self, subreddit, title, image, timeout):
+        import os
+        self.calls.append(("reddit_post", subreddit, title, os.path.getsize(image)))
+        return self._load(f"https://www.reddit.com/r/{subreddit}/comments/fake/", timeout)
+
     def set_mic(self, on):
         self.calls.append(("mic", on))
 

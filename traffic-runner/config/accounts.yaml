@@ -1,0 +1,16 @@
+# Test accounts of the project (no secrets here). The login sessions are files on the gateway:
+# traffic-runner/sessions/<device>.<platform>.json (root-only, not in git), captured once by
+# hand with scripts/capture_session.py. Accounts: email cmnthif+<tag>@… (one mailbox).
+slack:
+  start_url: "https://slack.com/signin"
+  bot_name: "CMNTHIF Partner"   # the reply bot (peer-vm/slackbot)
+reddit:
+  start_url: "https://www.reddit.com/login/"
+  subreddit: "CMNTHIF"          # private; the ONLY target social_post may post to
+# dataset -> Slack member (display name) and email tag of the persona. Reddit uses one shared
+# account (u/CMNTHIF) for all personas.
+personas:
+  gw_student_a: {name: Student, tag: student}
+  gw_insomnia_a: {name: Ben, tag: ben.insomnia}
+  gw_mdd_suicidality_a: {name: Maria, tag: maria.mdd}
+  gw_social_anxiety_a: {name: Carl, tag: carl.socialanxiety}

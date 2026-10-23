@@ -71,6 +71,8 @@ def service(device, build: bool) -> str:
         # Code and config come from the image (Dockerfile: COPY config), so a git pull alone
         # never mixes new config with old code. Only the DNS setting is mounted.
         "      - ./config/resolv.conf:/etc/resolv.conf:ro",
+        "      # login sessions of the test accounts (root-only, not in git)",
+        "      - ./sessions:/app/sessions:ro",
         f"    shm_size: {SHM_SIZE}",
         f"    mem_limit: {MEM_LIMIT}",
         f'    cpus: "{CPUS}"',

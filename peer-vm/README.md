@@ -16,6 +16,7 @@ gateway (br-sim)                               VM, e.g. 203-0-113-7.sslip.io
 |---|---|
 | Jitsi (self-hosted) | Video conferencing server, no login. `jitsi-compose.yml` is the official compose file of docker-jitsi-meet `stable-11248`, unmodified ([JITSI_ORIGIN.md](JITSI_ORIGIN.md)). Settings are in `.env` (see below) |
 | Caddy | Only public entry point (80/443). Automatic Let's Encrypt certificate for `<ip-with-dashes>.sslip.io`, which resolves to the VM's IP without registering a domain |
+| `slackbot` | Reply bot "CMNTHIF Partner" for the runner's `messaging` (official Slack app, Socket Mode, outbound only). Answers every direct message after 5–40 s. Runs in the host network, because it needs internet; its traffic is therefore never recorded as a device. Tokens `SLACK_APP_TOKEN` / `SLACK_BOT_TOKEN` in `.env`; without them it idles |
 | `peer` | One Python service (`peer/peer_service.py`). `POST /peer/join` (bearer token) lets a headless Chromium with fake camera/mic join a room for the call's duration. It leaves early once it has been alone in the room for 45 s, judged by Jitsi's participant count. Before 23.10 the rule was "no media for 45 s", which also fired on a muted runner without camera (`--mic-share`). `GET /game` + `/game/ws` is a toy multiplayer game: the client sends inputs and the server sends game states, 20–60 times per second each |
 
 **Settings that keep a call on this VM** (generated into `.env` by `setup.sh`):

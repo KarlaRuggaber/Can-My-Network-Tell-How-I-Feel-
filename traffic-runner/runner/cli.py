@@ -11,7 +11,7 @@ import signal
 import socket
 import sys
 
-from . import config, gtlog
+from . import config, gtlog, sessions
 from .activities import ACTIVITIES, CATALOG_ONLY
 from .context import NotImplementedActivity, RealClock, RunContext
 
@@ -160,6 +160,20 @@ def cmd_run(args) -> int:
             if mix.skipped:
                 log.warning("skipped mix categories without usable sites (login needed): %s", ", ".join(mix.skipped))
 
+    # Test-account activities: the device's login session (not_implemented if not captured).
+    session_platform = getattr(module, "SESSION_PLATFORM", None) if implemented else None
+    storage_state, session_meta = None, {}
+    if session_platform and status is None:
+        if args.dry_run:
+            session_meta = {"dm_url": "https://app.slack.com/client/TDRYRUN/DDRYRUN"}
+        else:
+            try:
+                state_path, session_meta = sessions.load(device.name, session_platform)
+                storage_state = str(state_path)
+            except NotImplementedActivity as e:
+                log.warning("%s", e)
+                status = "not_implemented"
+
     if args.dry_run:
         from .fake import FakeClock, FakeDriver
         clock = FakeClock()
@@ -168,15 +182,21 @@ def cmd_run(args) -> int:
         from .browser import BrowserDriver
         role_cfg = roles[device.role]
         clock = RealClock()
-        driver = BrowserDriver(role_cfg["playwright_device"], roles.get("context") or {},
+        # An activity may need another browser profile than the role (Slack refuses phones).
+        browser_device = getattr(module, "PLAYWRIGHT_DEVICE", None) or role_cfg["playwright_device"]
+        driver = BrowserDriver(browser_device, roles.get("context") or {},
                                mixes.consent.get("reject_buttons") or [], headless=not args.headed,
                                consent_settings_buttons=mixes.consent.get("settings_buttons") or [],
                                call_mode=getattr(module, "BROWSER_MODE", None) == "call",
-                               ignore_https_errors=os.environ.get("RUNNER_PEER_INSECURE_TLS") == "1")
+                               ignore_https_errors=os.environ.get("RUNNER_PEER_INSECURE_TLS") == "1",
+                               storage_state=storage_state)
 
     ctx = RunContext(driver, clock, duration, overrides)
     ctx.mixes = mixes
     ctx.run_key = f"{args.profile}/{args.seed}/{args.block_id}"
+    ctx.session_meta = session_meta
+    if session_platform:
+        ctx.accounts = config.load_accounts()
 
     start = gtlog.now_iso()
     log.info("start %s on %s (%s, %s), %.0f s, mix=%s, seed=%s, block=%s",

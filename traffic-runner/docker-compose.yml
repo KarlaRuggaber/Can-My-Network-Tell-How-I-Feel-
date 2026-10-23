@@ -30,6 +30,8 @@ services:
     volumes:
       - ./logs:/logs
       - ./config/resolv.conf:/etc/resolv.conf:ro
+      # login sessions of the test accounts (root-only, not in git)
+      - ./sessions:/app/sessions:ro
     shm_size: 1gb
     mem_limit: 2g
     cpus: "2.0"
@@ -58,6 +60,8 @@ services:
     volumes:
       - ./logs:/logs
       - ./config/resolv.conf:/etc/resolv.conf:ro
+      # login sessions of the test accounts (root-only, not in git)
+      - ./sessions:/app/sessions:ro
     shm_size: 1gb
     mem_limit: 2g
     cpus: "2.0"
@@ -86,6 +90,8 @@ services:
     volumes:
       - ./logs:/logs
       - ./config/resolv.conf:/etc/resolv.conf:ro
+      # login sessions of the test accounts (root-only, not in git)
+      - ./sessions:/app/sessions:ro
     shm_size: 1gb
     mem_limit: 2g
     cpus: "2.0"
@@ -114,6 +120,8 @@ services:
     volumes:
       - ./logs:/logs
       - ./config/resolv.conf:/etc/resolv.conf:ro
+      # login sessions of the test accounts (root-only, not in git)
+      - ./sessions:/app/sessions:ro
     shm_size: 1gb
     mem_limit: 2g
     cpus: "2.0"
@@ -142,6 +150,8 @@ services:
     volumes:
       - ./logs:/logs
       - ./config/resolv.conf:/etc/resolv.conf:ro
+      # login sessions of the test accounts (root-only, not in git)
+      - ./sessions:/app/sessions:ro
     shm_size: 1gb
     mem_limit: 2g
     cpus: "2.0"
@@ -170,6 +180,8 @@ services:
     volumes:
       - ./logs:/logs
       - ./config/resolv.conf:/etc/resolv.conf:ro
+      # login sessions of the test accounts (root-only, not in git)
+      - ./sessions:/app/sessions:ro
     shm_size: 1gb
     mem_limit: 2g
     cpus: "2.0"
@@ -198,6 +210,8 @@ services:
     volumes:
       - ./logs:/logs
       - ./config/resolv.conf:/etc/resolv.conf:ro
+      # login sessions of the test accounts (root-only, not in git)
+      - ./sessions:/app/sessions:ro
     shm_size: 1gb
     mem_limit: 2g
     cpus: "2.0"
@@ -226,6 +240,8 @@ services:
     volumes:
       - ./logs:/logs
       - ./config/resolv.conf:/etc/resolv.conf:ro
+      # login sessions of the test accounts (root-only, not in git)
+      - ./sessions:/app/sessions:ro
     shm_size: 1gb
     mem_limit: 2g
     cpus: "2.0"

@@ -155,6 +155,18 @@ MEDIA_STARTED = """
 """
 
 
+SLACK_COMPOSER = '[data-qa="message_input"] [contenteditable="true"], div[role="textbox"][contenteditable="true"]'
+REDDIT_POST_BUTTON = re.compile(r"^\s*(post|posten|veröffentlichen)\s*$", re.I)
+REDDIT_TITLE = re.compile(r"(title|titel)", re.I)
+
+
+def reddit_target_ok(url: str, subreddit: str, page: str) -> bool:
+    """True if `url` is the given page ("submit" or "comments") of exactly `subreddit`."""
+    parts = [p for p in urlsplit(url).path.lower().split("/") if p]
+    return (host_of(url).endswith("reddit.com") and len(parts) >= 3
+            and parts[0] == "r" and parts[1] == subreddit.lower() and parts[2] == page)
+
+
 def host_of(url: str) -> str:
     return urlsplit(url).hostname or ""
 
@@ -175,8 +187,12 @@ def _names_re(names: list[str]) -> re.Pattern | None:
 class BrowserDriver:
     def __init__(self, playwright_device: str, context_options: dict, consent_buttons: list[str],
                  headless: bool = True, consent_settings_buttons: list[str] | None = None,
-                 call_mode: bool = False, ignore_https_errors: bool = False):
+                 call_mode: bool = False, ignore_https_errors: bool = False,
+                 storage_state: str | None = None):
         self.playwright_device = playwright_device
+        # storage_state: login session of a test account (runner/sessions.py), loaded into
+        # every new context; caches still start empty.
+        self.storage_state = storage_state
         # call_mode: fake camera/mic, granted permissions and the RTCPeerConnection hook,
         # only for call activities.
         self.call_mode = call_mode
@@ -209,6 +225,8 @@ class BrowserDriver:
             args = LAUNCH_ARGS + (FAKE_MEDIA_ARGS if self.call_mode else [])
             self._browser = self._pw.chromium.launch(channel="chromium", headless=self.headless, args=args)
         extra = {"permissions": ["camera", "microphone"]} if self.call_mode else {}
+        if self.storage_state:
+            extra["storage_state"] = self.storage_state
         self._context = self._browser.new_context(**descriptor, **self.context_options, **extra,
                                                   ignore_https_errors=self.ignore_https_errors)
         self._context.add_init_script(YT_QUALITY_INIT)
@@ -461,6 +479,43 @@ class BrowserDriver:
             raise PageError(f"call did not connect: {str(e).splitlines()[0]}") from None
         self._state_js = CALL_STATE
         log.info("call connected: %s", url.split("#")[0])
+        return host_of(self.page.url)
+
+    def send_message(self, text: str) -> None:
+        """Type a message into the open chat's composer (Slack) and send it with Enter."""
+        try:
+            box = self.page.locator(SLACK_COMPOSER).first
+            box.wait_for(state="visible", timeout=20_000)
+            box.click()
+            self.page.keyboard.type(text, delay=60)
+            self.page.keyboard.press("Enter")
+        except self._error_cls as e:
+            raise PageError(f"could not send message: {str(e).splitlines()[0]}") from None
+        log.info("message sent (%d chars)", len(text))
+
+    def reddit_post(self, subreddit: str, title: str, image: str, timeout: float) -> str | None:
+        """Create an image post in `subreddit` only. Returns the host, or raises PageError."""
+        self.open(f"https://www.reddit.com/r/{subreddit}/submit/?type=IMAGE", timeout)
+        if "/login" in self.page.url:
+            raise PageError("Reddit session expired: capture it again with scripts/capture_session.py")
+        if not reddit_target_ok(self.page.url, subreddit, "submit"):
+            raise PageError(f"not on the submit page of r/{subreddit}: {self.page.url}")
+        try:
+            title_box = self.page.get_by_role("textbox", name=REDDIT_TITLE).first
+            title_box.wait_for(state="visible", timeout=20_000)
+            title_box.fill(title)
+            self.page.locator('input[type="file"]').first.set_input_files(str(image))
+            self.page.wait_for_timeout(8_000)  # upload of 1-3 MB
+            # Safety check right before the click: still exactly this subreddit's submit page.
+            if not reddit_target_ok(self.page.url, subreddit, "submit"):
+                raise PageError(f"left the submit page of r/{subreddit}: {self.page.url}")
+            self.page.get_by_role("button", name=REDDIT_POST_BUTTON).last.click()
+            self.page.wait_for_url(lambda u: "/comments/" in u, timeout=timeout * 1000)
+        except self._error_cls as e:
+            raise PageError(f"Reddit post failed: {str(e).splitlines()[0]}") from None
+        if not reddit_target_ok(self.page.url, subreddit, "comments"):
+            raise PageError(f"post ended up outside r/{subreddit}: {self.page.url}")
+        log.info("posted to r/%s: %s", subreddit, self.page.url)
         return host_of(self.page.url)
 
     def set_mic(self, on: bool) -> None:

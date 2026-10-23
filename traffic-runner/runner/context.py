@@ -88,6 +88,12 @@ class Driver(Protocol):
     def set_mic(self, on: bool) -> None:
         """Mute or unmute the microphone in the running call."""
 
+    def send_message(self, text: str) -> None:
+        """Type and send a message in the open chat. Raises PageError."""
+
+    def reddit_post(self, subreddit: str, title: str, image: str, timeout: float) -> str | None:
+        """Create an image post in exactly `subreddit`; return host. Raises PageError."""
+
     def play_game(self, url: str, timeout: float) -> str:
         """Open the game page and wait until it is connected; return host."""
 
@@ -112,6 +118,8 @@ class RunContext:
         self.visited: list[str] = []
         self.page_errors = 0
         self.run_key = ""  # profile/seed/block_id, set by the CLI (call room names)
+        self.session_meta: dict = {}  # meta of the device's login session (runner/sessions.py)
+        self.accounts: dict = {}  # config/accounts.yaml
         self._bad_checks = 0
 
     # --- time ---
@@ -264,3 +272,12 @@ class RunContext:
 
     def set_mic(self, on: bool) -> None:
         self.driver.set_mic(on)
+
+    def send_message(self, text: str) -> None:
+        self.driver.send_message(text)
+
+    def reddit_post(self, subreddit: str, title: str, image) -> str | None:
+        timeout = self._nav_timeout()
+        if timeout is None:
+            return None
+        return self._record(self.driver.reddit_post(subreddit, title, str(image), timeout))

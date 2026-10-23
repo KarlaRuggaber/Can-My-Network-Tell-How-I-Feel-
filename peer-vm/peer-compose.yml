@@ -37,3 +37,18 @@ services:
       - TZ
     networks:
       meet.jitsi:
+
+  # Reply bot for the runner's messaging activity (Slack). Needs internet (outbound Socket
+  # Mode), so it runs in the host's network: its traffic leaves through the host itself and is
+  # never recorded as a simulated device. Tokens: SLACK_APP_TOKEN, SLACK_BOT_TOKEN in .env.
+  slackbot:
+    build: ./slackbot
+    image: slackbot:0.1.0
+    restart: unless-stopped
+    init: true
+    network_mode: host
+    mem_limit: 256m
+    environment:
+      - SLACK_APP_TOKEN
+      - SLACK_BOT_TOKEN
+      - TZ

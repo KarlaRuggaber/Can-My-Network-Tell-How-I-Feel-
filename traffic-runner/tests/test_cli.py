@@ -22,7 +22,8 @@ def rows(logdir):
 BASE = ["run", "--device", "student_a_phone", "--seed", "42", "--profile", "student", "--block-id", "b001"]
 
 
-def test_stub_logs_not_implemented(logdir):
+def test_account_activity_without_session_logs_not_implemented(logdir, monkeypatch, tmp_path):
+    monkeypatch.setenv("RUNNER_SESSION_DIR", str(tmp_path))  # empty: no session captured
     assert cli.main(BASE + ["--activity", "messaging"]) == cli.EXIT_NOT_IMPLEMENTED
     r = rows(logdir)[0]
     assert (r["activity_id"], r["status"], r["domains"]) == ("messaging", "not_implemented", "")
