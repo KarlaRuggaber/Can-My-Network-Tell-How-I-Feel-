@@ -483,7 +483,12 @@ traffic-runner/.venv-capture/bin/playwright install chromium
 traffic-runner/.venv-capture/bin/python traffic-runner/scripts/capture_session.py --device mdd_suicidality_a_phone --platform slack
 ```
 
-The script opens a visible browser that looks like the runner device. You log in by hand (Slack: the persona's plus address and the email code; then open the DM with "CMNTHIF Partner"), and it saves the session when you press Enter.
+The script opens your normal Google Chrome with a temporary, empty profile. Slack's sign-in check rejects browsers started by Playwright (plain "Error" after the robot check), so the login happens in a plain Chrome window.
+- You log in by hand. For Slack, use the persona's plus address and the email code, then open the DM with "CMNTHIF Partner" (the URL must contain `/D…`; channels are `/C…`).
+- When you press Enter, the script connects to the window over localhost, saves the session and deletes the temporary profile. If the wrong tab is open, it tells you and waits again.
+- Slack blocks email sign-ins for a while after too many attempts ("Try again in a few minutes"). Wait about an hour without retrying; every new try can restart the block.
+
+A session captured in desktop Chrome works in the runner's headless browser (checked 23.10: the Slack DM with its message box, the Reddit submit page logged in on the Pixel 7 profile).
 
 **Which sessions are needed:**
 
