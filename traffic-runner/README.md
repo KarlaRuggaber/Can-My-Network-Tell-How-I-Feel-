@@ -496,7 +496,7 @@ A session captured in desktop Chrome works in the runner's headless browser (che
 
 | Activity | Devices | Sessions |
 |---|---|---|
-| `messaging` | the phones of all 4 datasets | one Slack session each, logged in as that persona |
+| `messaging` | the phones of all 4 datasets | **since 23.10 one shared Slack login (member Student), copied to all four phones.** Separate logins per persona were blocked by Slack's sign-in limit ("too many attempts to submit an email address") on two networks. Which member sends is not visible in the encrypted traffic. A persona's own session can replace the copy at any time (same file name, no redeploy) |
 | `social_post` | the phones of student, Maria, Carl (the 9-to-5/insomnia profiles do not post) | the same shared Reddit account; capture once, copy the files for the other two phones (rename to the device name) |
 
 **Copy to the gateway**, from the laptop:

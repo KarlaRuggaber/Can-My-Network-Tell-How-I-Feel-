@@ -53,7 +53,7 @@ The pipeline reduces every hostname to its **last two labels** (`calendar.google
 
 | Category (`mix` key) | Domains | Thesis list | Login needed? |
 |---|---|---|---|
-| `messaging` | `web.whatsapp.com`, `web.telegram.org`, `discord.com`; **runner (decided 23.10): `app.slack.com`** (own workspace, email-only accounts, official reply bot) | SOCIAL (`whatsapp.com`, `telegram.org`, `discord.com`, `slack.com`) | yes, test accounts |
+| `messaging` | `web.whatsapp.com`, `web.telegram.org`, `discord.com`; **runner (decided 23.10): `app.slack.com`** (own workspace, email-only accounts, official reply bot; all personas share one member login, like the shared Reddit account) | SOCIAL (`whatsapp.com`, `telegram.org`, `discord.com`, `slack.com`) | yes, test accounts |
 | `social_passive` | `reddit.com`, `tiktok.com`, `instagram.com` | SOCIAL | reddit/tiktok no, instagram partly |
 | `social_post` | `instagram.com`, `reddit.com` (test sub); **runner: `reddit.com`, private r/CMNTHIF only** | SOCIAL | yes |
 | `call` platforms | `meet.jit.si` (private), `zoom.us` (work/study), `teams.microsoft.com` (work) | none (`jit.si`, `zoom.us`); `teams.microsoft.com` → `microsoft.com` = **PRODUCTIVITY** | jitsi no, zoom guest join, teams yes |

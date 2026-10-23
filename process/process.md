@@ -217,8 +217,8 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
       - After posting, phones land on `/r/CMNTHIF/` instead of the post.
       - The bot needed the `message.im` event.
     - **Still to do:**
-      - Slack sessions for Ben, Maria and Carl (Slack's sign-in limit blocked further logins that day).
-      - Full deploy once the pilot pauses (only `student_a_phone` runs the new image).
+      - ~~Slack sessions for Ben, Maria and Carl~~: Slack's sign-in limit also hit Thierry on another network, so all four phones share Student's Slack login (decided 23.10, like the shared Reddit account; invisible in the encrypted traffic).
+      - ~~Full deploy~~: done 23.10 after the pilot (executors stopped, `deploy.sh`, executors started).
   - **Devices for the clinical personas** in `traffic-runner/config/devices.csv`. Datasets are named after the profiles (decided 23.10); the persona names appear only as comments:
 
     | Persona | Profile | Dataset | IPs |
