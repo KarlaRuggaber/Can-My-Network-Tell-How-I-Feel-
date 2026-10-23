@@ -1,11 +1,7 @@
-# Additions to /etc/nftables.conf on the gateway for the peer stack (gateway mode).
-# 1) next to the other defines:
+# The PEER lines are part of traffic-runner/gateway/nftables.conf (the gateway's full
+# /etc/nftables.conf). Install that file; `diff` against the installed one shows only these:
 define PEER = "br-peer"
-
-# 2) in chain forward, after the SIM line:
-        iifname $SIM oifname $PEER ip daddr 10.43.0.10 tcp dport 443 accept    # PEER: runner -> Caddy (Jitsi web, call API, game)
-        iifname $SIM oifname $PEER ip daddr 10.43.0.13 udp dport 10000 accept  # PEER: runner -> videobridge (call media)
-
-# Nothing else: br-peer and Jitsi's internal network get no forward rules, so the peer stack
-# reaches neither the internet nor the real devices on eno1. Replies are covered by the
-# existing "ct state established,related accept".
+        iifname $SIM oifname $PEER ip daddr 10.43.0.10 tcp dport 443 accept    # runner -> Caddy (Jitsi web, call API, game)
+        iifname $SIM oifname $PEER ip daddr 10.43.0.13 udp dport 10000 accept  # runner -> videobridge (call media)
+# br-peer and Jitsi's internal network get no forward rules: no internet, no access to eno1.
+# Replies are covered by the existing "ct state established,related accept".
