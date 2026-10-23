@@ -4,18 +4,27 @@
 # TAPFEED_DNS=0 disables source B (for extra instances; DNS is logged once by tapfeed@eno1).
 set -euo pipefail
 IFACE="${1:-eno1}"
-OUT="/var/lib/tapcap/meta/feed.ndjson"
+OUT="${TAPFEED_OUT:-/var/lib/tapcap/meta/feed.ndjson}"   # override for tests
 mkdir -p "$(dirname "$OUT")" 2>/dev/null || true
 
 json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 # --- Source A: SNI + hostnames from the wire (tshark) ---
-tshark -i "$IFACE" -n -l \
-  -Y 'tls.handshake.extensions_server_name || dhcp.option.hostname || (mdns && dns.resp.name)' \
-  -T fields -E separator='|' -E occurrence=f \
-  -e frame.time_epoch -e ip.src -e eth.src \
-  -e tls.handshake.extensions_server_name \
-  -e dhcp.option.hostname -e dns.resp.name 2>/dev/null \
+# tshark (through dumpcap) keeps every captured packet in a temporary pcapng in /tmp that only grows.
+# dumpcap has file capabilities, so it ignores TMPDIR. On the gateway /tmp is a tmpfs (RAM): on 23.10 the
+# eno1 file held 1.5 GB after 7 h, and br-sim grew by ~100 MB/min during the runs' busiest hour. Hence:
+# - tapfeed@.service.d/tmp-on-disk.conf gives the service a disk-backed /tmp (no RAM use),
+# - tshark stops every TAPFEED_ROTATE seconds (its temp file is deleted on exit) and starts again at once,
+#   which bounds the disk use. The gap is well under a second; DNS (source B) is not affected.
+ROTATE="${TAPFEED_ROTATE:-3600}"
+while true; do
+  tshark -i "$IFACE" -n -l -a "duration:$ROTATE" \
+    -Y 'tls.handshake.extensions_server_name || dhcp.option.hostname || (mdns && dns.resp.name)' \
+    -T fields -E separator='|' -E occurrence=f \
+    -e frame.time_epoch -e ip.src -e eth.src \
+    -e tls.handshake.extensions_server_name \
+    -e dhcp.option.hostname -e dns.resp.name 2>/dev/null || sleep 2
+done \
 | while IFS='|' read -r ts ipsrc mac sni dhcp mdns; do
     if   [ -n "$sni" ];  then typ=sni;      val=$sni
     elif [ -n "$dhcp" ]; then typ=hostname; val=$dhcp
