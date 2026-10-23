@@ -28,6 +28,30 @@ gateway (br-sim)                               VM, e.g. 203-0-113-7.sslip.io
 
 Checked in the net-log: during a call, the runner's browser contacts only the VM.
 
+## Gateway mode: on the mini-PC instead of a VM (decided 23.10)
+
+The same stack also runs on the gateway itself, next to the runner. That uses no extra hardware, runs unattended, and costs no hotspot volume for media.
+
+```
+runner container ── br-sim ── gateway routing ── br-peer (10.43.0.0/24) ── Caddy 10.43.0.10, videobridge 10.43.0.13
+   10.42.1.11          ▲ tapcap@br-sim records here (device IP)          peer.sim via dnsmasq
+```
+
+`gateway-compose.yml` is added as a third compose file (`./setup.sh --gateway`):
+
+| Setting | Why |
+|---|---|
+| **No published host ports** | 8080/8443 belong to the UniFi controller. The runner reaches the stack only through the gateway's routing, which nftables limits to 443/tcp (Caddy) and 10000/udp (videobridge) |
+| **Own addresses on `br-peer`, never the gateway's** | The ingest filter drops traffic to the gateway's own IPs (10.42.0.1, 10.42.1.1) except DNS. Traffic to 10.43.0.x is kept |
+| **`gw_priority` on `br-peer`** | Caddy and the videobridge send their replies back through `br-peer` |
+| **Fixed subnet 10.43.1.0/24 for Jitsi's internal network** | Docker never picks 172.20.0.0/16, which overlaps the hotspot |
+| **Memory caps** | videobridge 1 GB, jicofo 512 MB, peer 2 GB, for the 7 GB mini-PC |
+| **`peer.sim` with Caddy's internal CA** | The runner sets `RUNNER_PEER_INSECURE_TLS=1` |
+
+**Difference to a cloud VM.** The call partner has a private address (10.43.0.x) and the media does not cross the hotspot uplink. For the capture on `br-sim` and the metrics this makes no difference: the call host was in no thesis list anyway (like jit.si). Document it as a modelling difference.
+
+The gateway changes are in [`gateway/`](gateway/) and described step by step in the runner README §7.
+
 ## Setting up the VM
 
 **Requirements**

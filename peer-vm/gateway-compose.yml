@@ -1,0 +1,45 @@
+# Gateway mode (setup.sh --gateway): the peer stack runs on the mini-PC itself, next to the
+# runner, instead of on a cloud VM. Added as third file through COMPOSE_FILE.
+#
+# - No published host ports at all. The host already uses 8080/8443 (UniFi controller), and
+#   nothing has to be reachable from outside: the runner (br-sim, 10.42.1.0/24) reaches
+#   Caddy and the videobridge on their own bridge br-peer (10.43.0.0/24) through the
+#   gateway's routing, which nftables limits to 443/tcp and 10000/udp. tapcap@br-sim records
+#   these packets with the device's IP like any other traffic.
+# - The peer has its own addresses, never the gateway's: the ingest filter drops traffic to
+#   the gateway's own IPs (10.42.0.1, 10.42.1.1) except DNS.
+# - Caddy and the videobridge also sit on Jitsi's internal network; gw_priority makes br-peer
+#   their default route, so replies to the runner go back the way the requests came.
+# - Jitsi's internal network gets a fixed subnet, so Docker never picks 172.20.0.0/16, which
+#   overlaps the hotspot (172.20.10.0/28).
+services:
+  web:
+    ports: !reset []
+  jicofo:
+    ports: !reset []
+  jvb:
+    ports: !reset []
+    networks:
+      peer:
+        ipv4_address: 10.43.0.13
+        gw_priority: 1  # replies to the runner leave through br-peer (default route)
+  caddy:
+    ports: !reset []
+    networks:
+      peer:
+        ipv4_address: 10.43.0.10
+        gw_priority: 1  # replies to the runner leave through br-peer (default route)
+  peer:
+    # docker runs with "iptables": false on the gateway: build steps need the host network.
+    build:
+      context: ./peer
+      network: host
+    mem_limit: 2g
+
+networks:
+  peer:
+    external: true
+  meet.jitsi:
+    ipam:
+      config:
+        - subnet: 10.43.1.0/24

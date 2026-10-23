@@ -186,7 +186,10 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
     - Runner: `video_call`, `voice_call` and `gaming_session` implemented; 175 tests pass.
     - Tested locally end to end: a 2-min video call sent 13 MB up / 9 MB down through our videobridge (UDP 10000), and no foreign hosts during calls.
     - Found while testing: Jitsi joins **without** camera/mic if the prejoin page is switched off in the URL (safeguard). It is now switched off on the server.
-    - **Open:** someone has to provide the VM (SWITCHengines/Exoscale/Hetzner; 2 vCPU, 4 GB; ports 80, 443, 10000/udp) and set it up as in `peer-vm/README.md`.
+    - **Decided: the counterpart runs on the mini-PC (gateway mode) instead of a cloud VM.**
+      - Network: own Docker network `peer` (br-peer, 10.43.0.0/24), no published ports, reached through the gateway's routing (nftables: only 443/tcp and 10000/udp from br-sim), name `peer.sim` via dnsmasq.
+      - Tested locally: media goes to the videobridge at 10.43.0.13:10000 in both directions.
+      - Still to apply on the gateway, after approval: Docker network, nftables, dnsmasq, stack start, `peer.env`.
     - **For Thierry:** the scheduler should pass `--lookups` (`sh_adjacent_lookup`). `--platform` is accepted but has no effect.
   - **Deploy (after Thierry's note):** runner config is no longer mounted into the containers but baked into the image, so a `git pull` can no longer mix new config with old runner code. New `traffic-runner/scripts/deploy.sh` does pull, rebuild, recreate and tests in one step, and refuses while activities are running. Deployment.md §8 lists it.
   - **Finding:** `social_passive` on Reddit costs about 33 MiB/min because the feed auto-plays videos, so a 1–2 h block is 2–4 GB of hotspot volume. **Decided 23.10: accepted.** Real users get the same autoplay, and the data volume is not a problem.

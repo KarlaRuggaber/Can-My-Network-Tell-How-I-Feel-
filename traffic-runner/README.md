@@ -391,6 +391,35 @@ cat logs/ground_truth.csv
 
 Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `music_background`, `idle_connected`), measure the data volume (section 6), and check a real phone on the AP throughout.
 
+### Step 8: peer stack for calls and gaming (gateway mode)
+
+The counterpart for `video_call`, `voice_call` and `gaming_session` runs on the mini-PC itself (`peer-vm/`, gateway mode, see its README). As always: back up first, check after each step, and test a real phone after the nftables and dnsmasq steps.
+
+```bash
+BK=/root/tapgw-backup-$(date +%Y%m%d-%H%M); sudo install -d -m 700 "$BK"
+# 1) own Docker network for the peer stack
+sudo docker network create -o com.docker.network.bridge.name=br-peer --subnet 10.43.0.0/24 --gateway 10.43.0.1 peer
+# 2) nftables: br-sim -> br-peer only 443/tcp (Caddy) and 10000/udp (videobridge); see peer-vm/gateway/nftables-peer.patch.txt
+sudo cp -a /etc/nftables.conf "$BK/"          # then add the PEER lines, check with: sudo nft -c -f /etc/nftables.conf
+sudo systemctl restart nftables
+# 3) dnsmasq: peer.sim -> 10.43.0.10
+sudo cp -a /etc/dnsmasq.d "$BK/dnsmasq.d"
+sudo install -m 644 /opt/can-my-network/peer-vm/gateway/dnsmasq-peer.conf /etc/dnsmasq.d/peer.conf
+sudo /usr/share/dnsmasq/systemd-helper checkconfig && sudo systemctl restart dnsmasq
+# 4) start the stack (pulls ~1 GB of Jitsi images once)
+cd /opt/can-my-network/peer-vm && sudo ./setup.sh --gateway && sudo docker compose up -d --build
+# 5) runner: the three lines printed by setup.sh into peer.env, then deploy
+sudo install -m 600 /dev/null /opt/can-my-network/traffic-runner/peer.env   # then add the lines
+sudo /opt/can-my-network/traffic-runner/scripts/deploy.sh
+```
+
+Checks after step 5:
+- a 2-min `video_call` and `gaming_session` via `scripts/run-activity.sh`
+- `sim/ready` pcaps contain `10.42.1.x ↔ 10.43.0.13` UDP 10000
+- the feed shows SNI `peer.sim`
+- `free -h` during a call
+- the `tapcap@br-sim` drop counters stay 0
+
 ## 8. Known limitations
 
 - **No WiFi layer.** Containers sit on a Linux bridge with static IPs. There is no 802.11, no DHCP and no association, so the feed has no `hostname` events for them. MACs are only visible on br-sim (as on eno1 for real devices).
