@@ -103,7 +103,7 @@ extends: null
 timezone: Europe/Zurich
 window_days: 14            # + 1 warm-up day, discarded
 start_weekday: Mon
-devices: [phone, laptop]   # both MACs -> one dataset, e.g. gw_student_01
+devices: [phone, laptop]   # both devices -> one dataset, e.g. gw_student_a (naming: activity-catalog §1)
                            # flatmates' devices on the same network are NOT part of the dataset (per-MAC split test)
 
 day_types:

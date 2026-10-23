@@ -62,3 +62,15 @@ def test_all_errors_reported_at_once(tmp_path):
     with pytest.raises(ConfigError) as e:
         load_devices(write(tmp_path, body))
     assert str(e.value).count("\n") >= 2
+
+
+def test_comment_and_blank_lines(tmp_path):
+    body = "# simulated devices\n" + GOOD.replace("\n", "\n\n", 1) + "  # trailing comment\n"
+    devices = load_devices(write(tmp_path, body, header="# devices.csv shared with the ingest\n" + HEADER))
+    assert list(devices) == ["student01_phone", "student01_laptop"]
+
+
+def test_line_numbers_count_comments(tmp_path):
+    body = "# one\n# two\nx,tablet,02:00:00:00:00:01,10.42.1.20,gw_a\n"
+    with pytest.raises(ConfigError, match=r"devices.csv:4: role"):
+        load_devices(write(tmp_path, body))

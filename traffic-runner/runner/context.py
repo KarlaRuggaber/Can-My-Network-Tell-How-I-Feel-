@@ -67,6 +67,9 @@ class Driver(Protocol):
     def play_audio(self, url: str, timeout: float) -> str:
         """Play an audio stream URL; return its host."""
 
+    def play_audio_page(self, url: str, timeout: float) -> str:
+        """Open a radio page that plays a live stream, at the lowest quality; return host."""
+
     def media_state(self) -> str:
         """'playing', 'paused', 'stalled' (no data), 'ended', 'error' or 'none'."""
 
@@ -161,6 +164,12 @@ class RunContext:
         if timeout is None:
             return None
         return self._record(self.driver.play_audio(url, timeout))
+
+    def play_audio_page(self, url: str) -> str | None:
+        timeout = self._nav_timeout()
+        if timeout is None:
+            return None
+        return self._record(self.driver.play_audio_page(url, timeout))
 
     def watch_media(self, check_every: float = 15.0) -> str:
         """Keep media playing until it ends or the deadline; return the last state.

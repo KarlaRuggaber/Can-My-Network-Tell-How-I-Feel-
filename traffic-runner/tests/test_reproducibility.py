@@ -59,19 +59,35 @@ def test_respects_duration(activity_id, mix_spec, duration):
 
 
 @pytest.mark.parametrize("seed", range(20))
-def test_phone_check_catalog_ranges(seed):
-    calls, visited, _ = run_once("phone_check", "news", 3600, seed=seed)
+def test_phone_check_fills_duration_without_pages(seed):
+    # catalog §2: without `pages`, keep opening pages until the duration is used up
+    calls, visited, end = run_once("phone_check", "news", 900, seed=seed)
     opens = [c for c in calls if c[0] == "open"]
-    dwells = [c[1] for c in calls if c[0] == "dwell"]
-    assert 1 <= len(opens) <= 3
+    dwells = [c[1] for c in calls if c[0] == "dwell"][:-1]  # the last one is cut by the deadline
+    assert end == pytest.approx(900)
+    assert len(opens) >= 900 // (90 + 2)  # at least as many pages as max dwell + load allow
     assert all(20 <= d <= 90 for d in dwells)
     assert len(visited) <= len(opens)
 
 
-def test_phone_check_overrides():
-    calls, _, _ = run_once("phone_check", "news", 3600, seed=1, overrides={"pages": (5, 5), "dwell": (10, 11)})
+@pytest.mark.parametrize("seed", range(10))
+def test_phone_check_default_duration_gives_few_pages(seed):
+    calls, _, _ = run_once("phone_check", "news", 120, seed=seed)
+    assert 1 <= len([c for c in calls if c[0] == "open"]) <= 6
+
+
+def test_phone_check_pages_ends_early():
+    # catalog §2: with `pages`, open exactly that many and end, even before the duration
+    calls, _, end = run_once("phone_check", "news", 3600, seed=1, overrides={"pages": (5, 5), "dwell": (10, 11)})
     assert len([c for c in calls if c[0] == "open"]) == 5
     assert all(10 <= c[1] <= 11 for c in calls if c[0] == "dwell")
+    assert end < 100
+
+
+def test_phone_check_pages_capped_by_duration():
+    calls, _, end = run_once("phone_check", "news", 60, seed=1, overrides={"pages": (10, 10)})
+    assert len([c for c in calls if c[0] == "open"]) < 10
+    assert end <= 60
 
 
 def test_browse_ranges():
@@ -116,3 +132,10 @@ def test_media_that_does_not_play_fails(state):
     with pytest.raises(PageError):
         ACTIVITIES["video_stream"].run(ctx, random.Random("1/b1"), 600, parse_mix("streaming", mixes, kind="video"))
     assert clock.now() < 60  # fails after three checks, not at the end of the block
+
+
+def test_music_background_uses_radio_page():
+    calls, visited, end = run_once("music_background", None, 600, seed=3)
+    assert calls[0][0] == "audio_page" and calls[0][1].startswith("https://www.srf.ch/audio/")
+    assert visited == ["www.srf.ch"]
+    assert end == pytest.approx(600)

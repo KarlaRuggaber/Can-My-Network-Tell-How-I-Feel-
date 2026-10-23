@@ -22,7 +22,8 @@ LAUNCH_ARGS = [
 ]
 CONSENT_WAIT_MS = 5000  # banners can appear a few seconds after DOMContentLoaded
 CONSENT_POLL_MS = 500
-PLAYER_WAIT = 20.0  # seconds to wait for a video player to start, capped by the deadline
+PLAY_BUTTON_RE = re.compile(r"^\s*(Abspielen|Wiedergabe|Play|Live hören|Jetzt hören)\b.*$", re.I)
+PLAYER_WAIT = 20.0  # seconds to wait for a media player to start, capped by the deadline
 SKIP_LINK_RE = re.compile(
     r"(login|logout|signin|sign-in|signup|register|account|konto|abo|subscribe|checkout|mailto:|\.pdf$)",
     re.I,
@@ -67,7 +68,7 @@ SRF_FORCE_LOW = """
     let min = 0;
     for (let i = 0; i < ql.length; i++) if ((ql[i].bitrate || 1e12) < (ql[min].bitrate || 1e12)) min = i;
     for (let i = 0; i < ql.length; i++) ql[i].enabled = (i === min);
-    return ql[min].height + 'p';
+    return ql[min].height ? ql[min].height + 'p' : Math.round((ql[min].bitrate || 0) / 1000) + ' kbit/s';
   }
   return null;
 }
@@ -320,6 +321,19 @@ class BrowserDriver:
         if self.media_state() == "error":
             raise PageError(f"audio stream cannot be decoded: {url}")
         return host_of(url)
+
+    def play_audio_page(self, url: str, timeout: float) -> str:
+        """Open a radio live page (e.g. SRF), make sure it plays, pin the lowest quality."""
+        host = self.open(url, timeout)
+        until = time.monotonic() + min(timeout, PLAYER_WAIT)
+        if not self._poll(MEDIA_STARTED, until):
+            if self._click_button(PLAY_BUTTON_RE):  # page did not autoplay
+                self._poll(MEDIA_STARTED, time.monotonic() + min(timeout, PLAYER_WAIT))
+        if self.media_state() not in ("playing", "stalled"):
+            raise PageError(f"audio page did not start playing: {url}")
+        quality = self._poll(SRF_FORCE_LOW, time.monotonic() + 5)
+        log.info("audio page %s, quality level: %s", self.page.url, quality or "unknown")
+        return host
 
     def media_state(self) -> str:
         if self.page is None:

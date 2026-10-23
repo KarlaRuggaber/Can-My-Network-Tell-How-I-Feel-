@@ -1,8 +1,9 @@
 """music_background: play an audio livestream in the background (catalog §2).
 
-The catalog has no login-free audio source yet; mixes.yaml `audio.streams` proposes the
-SRF 3 MP3 livestream. Runs for the whole block, usually in parallel to another block on
-another device.
+Sources come from mixes.yaml `audio.streams`, chosen with the RNG:
+  kind: page    an SRF radio live page (srf.ch = STREAMING list), lowest quality level
+  kind: stream  a direct stream URL played in an empty page (e.g. the SRG MP3 stream)
+Runs for the whole block, usually in parallel to another block on another device.
 """
 
 from ..context import NotImplementedActivity
@@ -22,6 +23,9 @@ def run(ctx, rng, duration, mix):
     if not streams:
         raise NotImplementedActivity("no audio stream configured in mixes.yaml")
     stream = rng.choice(streams)
-    ctx.play_audio(stream["url"])
+    if stream.get("kind", "stream") == "page":
+        ctx.play_audio_page(stream["url"])
+    else:
+        ctx.play_audio(stream["url"])
     ctx.watch_media(check_every=30.0)
     return ctx.visited

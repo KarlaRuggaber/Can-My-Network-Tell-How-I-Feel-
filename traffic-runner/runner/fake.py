@@ -84,6 +84,11 @@ class FakeDriver:
         self._media_started = self.clock.now()
         return self._load(url, timeout)
 
+    def play_audio_page(self, url, timeout):
+        self.calls.append(("audio_page", url))
+        self._media_started = self.clock.now()
+        return self._load(url, timeout)
+
     def media_state(self):
         if self._media_started is None:
             return "none"

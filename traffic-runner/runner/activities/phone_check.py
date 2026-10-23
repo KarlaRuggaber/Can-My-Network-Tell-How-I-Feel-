@@ -1,8 +1,9 @@
-"""phone_check: open 1-3 pages from the mix, dwell 20-90 s each, scroll (catalog §2).
+"""phone_check: open pages from the mix one after another, dwell 20-90 s each, scroll
+(catalog §2).
 
-Default duration 1-5 min. The run ends when its pages are done or the duration is over,
-whichever comes first; the log records the real end time. Profiles can override the page
-count and dwell with --pages / --dwell (catalog §1).
+Without --pages the device keeps opening pages until the duration is used up (default
+duration 1-5 min). With --pages (a profile's `pages`) it opens exactly that many and ends,
+possibly before the duration is over; the log records the real end time.
 """
 
 ID = "phone_check"
@@ -14,19 +15,22 @@ DEFAULT_MIX = None
 MIX_KIND = None
 NEEDS_BROWSER = True
 
-PAGES = (1, 3)
 DWELL = (20, 90)
+RETRY_PAUSE = 5.0  # after a page failed to load
 
 
 def run(ctx, rng, duration, mix):
-    pages_lo, pages_hi = ctx.range("pages", PAGES)
     dwell_lo, dwell_hi = ctx.range("dwell", DWELL)
-    for _ in range(rng.randint(int(pages_lo), int(pages_hi))):
+    pages = ctx.overrides.get("pages")
+    limit = rng.randint(int(pages[0]), int(pages[1])) if pages else None
+    opened = 0
+    while ctx.remaining() > 0 and (limit is None or opened < limit):
         url = mix.pick(rng).resolve_url(rng)
         dwell = rng.uniform(dwell_lo, dwell_hi)
         scroll_seed = rng.random()
-        if ctx.remaining() <= 0:
-            break
+        opened += 1
         if ctx.open(url):
             ctx.dwell(dwell, scroll_seed)
+        else:
+            ctx.idle(RETRY_PAUSE)
     return ctx.visited

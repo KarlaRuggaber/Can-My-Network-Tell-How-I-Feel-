@@ -341,7 +341,7 @@ sudo systemctl start tapingest
 
 ### Disk usage
 
-**Correction (16.10):** `/etc/tmpfiles.d/tapcap.conf` has the age `2d` on `/var/lib/tapcap/ready`, so `systemd-tmpfiles-clean` deletes captures older than two days ([HardwareSetup.md §15](HardwareSetup.md)). The sim folder has no age. Apart from that, nothing is deleted automatically, neither captures (`/var/lib/tapcap/ready`, 73 MB after the first day of light use) nor Parquet (616 KB after 25 minutes). 427 GB are free, so this is not urgent, but a retention policy is part of the open work.
+**Correction (16.10, fixed 23.10):** until 23.10, `/etc/tmpfiles.d/tapcap.conf` had the age `2d` on `/var/lib/tapcap/ready`, so `systemd-tmpfiles-clean` deleted captures older than two days ([HardwareSetup.md §15](HardwareSetup.md)). The age was removed on 23.10; neither folder is cleaned any more. Apart from that, nothing is deleted automatically, neither captures (`/var/lib/tapcap/ready`, 73 MB after the first day of light use) nor Parquet (616 KB after 25 minutes). 427 GB are free, so this is not urgent, but a retention policy is part of the open work.
 
 ## 9. Problems and solutions
 
@@ -386,9 +386,9 @@ sudo systemctl start tapingest
 6. **Validation 3–6** from MasterThesisInc §8 on real data: packet counts vs. `capinfos`, a known action at a noted time, plausible domain names, night silence of an unused phone.
 7. **Hostnames for inbound packets** (MasterThesisInc §5): look up the remote IP regardless of direction in `enrich_with_hostnames`. In the pilot this would give a domain to ~98 % of the 64 % unlabelled rows. SNI from `feed.ndjson` as a second source belongs to the same change. It changes metric values compared to the thesis, so record it in the report.
 8. **Throughput:** 1500–3500 packets/s on the mini-PC. Enough for a few devices; a high-quality video stream alone can reach 500–1000 packets/s. Watch "still pending" in the log during runner tests.
-9. **Retention policy** for captures and Parquet. Currently `ready/` keeps two days, `sim/ready/` forever. Raw pcaps are needed to trace a likelihood back to packets and for the snippet library, so decide what to keep and where.
+9. **Retention policy.** Decided 23.10: raw pcaps are kept in both folders (the `2d` age on `ready/` was removed, HardwareSetup §15). Still open: a policy for Parquet and for when the disk fills up.
 10. **Real devices in the device map.** The ingest reads one `devices.csv`, which also generates runner containers. Real test phones need either a second `--devices` file or a role the runner's generator skips.
-11. **Dataset names** without trailing digits (Karla's README §9 item 4): the app groups `gw_student_01` and `gw_student_02` as `gw_student`. Agree on a convention before more profiles run.
+11. **Dataset names.** Decided 23.10: `gw_<profile>_<letter>`, devices `<profile>_<letter>_<role>` (activity-catalog §1), because the app groups `gw_student_01` and `gw_student_02` as `gw_student`. Next: rename the devices in `traffic-runner/config/devices.csv`. The pilot data under `gw_student_01` keeps its name.
 
 ## 12. Appendix: configuration and commands
 

@@ -107,11 +107,11 @@ sudo scripts/run-activity.sh student01_phone \
 
 | ID | Status | What the runner does | Catalog default |
 |---|---|---|---|
-| `phone_check` | ok | 1–3 pages from the mix, 20–90 s dwell each, scrolling. Ends when the pages are done or the duration is over. | 1–5 min |
+| `phone_check` | ok | Pages from the mix one after another, 20–90 s dwell each, scrolling. Without `--pages` it keeps opening pages until the duration is used up; with `--pages` it opens exactly that many and may end early (catalog §2, since 23.10). | 1–5 min |
 | `browse` | ok | Page from the mix, 30–180 s dwell, scrolling, then 1–2 same-site links per page, each with its own dwell. Fills the block. | as block |
 | `repeat_visit_loop` | ok | Picks 2–3 fixed pages, revisits one every 1–3 min. A **new browser process** per visit forces a fresh DNS query. | 10–30 min |
 | `video_stream` | ok | Picks a playable `streaming` site with the RNG and plays at the **lowest quality**. The decoded resolution is logged to stderr. Runs to the end of the video or the block. **YouTube:** search for a term from `mixes.yaml`, play one of the first 5 results; 144p preference plus `setPlaybackQualityRange('tiny')`, re-applied every check. **SRF:** one of the first 5 on-demand videos on the Play SRF page, lowest video.js quality level (270p in the tests). | 30–120 min |
-| `music_background` | ok | Plays the SRF 3 MP3 livestream (`mixes.yaml` → `audio.streams`) | as block |
+| `music_background` | ok | Opens an SRF radio live page (SRF 1, SRF 3 or Virus, `mixes.yaml` → `audio.streams`, `kind: page`). The page load counts as srf.ch = STREAMING. The page exposes no quality levels, so it streams 192 kbit/s AAC. The SRG MP3 stream remains as a commented fallback (`kind: stream`). | as block |
 | `idle_connected` | ok | No browser, only waits | as block |
 | `messaging`, `social_post`, `video_call`, `voice_call` | stub | Writes `not_implemented` (needs test accounts or a call counterpart) | |
 | `social_passive`, `work_block`, `study_block`, `gaming_session`, `crisis_resource_visit`, `sh_adjacent_lookup`, `away` | stub | Catalog only, writes `not_implemented` | |
@@ -124,8 +124,8 @@ sudo scripts/run-activity.sh student01_phone \
 
 | Result | Sites |
 |---|---|
-| Rejected | YouTube (desktop + mobile), SRF Play, NZZ, Tages-Anzeiger, Zalando, DuckDuckGo, Reddit, TikTok (mobile) |
-| Banner stays open, page loads without consent | 20min, watson, Migros, Galaxus (only "Akzeptieren" plus a generic "Einstellungen") |
+| Rejected | YouTube (desktop + mobile), SRF Play and SRF radio, NZZ, Tages-Anzeiger, 20min, Zalando, DuckDuckGo, Reddit, TikTok (mobile) |
+| Banner stays open, page loads without consent | watson, Migros, Galaxus (only "Akzeptieren" plus a generic "Einstellungen") |
 
 SRF Play only starts its player after a choice. Whether the simulated users should *accept* instead (closer to typical users, more ad/tracker traffic) is a design decision for the team (section 9).
 
@@ -154,21 +154,23 @@ Every run that gets past argument checking writes a row, including on error or i
 
 ## 5. devices.csv and adding a device
 
+The example uses the naming convention agreed on 23.10. `config/devices.csv` itself is switched over in the next step (section 9, item 4).
+
 ```csv
 device,role,mac,ip,dataset
-student01_phone,phone,02:00:0a:2a:01:0b,10.42.1.11,gw_student_01
-student01_laptop,laptop,02:00:0a:2a:01:0c,10.42.1.12,gw_student_01
+student_a_phone,phone,02:00:0a:2a:01:0b,10.42.1.11,gw_student_a
+student_a_laptop,laptop,02:00:0a:2a:01:0c,10.42.1.12,gw_student_a
 ```
 
-The file is the **interface with the ingest service**, which maps packets to a dataset by IP. On the gateway the ingest reads its own copy, `/etc/tapingest/devices.csv` (section 9, item 2). Do not change the format without agreeing on it first.
+The file is the **interface with the ingest service**, which maps packets to a dataset by IP. On the gateway the ingest reads this same file from the git clone (section 9, item 2). Lines starting with `#` are comments. Do not change the format without agreeing on it first.
 
 | Column | Rule (checked by `python -m runner validate` and `gen_compose.py`) |
 |---|---|
-| `device` | Unique, `[a-z0-9_]+`. Also used as the service and container name. |
+| `device` | Unique, `[a-z0-9_]+`, convention `<profile>_<letter>_<role>` (catalog §1). Also used as the service and container name. |
 | `role` | `phone` (Pixel 7 emulation: Android UA, mobile viewport, touch) or `laptop` (Desktop Chrome) |
 | `mac` | Unique, lower-case, locally administered unicast (`02:…`) |
 | `ip` | Unique, 10.42.1.10–10.42.1.254 |
-| `dataset` | The simulated person; phone and laptop of one person share it |
+| `dataset` | The simulated person; phone and laptop of one person share it. Convention `gw_<profile>_<letter>` (catalog §1): no digit at the end and no `onu`/`bras`, otherwise the app merges or misclassifies datasets |
 
 To add a device:
 1. Add a row to `config/devices.csv`.
@@ -201,13 +203,13 @@ Measured on 2026-10-16, locally (laptop, Docker Desktop) and on the gateway. All
 | `repeat_visit_loop` news (phone) | 5–8 MiB | 0.3–0.4 MiB | 12 MiB / 1.4 MiB (20min + watson) | 2 visits |
 | `video_stream` YouTube (laptop) | 3–8 MiB | 0.3–0.6 MiB | 7 MiB / 0.6 MiB (240p) | phone 144p; laptop 144p–240p |
 | `video_stream` SRF | 10–26 MiB | 0.4–0.6 MiB | not run | 270p; the player buffers ahead at the start |
-| `music_background` (128 kbit/s MP3) | 2 MiB | 0.1 MiB | 2 MiB / 0.2 MiB | ≈ 1 MiB/min, steady |
+| `music_background` | 2 MiB (MP3) / 4.9 MiB (SRF radio page) | 0.1–0.3 MiB | 2 MiB / 0.2 MiB (MP3, 16.10) | MP3 128 kbit/s ≈ 1 MiB/min; radio page 192 kbit/s ≈ 1.4 MiB/min plus page load |
 | `idle_connected` | 0 | 0 | 0 / 0 | |
 
 On the gateway (br-sim counters), `phone_check` and `browse` in parallel for 2 min transferred 25 MiB down and 1 MiB up.
 
 Rough budget for full-length blocks:
-- `music_background`: ≈ 60 MiB/h
+- `music_background`: ≈ 85 MiB/h (radio page), ≈ 60 MiB/h (MP3 fallback)
 - YouTube at 144p: ≈ 1–2 MiB/min after the page load
 - Browsing: about 5–15 MiB per page view, much of it ads
 
@@ -368,7 +370,7 @@ Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `
   - Nothing hides automation: `navigator.webdriver` stays `true`. Reddit answers with a JavaScript challenge before the page. The browser passes it on its own, the URL then carries `js_challenge=1`, and the traffic includes the challenge round trip. CAPTCHAs are never solved; a site that shows one is simply logged as visited.
   - The phone role is an Android user agent on Chromium (an iPhone UA would contradict the Chrome TLS fingerprint).
   - The Playwright 1.63 Chromium decodes H.264/AAC. This was checked in the arm64 image (laptop) and in the amd64 image on the gateway on 2026-10-16.
-- **Streaming hosts:** media segments come from CDNs in no thesis list: YouTube from `googlevideo.com` (listed together with youtube.com in the catalog), SRF from `*.akamaized.net`, and the MP3 radio from `stream.srg-ssr.ch` → `srg-ssr.ch`. With the 5-min DNS map (catalog §5.1), long streams lose their STREAMING label anyway.
+- **Streaming hosts:** media segments come from CDNs in no thesis list: YouTube from `googlevideo.com` (listed together with youtube.com in the catalog), SRF from `*.akamaized.net`, and the SRF radio pages from `*.akamaized.net` (the MP3 fallback from `srg-ssr.ch`). With the 5-min DNS map (catalog §5.1), long streams lose their STREAMING label anyway.
 - **SRF live TV is not used.** Its player exposes no quality levels, so it would run at 540p (about 1.5–2 Mbit/s). `video_stream` plays SRF on-demand videos.
 - **YouTube quality is best effort.** The quality API is unofficial. The first seconds sometimes run at 240p before 144p takes effect, and the decoded resolution is logged. Ads play as for any user without a login.
 - **Fresh context every run.** Each block sees and rejects the cookie banner again. That is realistic for a clean device, but more consent traffic than a regular user generates.
@@ -382,22 +384,22 @@ Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `
 State 2026-10-16. The same list is in `process/process.md` (week 5).
 
 **Ingest (tapingest, see `process/Deployment.md`)**
-1. ~~**Watch the sim folder.**~~ Done 23.10 (Deployment.md §7.6). br-sim pcaps are in `/var/lib/tapcap/sim/ready/`. `tapingest` still watches only `/var/lib/tapcap/ready`, so the simulated devices do not reach the Parquet data yet. Add `--watch /var/lib/tapcap/sim/ready` (Deployment.md §8).
-2. ~~**One devices.csv.**~~ Done 23.10: the ingest reads `config/devices.csv` from the clone (Deployment.md §7.6). The ingest reads `/etc/tapingest/devices.csv` (currently 4 example devices), the runner reads `config/devices.csv` (2 devices). Both must list the same devices.
-   - Either generate the compose file from the ingest file, or copy it into `config/`.
-   - The ingest format allows `#` comment lines. The runner's validator rejects them so far.
-3. **Retention.** `/etc/tmpfiles.d/tapcap.conf` has age `2d` on `ready/`, so `systemd-tmpfiles-clean` deletes pcaps older than 2 days (only 170 files remained from 2 Oct on). This contradicts "nothing is deleted automatically" in HardwareSetup and Deployment. The sim folder has no age.
-4. **Dataset names.** The app's `group_prefix()` strips trailing digits, so `gw_student_01` and `gw_student_02` are grouped as `gw_student` in the UI (MasterThesisInc §3 recommends names without trailing digits). The `devices.csv` format stays as it is, but the naming convention should be agreed.
+1. **Watch the sim folder (done 23.10).** `tapingest` also watches `/var/lib/tapcap/sim/ready` (Deployment.md §7.6).
+2. **One devices.csv (done 23.10).** The ingest reads this runner's `config/devices.csv` from the clone; `/etc/tapingest/devices.csv` is no longer used (Deployment.md §7.6). Both sides accept `#` comment lines.
+3. **Retention (done 23.10).** The age `2d` on `/var/lib/tapcap/ready` was removed from `/etc/tmpfiles.d/tapcap.conf`, so raw pcaps are kept. Backup: `/root/tapgw-backup-20261023/`.
+4. **Dataset names (decided 23.10).** Convention `gw_<profile>_<letter>` / `<profile>_<letter>_<role>` (catalog §1). Next step: rename the devices in `config/devices.csv` and add a check to the validator (dataset starts with `gw_`, does not end with a digit, contains no `onu`/`bras`). Data already ingested under `gw_student_01` (pilot) stays under that name.
 
 **Runner**
 
 5. **Chromium background traffic counts as PRODUCTIVITY.** Both containers open TLS connections to `android.clients.google.com`. The pipeline reduces this to `google.com`, which is in the PRODUCTIVITY list (C2_F6). Suppress it in the runner with launch flags before profiles run, or drop these hosts in the ingest.
-6. **Cookie consent.** The runner rejects banners, or leaves them open where there is no reject button. Decide whether the simulated users should accept instead: that is closer to typical users and produces more third-party traffic, and therefore more UniqueSLD (catalog §5.7).
-7. ~~**Gateway location.**~~ Done 23.10: the runner runs from `/opt/can-my-network/traffic-runner`, `logs/ground_truth.csv` carried over. `~/traffic-runner` is kept as a backup. The runner currently runs from a copy in `~/traffic-runner`. Since PR #1 is merged, it is also in the git clone `/opt/can-my-network/traffic-runner`. Switch to the clone so that updates are a `git pull`: `docker compose down` in the old folder, then `up -d` in the new one. Carry `logs/ground_truth.csv` over.
+6. **Cookie consent (decided 23.10).** Never accept; reject or leave the banner open (catalog §1).
+7. **Gateway location (done 23.10).** The runner runs from the git clone `/opt/can-my-network/traffic-runner`; `logs/ground_truth.csv` was carried over, and `~/traffic-runner` is kept as a backup. Updates: `git pull`, then `sudo docker compose build && sudo docker compose up -d`.
 8. **YouTube quality on the laptop role.** On the gateway the laptop again played 240p in the first 2 minutes (the 144p preference applied only on the phone role). Check over a longer run whether it drops to 144p, otherwise force the quality via the player menu.
 
 **Activity catalog**
 
-9. **§2 `phone_check`.** 1–3 pages × ≤ 90 s is at most 4.5 min, but `student.md` schedules `wake_check` with `phone_check` for 5–15 min. The runner ends early and logs the real end. Proposal: add `pages` to such blocks, or allow more pages in the catalog.
-10. **§1 log format.** `status` is new and should be added to the catalog.
-11. **§3 audio source.** Add a login-free audio source for `music_background`, and decide whether `srg-ssr.ch` should count as STREAMING. An alternative is the srf.ch radio page (`/audio/radio-srf-3-live-hoeren`): it autoplays 192 kbit/s AAC from `*.akamaized.net` after a srf.ch page load.
+9. **Catalog fixes (done 23.10).** Several fixes:
+   - `phone_check` fills its duration unless `pages` is set (§2).
+   - `status` is part of the log format (§1).
+   - `music_background` uses the SRF radio pages (§3 `audio`).
+   - The `work`/`study` sets avoid notion.so and office.com, which now redirect to domains outside the thesis lists (§3).

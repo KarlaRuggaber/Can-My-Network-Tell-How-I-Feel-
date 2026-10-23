@@ -52,38 +52,41 @@ def load_devices(path: Path | None = None) -> dict[str, Device]:
     seen_mac: dict[str, str] = {}
     seen_ip: dict[str, str] = {}
 
+    # Lines starting with "#" are comments (same format as the ingest, which reads this file too).
     with open(path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        if reader.fieldnames != DEVICE_COLUMNS:
-            raise ConfigError(f"{path}: header must be {','.join(DEVICE_COLUMNS)}, got {reader.fieldnames}")
-        for lineno, row in enumerate(reader, start=2):
-            where = f"{path.name}:{lineno}"
-            if None in row or any(v is None for v in row.values()):
-                errors.append(f"{where}: expected {len(DEVICE_COLUMNS)} columns")
-                continue
-            if any(v != v.strip() for v in row.values()):
-                errors.append(f"{where}: values must not contain surrounding whitespace")
-                continue
-            name, role, mac, ip, dataset = (row[c] for c in DEVICE_COLUMNS)
+        kept = [(n, line) for n, line in enumerate(f.read().splitlines(), start=1)
+                if line.strip() and not line.lstrip().startswith("#")]
+    reader = csv.DictReader([line for _, line in kept])
+    if reader.fieldnames != DEVICE_COLUMNS:
+        raise ConfigError(f"{path}: header must be {','.join(DEVICE_COLUMNS)}, got {reader.fieldnames}")
+    for (lineno, _), row in zip(kept[1:], reader):
+        where = f"{path.name}:{lineno}"
+        if None in row or any(v is None for v in row.values()):
+            errors.append(f"{where}: expected {len(DEVICE_COLUMNS)} columns")
+            continue
+        if any(v != v.strip() for v in row.values()):
+            errors.append(f"{where}: values must not contain surrounding whitespace")
+            continue
+        name, role, mac, ip, dataset = (row[c] for c in DEVICE_COLUMNS)
 
-            if not _NAME_RE.match(name):
-                errors.append(f"{where}: device '{name}' must match [a-z0-9_]+")
-            elif name in devices:
-                errors.append(f"{where}: duplicate device '{name}'")
-            if role not in ROLES:
-                errors.append(f"{where}: role '{role}' must be one of {', '.join(ROLES)}")
-            errors.extend(f"{where}: {e}" for e in _mac_errors(mac))
-            errors.extend(f"{where}: {e}" for e in _ip_errors(ip))
-            if not _NAME_RE.match(dataset):
-                errors.append(f"{where}: dataset '{dataset}' must match [a-z0-9_]+")
+        if not _NAME_RE.match(name):
+            errors.append(f"{where}: device '{name}' must match [a-z0-9_]+")
+        elif name in devices:
+            errors.append(f"{where}: duplicate device '{name}'")
+        if role not in ROLES:
+            errors.append(f"{where}: role '{role}' must be one of {', '.join(ROLES)}")
+        errors.extend(f"{where}: {e}" for e in _mac_errors(mac))
+        errors.extend(f"{where}: {e}" for e in _ip_errors(ip))
+        if not _NAME_RE.match(dataset):
+            errors.append(f"{where}: dataset '{dataset}' must match [a-z0-9_]+")
 
-            if mac in seen_mac:
-                errors.append(f"{where}: MAC {mac} already used by {seen_mac[mac]}")
-            if ip in seen_ip:
-                errors.append(f"{where}: IP {ip} already used by {seen_ip[ip]}")
-            seen_mac.setdefault(mac, name)
-            seen_ip.setdefault(ip, name)
-            devices.setdefault(name, Device(name, role, mac, ip, dataset))
+        if mac in seen_mac:
+            errors.append(f"{where}: MAC {mac} already used by {seen_mac[mac]}")
+        if ip in seen_ip:
+            errors.append(f"{where}: IP {ip} already used by {seen_ip[ip]}")
+        seen_mac.setdefault(mac, name)
+        seen_ip.setdefault(ip, name)
+        devices.setdefault(name, Device(name, role, mac, ip, dataset))
 
     if not devices and not errors:
         errors.append(f"{path}: no devices defined")

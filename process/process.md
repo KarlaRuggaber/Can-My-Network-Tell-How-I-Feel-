@@ -162,9 +162,29 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
 - **Next / open:**
   - Fix the inbound hostname lookup (+ SNI as second source)
   - Suppress Chromium background traffic in the runner
-  - Decide retention of raw pcaps (`ready/` keeps 2 days, `sim/ready/` forever)
-  - Dataset naming convention (no trailing digits), real devices in the device map
+  - ~~Decide retention of raw pcaps~~ → decided 23.10: keep all (entry below)
+  - ~~Dataset naming convention~~ → decided 23.10 (entry below); real devices in the device map
   - Scheduler; night test with an idle phone; remove temporary access on the gateway
+
+**Decisions and catalog fixes (traffic runner):** Fri 23.10
+- **Done:**
+  - **Raw pcaps are kept.** Removed the 2-day age on `/var/lib/tapcap/ready` from `/etc/tmpfiles.d/tapcap.conf` (backup in `/root/tapgw-backup-20261023/`).
+  - **Cookie banners:** never accept; reject, or leave the banner open where there is no reject option. Fixed as a convention in catalog §1. The effect on the metrics is a constant offset for all profiles. Only UniqueSLD/packet counts change, not the SOCIAL/STREAMING/PRODUCTIVITY lists.
+  - **Dataset names:** convention `gw_<profile>_<letter>` with devices `<profile>_<letter>_<role>` (catalog §1). Reason: the app groups datasets by stripping trailing digits, and the Early Signs page concatenates a selected group into one daily record. So `gw_student_01` and `gw_student_02` would have been merged into one person.
+  - **Catalog fixes**, in `activity-catalog.md`:
+    - `phone_check` fills its duration unless `pages` is set. Before, a 5–15 min `wake_check` ended after at most ~4.5 min.
+    - `status` added to the log format.
+    - `music_background` source: SRF radio live pages, which count as srf.ch = STREAMING.
+    - `work`/`study` sets: `notion.so` and `office.com` now redirect to `notion.com` / `m365.cloud.microsoft`, which are in no thesis list. They were replaced by list domains that load without login (github, gitlab, trello, asana, todoist, microsoft.com).
+  - **Runner updated to match:** new `phone_check` rule, radio page playback, cookie rejection now also covers 20min. 108 tests pass. Live check on the laptop: radio page plays, `work`/`study` pages load, a 3-min `phone_check` opened 6 pages.
+- **Next / open:**
+  - Rename the devices in the shared `traffic-runner/config/devices.csv` to the new convention. Since 23.10 the ingest reads this file too. Then add the naming check to the validator.
+  - Deploy the new runner version on the gateway: `git pull` in `/opt/can-my-network`, then rebuild the image.
+  - Suppress Chromium background traffic (`android.clients.google.com` = PRODUCTIVITY).
+  - Scheduler.
+- **Blockers / notes:**
+  - The SRF radio page offers no quality levels, so `music_background` streams 192 kbit/s (≈ 85 MiB/h).
+  - The thesis lists do not know `notion.com` or `cloud.microsoft`, so real Notion/Office users would not count as productive. This is a limitation to mention in thesis-alignment.
 
 </details>
 

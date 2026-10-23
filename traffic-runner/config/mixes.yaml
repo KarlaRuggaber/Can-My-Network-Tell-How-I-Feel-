@@ -8,9 +8,9 @@
 #   kind     page (default) | video. video_stream only picks `video` sites.
 #   playable false = page loads, but video_stream must not pick it (no player driver for it).
 #
-# Notes found while building (to be fixed in the catalog, not silently here):
-#   - notion.so redirects to notion.com, office.com to microsoft365.com. The thesis lists only
-#     contain notion.so / office.com, so these visits may not count as PRODUCTIVITY.
+# Notes (also in catalog §3):
+#   - notion.so redirects to notion.com, office.com to m365.cloud.microsoft (checked 23.10.2026).
+#     Neither is in a thesis list, so work/study use list domains that load without login.
 #   - play.srf.ch redirects to www.srf.ch/play/tv (srf.ch = STREAMING). Its videos stream
 #     from *.akamaized.net, which is in no thesis list.
 
@@ -54,17 +54,20 @@ categories:
   work:
     thesis_list: PRODUCTIVITY
     sites:
+      - {host: github.com, url: "https://github.com/"}
+      - {host: gitlab.com, url: "https://gitlab.com/"}          # -> about.gitlab.com
+      - {host: trello.com, url: "https://trello.com/"}
+      - {host: asana.com, url: "https://asana.com/"}
+      - {host: todoist.com, url: "https://www.todoist.com/"}
       - {host: outlook.office.com, url: "https://outlook.office.com/mail/", login: true}
       - {host: docs.google.com, url: "https://docs.google.com/", login: true}
-      - {host: notion.so, url: "https://www.notion.so/"}
-      - {host: github.com, url: "https://github.com/"}
 
   study:
-    thesis_list: PRODUCTIVITY (office.com / google.com only)
+    thesis_list: PRODUCTIVITY (google.com / microsoft.com only)
     sites:
       # University LMS (e.g. Canvas): URL not decided yet, needs a login anyway.
       - {host: unisg.ch, url: "https://www.unisg.ch/"}
-      - {host: office.com, url: "https://www.office.com/"}
+      - {host: microsoft.com, url: "https://www.microsoft.com/de-ch/microsoft-365"}
       - {host: docs.google.com, url: "https://docs.google.com/", login: true}
       - {host: scholar.google.com, url: "https://scholar.google.com/scholar?q={query}",
          queries: [depression network traffic, sleep quality students, smartphone sensing mental health]}
@@ -111,13 +114,18 @@ video:
     - podcast deutsch
   result_pool: 5
 
-# music_background: an audio-only livestream without login. Not in catalog §3 yet (proposed).
-# The MP3 stream is served by stream.srg-ssr.ch -> srg-ssr.ch, which is in NO thesis list
-# (srf.ch is STREAMING). Alternative: the srf.ch radio page (e.g. /audio/radio-srf-3-live-hoeren)
-# autoplays too, but streams 192 kbit/s AAC from *.akamaized.net (also in no list).
+# music_background (catalog §3 `audio`), chosen with the run's RNG:
+#   kind: page    SRF radio live page: the page load counts as srf.ch (STREAMING); the
+#                 stream comes from *.akamaized.net (no thesis list); lowest quality level
+#   kind: stream  direct stream URL in an empty page, e.g. the SRG MP3 stream
+#                 (stream.srg-ssr.ch -> srg-ssr.ch, no thesis list)
 audio:
   streams:
-    - {id: srf3, host: stream.srg-ssr.ch, url: "https://stream.srg-ssr.ch/srgssr/srf3/mp3/128"}
+    - {id: srf1, kind: page, host: srf.ch, url: "https://www.srf.ch/audio/radio-srf-1-live-hoeren"}
+    - {id: srf3, kind: page, host: srf.ch, url: "https://www.srf.ch/audio/radio-srf-3-live-hoeren"}
+    - {id: virus, kind: page, host: srf.ch, url: "https://www.srf.ch/audio/radio-srf-virus-live-hoeren"}
+  # fallback, not in any thesis list:
+  # - {id: srf3_mp3, kind: stream, host: stream.srg-ssr.ch, url: "https://stream.srg-ssr.ch/srgssr/srf3/mp3/128"}
 
 # Cookie banners: the runner clicks the first visible button whose accessible name matches
 # one of `reject_buttons` (case-insensitive, whole name). If the banner has no reject button
