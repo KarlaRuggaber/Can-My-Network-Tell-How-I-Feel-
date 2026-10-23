@@ -3,6 +3,7 @@
 from . import (
     browse,
     crisis_resource_visit,
+    gaming_session,
     idle_connected,
     messaging,
     music_background,
@@ -21,9 +22,10 @@ from . import (
 ACTIVITIES = {m.ID: m for m in (
     phone_check, browse, repeat_visit_loop, video_stream, music_background, idle_connected,
     social_passive, work_block, study_block, crisis_resource_visit, sh_adjacent_lookup,
+    gaming_session,
     messaging, social_post, video_call, voice_call,
 )}
 
 # Catalog §2 IDs without a module yet. Running them logs status not_implemented, so a
 # scheduler can already use the full catalog.
-CATALOG_ONLY = ("gaming_session", "away")
+CATALOG_ONLY = ("away",)  # away belongs to the scheduler (no traffic)

@@ -82,8 +82,15 @@ class Driver(Protocol):
     def play_audio_page(self, url: str, timeout: float) -> str:
         """Open a radio page that plays a live stream, at the lowest quality; return host."""
 
+    def join_call(self, url: str, timeout: float) -> str:
+        """Open a call room and wait until the media connection is up; return host."""
+
+    def play_game(self, url: str, timeout: float) -> str:
+        """Open the game page and wait until it is connected; return host."""
+
     def media_state(self) -> str:
-        """'playing', 'paused', 'stalled' (no data), 'ended', 'error' or 'none'."""
+        """'playing', 'paused', 'stalled' (no data), 'ended', 'error' or 'none'. After
+        join_call/play_game it reports the call or game connection instead of a media element."""
 
     def resume_media(self) -> None:
         """Try to continue playback after a pause prompt."""
@@ -101,6 +108,7 @@ class RunContext:
         self.overrides = overrides or {}
         self.visited: list[str] = []
         self.page_errors = 0
+        self.run_key = ""  # profile/seed/block_id, set by the CLI (call room names)
 
     # --- time ---
     def elapsed(self) -> float:
@@ -206,6 +214,18 @@ class RunContext:
         if timeout is None:
             return None
         return self._record(self.driver.play_audio_page(url, timeout))
+
+    def join_call(self, url: str) -> str | None:
+        timeout = self._nav_timeout()
+        if timeout is None:
+            return None
+        return self._record(self.driver.join_call(url, timeout))
+
+    def play_game(self, url: str) -> str | None:
+        timeout = self._nav_timeout()
+        if timeout is None:
+            return None
+        return self._record(self.driver.play_game(url, timeout))
 
     def watch_media(self, check_every: float = 15.0) -> str:
         """Keep media playing until it ends or the deadline; return the last state.

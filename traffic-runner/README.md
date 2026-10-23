@@ -93,6 +93,7 @@ sudo scripts/run-activity.sh student_a_phone \
 | `--seed`, `--profile`, `--block-id` | Logged as given. `seed` and `block-id` seed the RNG. |
 | `--pages`, `--dwell` | Profile overrides of the catalog defaults (§1 "Frequency keys"), e.g. `--pages 2-4 --dwell 1m-3m` |
 | `--lookups` | Number of DNS lookups for `sh_adjacent_lookup`, e.g. `--lookups 1-3` (profile key `lookups`) |
+| `--platform` | Call platform from the scheduler's plan (zoom/teams/jitsi/discord). Accepted and ignored, because all calls use the peer VM's Jitsi |
 | `--dry-run` | No network, prints the plan |
 
 **Exit codes:**
@@ -119,8 +120,10 @@ sudo scripts/run-activity.sh student_a_phone \
 | `study_block` | ok | Like `work_block` with the `study` mix, plus 1–3 PDF downloads per hour from `mixes.yaml` → `documents.pdfs` (1.4–5.4 MB arXiv papers). Each download opens the paper page, then fetches the PDF in the browser. | 45–120 min |
 | `crisis_resource_visit` | ok | 1–3 pages of the `crisis_help` mix, dwell 1–4 min; ends when done | 2–10 min |
 | `sh_adjacent_lookup` | ok | 1–3 DNS lookups of `sh-adjacent-NN.invalid` placeholders, no browser, no connection. `domains` lists the queried names. | seconds |
-| `messaging`, `social_post`, `video_call`, `voice_call` | stub | Writes `not_implemented` (needs test accounts or a call counterpart) | |
-| `gaming_session`, `away` | stub | Catalog only, writes `not_implemented`. `away` belongs to the scheduler (disconnect the container from `br-sim`). | |
+| `video_call`, `voice_call` | ok | WebRTC call against the peer on the peer VM ([peer-vm/](../peer-vm/README.md)). The runner asks the peer to join a room derived from `profile/seed/block_id` and the token, then joins with a fake camera/mic (voice: audio only). It stays until the block ends; three failed connection checks in a row are an error. Every `--platform` runs on this self-hosted Jitsi. Needs `peer.env`, otherwise `not_implemented` | as block |
+| `gaming_session` | ok | Store pages of the `gaming` mix (Steam, Riot) for 2–5 min (at most a quarter of the block), then the game page of the peer VM: a WebSocket game at 20–60 messages per second in each direction (tick drawn with the RNG). Voice chat is a separate `voice_call` row of the scheduler. Needs `peer.env` | 60–120 min |
+| `messaging`, `social_post` | stub | Writes `not_implemented` (needs test accounts) | |
+| `away` | stub | Catalog only, writes `not_implemented`. It belongs to the scheduler, where away means no runs. | |
 
 **Mixes:**
 - Sites with `login: true` are skipped, and their weight goes to the remaining categories (a warning names them).
@@ -216,6 +219,9 @@ Measured on 2026-10-16, locally (laptop, Docker Desktop) and on the gateway. All
 | `crisis_resource_visit` (3 min) | 19 MiB | 0.7 MiB | – | 143.ch, 147.ch |
 | `sh_adjacent_lookup` | 3 KiB | 0 | – | DNS only |
 | `study_block` PDF | +1.4 to 5.4 MB per download | | – | 1–3 per hour |
+| `video_call` (laptop, 2 min) | 9.4 MiB | 13 MiB | – | upload-heavy ≈ 0.9 Mbit/s up; ~2 MiB of the download is the Jitsi page |
+| `voice_call` (90 s) | 2.5 MiB | 0.5 MiB | – | ≈ 40 kbit/s audio plus the page |
+| `gaming_session` game phase | ≈ 60 kbit/s | ≈ 50 kbit/s | – | small packets both ways; the store pages dominate the volume |
 | `idle_connected` | 0 | 0 | 0 / 0 | |
 
 On the gateway (br-sim counters), `phone_check` and `browse` in parallel for 2 min transferred 25 MiB down and 1 MiB up.
@@ -385,6 +391,35 @@ cat logs/ground_truth.csv
 
 Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `music_background`, `idle_connected`), measure the data volume (section 6), and check a real phone on the AP throughout.
 
+### Step 8: peer stack for calls and gaming (gateway mode)
+
+The counterpart for `video_call`, `voice_call` and `gaming_session` runs on the mini-PC itself (`peer-vm/`, gateway mode, see its README). As always: back up first, check after each step, and test a real phone after the nftables and dnsmasq steps.
+
+```bash
+BK=/root/tapgw-backup-$(date +%Y%m%d-%H%M); sudo install -d -m 700 "$BK"
+# 1) own Docker network for the peer stack
+sudo docker network create -o com.docker.network.bridge.name=br-peer --subnet 10.43.0.0/24 --gateway 10.43.0.1 peer
+# 2) nftables: br-sim -> br-peer only 443/tcp (Caddy) and 10000/udp (videobridge); see peer-vm/gateway/nftables-peer.patch.txt
+sudo cp -a /etc/nftables.conf "$BK/"          # then add the PEER lines, check with: sudo nft -c -f /etc/nftables.conf
+sudo systemctl restart nftables
+# 3) dnsmasq: peer.sim -> 10.43.0.10
+sudo cp -a /etc/dnsmasq.d "$BK/dnsmasq.d"
+sudo install -m 644 /opt/can-my-network/peer-vm/gateway/dnsmasq-peer.conf /etc/dnsmasq.d/peer.conf
+sudo /usr/share/dnsmasq/systemd-helper checkconfig && sudo systemctl restart dnsmasq
+# 4) start the stack (pulls ~1 GB of Jitsi images once)
+cd /opt/can-my-network/peer-vm && sudo ./setup.sh --gateway && sudo docker compose up -d --build
+# 5) runner: the three lines printed by setup.sh into peer.env, then deploy
+sudo install -m 600 /dev/null /opt/can-my-network/traffic-runner/peer.env   # then add the lines
+sudo /opt/can-my-network/traffic-runner/scripts/deploy.sh
+```
+
+Checks after step 5:
+- a 2-min `video_call` and `gaming_session` via `scripts/run-activity.sh`
+- `sim/ready` pcaps contain `10.42.1.x ↔ 10.43.0.13` UDP 10000
+- the feed shows SNI `peer.sim`
+- `free -h` during a call
+- the `tapcap@br-sim` drop counters stay 0
+
 ## 8. Known limitations
 
 - **No WiFi layer.** Containers sit on a Linux bridge with static IPs. There is no 802.11, no DHCP and no association, so the feed has no `hostname` events for them. MACs are only visible on br-sim (as on eno1 for real devices).
@@ -409,6 +444,9 @@ Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `
 - **SRF live TV is not used.** Its player exposes no quality levels, so it would run at 540p (about 1.5–2 Mbit/s). `video_stream` plays SRF on-demand videos.
 - **YouTube quality is best effort.** The quality API is unofficial. The first seconds sometimes run at 240p before 144p takes effect, and the decoded resolution is logged. Ads play as for any user without a login.
 - **Fresh context every run.** Each block sees and rejects the cookie banner again. That is realistic for a clean device, but more consent traffic than a regular user generates.
+- **Calls and gaming run against our own VM.**
+  - Every call platform (Zoom, Teams, Jitsi, Discord voice) is the self-hosted Jitsi on the peer VM, because the real platforms need accounts. Their hosts are in no thesis list, like jit.si and zoom.us; only teams.microsoft.com would have counted as PRODUCTIVITY.
+  - The game is a toy WebSocket game with the traffic pattern of browser games (small, frequent, symmetric). It is not a real game title.
 - **Login content.** Login categories are skipped, and the stubs listed in section 3 apply. `work_block` and `study_block` are login-free approximations: public pages of PRODUCTIVITY domains instead of a mailbox, calendar or LMS, and no document editing. `social_passive` opens "videos" by following an internal link of the feed; without login it cannot tell video posts from other posts.
 - **Live pages change.** The sequence of start URLs and choices is reproducible. Link targets depend on the page content at that moment.
 - **Redirects.** `domains` shows real hosts: `notion.so` → `www.notion.com` and `office.com` → `www.microsoft365.com`, both outside the thesis PRODUCTIVITY list.

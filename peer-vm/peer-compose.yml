@@ -1,0 +1,39 @@
+# Our services on top of the vendored Jitsi stack (jitsi-compose.yml). Both files are
+# combined through COMPOSE_FILE in .env, so plain `docker compose up -d` starts everything.
+services:
+  caddy:
+    image: caddy:2.11.6
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN
+      - CADDY_TLS
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-data:/data
+    depends_on:
+      - web
+      - peer
+    networks:
+      meet.jitsi:
+        # Containers on the VM reach the public name directly, without a hairpin via the
+        # public IP.
+        aliases:
+          - ${DOMAIN}
+
+  peer:
+    build: ./peer
+    image: peer-service:0.1.0
+    restart: unless-stopped
+    init: true
+    shm_size: 1gb
+    mem_limit: 3g
+    environment:
+      - DOMAIN
+      - PEER_TOKEN
+      - PEER_INSECURE_TLS
+      - TZ
+    networks:
+      meet.jitsi:

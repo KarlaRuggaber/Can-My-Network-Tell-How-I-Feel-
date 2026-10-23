@@ -85,6 +85,41 @@ VIDEO_RESOLUTION = """
 () => { const v = document.querySelector('video'); return v && v.videoHeight ? v.videoWidth + 'x' + v.videoHeight : null; }
 """
 
+# Call activities only: remember every RTCPeerConnection of the page, so the runner can
+# tell whether the call is really connected (independent of the call app's UI).
+PC_HOOK = """
+(() => {
+  const Orig = window.RTCPeerConnection;
+  if (!Orig || window.__runnerPCs) return;
+  window.__runnerPCs = [];
+  const Hooked = function (...args) { const pc = new Orig(...args); window.__runnerPCs.push(pc); return pc; };
+  Hooked.prototype = Orig.prototype;
+  Object.setPrototypeOf(Hooked, Orig);
+  window.RTCPeerConnection = Hooked;
+})();
+"""
+
+CALL_STATE = """
+() => {
+  const pcs = (window.__runnerPCs || []).filter(pc => pc.connectionState !== 'closed');
+  if (!pcs.length) return 'none';
+  const up = pcs.some(pc => pc.connectionState === 'connected'
+                      || ['connected', 'completed'].includes(pc.iceConnectionState));
+  return up ? 'playing' : 'stalled';
+}
+"""
+
+GAME_STATE = """
+() => {
+  const g = window.__game;
+  if (!g) return 'none';
+  if (g.connected) return 'playing';
+  return g.closed ? 'error' : 'stalled';
+}
+"""
+
+FAKE_MEDIA_ARGS = ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"]
+
 MEDIA_STATE = """
 () => {
   const m = document.querySelector('video, audio');
@@ -123,8 +158,14 @@ def _names_re(names: list[str]) -> re.Pattern | None:
 
 class BrowserDriver:
     def __init__(self, playwright_device: str, context_options: dict, consent_buttons: list[str],
-                 headless: bool = True, consent_settings_buttons: list[str] | None = None):
+                 headless: bool = True, consent_settings_buttons: list[str] | None = None,
+                 call_mode: bool = False, ignore_https_errors: bool = False):
         self.playwright_device = playwright_device
+        # call_mode: fake camera/mic, granted permissions and the RTCPeerConnection hook,
+        # only for call activities.
+        self.call_mode = call_mode
+        self.ignore_https_errors = ignore_https_errors
+        self._state_js = MEDIA_STATE
         self.context_options = dict(context_options or {})
         self.headless = headless
         self.consent_re = _names_re(consent_buttons)
@@ -149,9 +190,14 @@ class BrowserDriver:
         if self._browser is None:
             # channel="chromium": the full Chromium build in new headless mode instead of the
             # stripped headless shell. Several shops (digitec, galaxus, zalando) reject the shell.
-            self._browser = self._pw.chromium.launch(channel="chromium", headless=self.headless, args=LAUNCH_ARGS)
-        self._context = self._browser.new_context(**descriptor, **self.context_options)
+            args = LAUNCH_ARGS + (FAKE_MEDIA_ARGS if self.call_mode else [])
+            self._browser = self._pw.chromium.launch(channel="chromium", headless=self.headless, args=args)
+        extra = {"permissions": ["camera", "microphone"]} if self.call_mode else {}
+        self._context = self._browser.new_context(**descriptor, **self.context_options, **extra,
+                                                  ignore_https_errors=self.ignore_https_errors)
         self._context.add_init_script(YT_QUALITY_INIT)
+        if self.call_mode:
+            self._context.add_init_script(PC_HOOK)
         self.page = self._context.new_page()
         self.page.set_default_timeout(15_000)
         log.debug("browser started (%s)", self.playwright_device)
@@ -389,6 +435,30 @@ class BrowserDriver:
         log.info("audio page %s, quality level: %s", self.page.url, quality or "unknown")
         return host
 
+    def join_call(self, url: str, timeout: float) -> str:
+        """Open a call room and wait until the media connection is up. Returns the host."""
+        self._ensure()
+        try:
+            self.page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
+            self.page.wait_for_function("() => (" + CALL_STATE + ")() === 'playing'", timeout=timeout * 1000)
+        except self._error_cls as e:
+            raise PageError(f"call did not connect: {str(e).splitlines()[0]}") from None
+        self._state_js = CALL_STATE
+        log.info("call connected: %s", url.split("#")[0])
+        return host_of(self.page.url)
+
+    def play_game(self, url: str, timeout: float) -> str:
+        """Open the game page and wait until its WebSocket is connected. Returns the host."""
+        self._ensure()
+        try:
+            self.page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
+            self.page.wait_for_function("() => window.__game && window.__game.connected", timeout=timeout * 1000)
+        except self._error_cls as e:
+            raise PageError(f"game did not connect: {str(e).splitlines()[0]}") from None
+        self._state_js = GAME_STATE
+        log.info("game connected: %s", url)
+        return host_of(self.page.url)
+
     def media_state(self) -> str:
         if self.page is None:
             return "none"
@@ -398,7 +468,7 @@ class BrowserDriver:
                 self.page.evaluate(YT_FORCE_LOW)  # quality can reset after ads
             elif site == "srf.ch":
                 self.page.evaluate(SRF_FORCE_LOW)
-            return self.page.evaluate(MEDIA_STATE)
+            return self.page.evaluate(self._state_js)
         except self._error_cls:
             return "none"  # page was navigating (e.g. YouTube autoplay)
 

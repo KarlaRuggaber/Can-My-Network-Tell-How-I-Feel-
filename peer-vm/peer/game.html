@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game session</title>
+<style>
+  body { margin: 0; background: #111; color: #ddd; font: 14px system-ui, sans-serif; }
+  canvas { display: block; margin: 16px auto; background: #1d2a1d; max-width: calc(100% - 32px); }
+  p { text-align: center; }
+</style>
+</head>
+<body>
+<canvas id="field" width="500" height="500"></canvas>
+<p id="status">connecting…</p>
+<script>
+// Toy multiplayer client for the traffic runner's gaming_session: sends a small input
+// message every tick and draws the server's game state. ?tick=20..60, ?seed=<n>.
+const q = new URLSearchParams(location.search);
+const tick = Math.min(60, Math.max(20, parseInt(q.get("tick") || "30", 10)));
+let seed = parseInt(q.get("seed") || "1", 10) >>> 0;
+function rnd() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
+
+window.__game = { connected: false, sent: 0, received: 0, closed: false };
+const ctx = document.getElementById("field").getContext("2d");
+const status = document.getElementById("status");
+const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/game/ws?tick=" + tick);
+
+ws.onopen = () => {
+  window.__game.connected = true;
+  status.textContent = "playing, " + tick + " ticks/s";
+  let seq = 0, dx = 0, dy = 0;
+  setInterval(() => {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (rnd() < 0.1) { dx = Math.round(rnd() * 8 - 4); dy = Math.round(rnd() * 8 - 4); }
+    ws.send(JSON.stringify({ i: ++seq, dx: dx, dy: dy }));
+    window.__game.sent++;
+  }, 1000 / tick);
+};
+ws.onmessage = (e) => {
+  window.__game.received++;
+  const s = JSON.parse(e.data);
+  ctx.clearRect(0, 0, 500, 500);
+  s.p.forEach((p, k) => {
+    ctx.fillStyle = k === 0 ? "#6cf" : "#e96";
+    ctx.fillRect(p[0] / 2 - 4, p[1] / 2 - 4, 8, 8);
+  });
+};
+ws.onclose = () => { window.__game.connected = false; window.__game.closed = true; status.textContent = "disconnected"; };
+</script>
+</body>
+</html>

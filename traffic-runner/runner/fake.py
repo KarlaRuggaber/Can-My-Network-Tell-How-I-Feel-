@@ -112,6 +112,16 @@ class FakeDriver:
         self._media_started = self.clock.now()
         return self._load(url, timeout)
 
+    def join_call(self, url, timeout):
+        self.calls.append(("call", url.split("#")[0]))
+        self._media_started = self.clock.now()
+        return self._load(url, timeout)
+
+    def play_game(self, url, timeout):
+        self.calls.append(("game", url))
+        self._media_started = self.clock.now()
+        return self._load(url, timeout)
+
     def media_state(self):
         if self._media_started is None:
             return "none"

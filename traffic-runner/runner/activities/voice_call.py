@@ -1,17 +1,20 @@
-"""voice_call: WebRTC audio-only call against a counterpart outside the network (catalog §2).
-
-Stub: needs a call counterpart outside the home network (and accounts for discord/teams). Logs status not_implemented until that exists.
+"""voice_call: WebRTC audio-only call against the counterpart outside the home network
+(catalog §2), also the voice chat of a gaming_session with voice. See _call.py and
+video_call.py (platforms).
 """
 
-from .base import not_implemented
+from ._call import run_call
 
 ID = "voice_call"
-IMPLEMENTED = False
+IMPLEMENTED = True
 ROLES = ("phone", "laptop")
 DEFAULT_DURATION = None  # "as block"
 NEEDS_MIX = False
 DEFAULT_MIX = None
 MIX_KIND = None
 NEEDS_BROWSER = True
+BROWSER_MODE = "call"
 
-run = not_implemented(ID, "needs a call counterpart outside the home network (and accounts for discord/teams)")
+
+def run(ctx, rng, duration, mix):
+    return run_call(ctx, duration, video=False)
