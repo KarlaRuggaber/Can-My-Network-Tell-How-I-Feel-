@@ -60,6 +60,13 @@ PEER_TOKEN=$token
 PEER_INSECURE_TLS=$insecure
 $memory
 EOF
+# The Jitsi containers run as uid 1000. Folders that Docker creates for bind mounts belong to
+# root, and prosody then refuses to start ("/var/lib/prosody is not writable").
+for d in jicofo jvb prosody/config prosody/prosody-plugins-custom storage/prosody \
+         storage/transcripts storage/web tmp/web-load-test web; do
+    mkdir -p "jitsi-cfg/$d"
+done
+[ "$(id -u)" = 0 ] && chown -R 1000:1000 jitsi-cfg
 echo "wrote .env for https://$domain"
 echo
 echo "On the gateway, create /opt/can-my-network/traffic-runner/peer.env (root, mode 600) with:"
