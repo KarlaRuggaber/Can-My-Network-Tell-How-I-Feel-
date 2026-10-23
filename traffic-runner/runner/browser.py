@@ -8,10 +8,12 @@ lazily so that config, tests and --dry-run work without it.
 from __future__ import annotations
 
 import html
+import os
 import logging
 import re
 import socket
 import time
+from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, urlsplit
 
 from .context import PageError
@@ -494,6 +496,17 @@ class BrowserDriver:
             raise PageError(f"could not send message: {str(e).splitlines()[0]}") from None
         log.info("message sent (%d chars)", len(text))
 
+    def _debug_screenshot(self, name: str) -> str:
+        """Save a screenshot of a failed step to $RUNNER_DEBUG_DIR (default /logs/debug)."""
+        folder = Path(os.environ.get("RUNNER_DEBUG_DIR", "/logs/debug"))
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / f"{name}-{time.strftime('%Y%m%d-%H%M%S')}.png"
+            self.page.screenshot(path=str(path), full_page=True)
+            return str(path)
+        except Exception:  # noqa: BLE001 - a debug aid must never hide the real error
+            return "-"
+
     def reddit_post(self, subreddit: str, title: str, image: str, timeout: float) -> str | None:
         """Create an image post in `subreddit` only. Returns the host, or raises PageError."""
         self.open(f"https://www.reddit.com/r/{subreddit}/submit/?type=IMAGE", timeout)
@@ -516,7 +529,8 @@ class BrowserDriver:
             self.page.get_by_role("button", name=REDDIT_POST_BUTTON).last.click()
             self.page.wait_for_url(lambda u: "/comments/" in u, timeout=timeout * 1000)
         except self._error_cls as e:
-            raise PageError(f"Reddit post failed: {str(e).splitlines()[0]}") from None
+            shot = self._debug_screenshot("reddit-post")
+            raise PageError(f"Reddit post failed: {str(e).splitlines()[0]} (url {self.page.url}, screenshot {shot})") from None
         if not reddit_target_ok(self.page.url, subreddit, "comments"):
             raise PageError(f"post ended up outside r/{subreddit}: {self.page.url}")
         log.info("posted to r/%s: %s", subreddit, self.page.url)
