@@ -16,7 +16,7 @@ gateway (br-sim)                               VM, e.g. 203-0-113-7.sslip.io
 |---|---|
 | Jitsi (self-hosted) | Video conferencing server, no login. `jitsi-compose.yml` is the official compose file of docker-jitsi-meet `stable-11248`, unmodified ([JITSI_ORIGIN.md](JITSI_ORIGIN.md)). Settings are in `.env` (see below) |
 | Caddy | Only public entry point (80/443). Automatic Let's Encrypt certificate for `<ip-with-dashes>.sslip.io`, which resolves to the VM's IP without registering a domain |
-| `peer` | One Python service (`peer/peer_service.py`). `POST /peer/join` (bearer token) lets a headless Chromium with fake camera/mic join a room for the call's duration. It leaves early when no media has arrived for 45 s (the runner is gone). `GET /game` + `/game/ws` is a toy multiplayer game: the client sends inputs and the server sends game states, 20–60 times per second each |
+| `peer` | One Python service (`peer/peer_service.py`). `POST /peer/join` (bearer token) lets a headless Chromium with fake camera/mic join a room for the call's duration. It leaves early once it has been alone in the room for 45 s, judged by Jitsi's participant count. Before 23.10 the rule was "no media for 45 s", which also fired on a muted runner without camera (`--mic-share`). `GET /game` + `/game/ws` is a toy multiplayer game: the client sends inputs and the server sends game states, 20–60 times per second each |
 
 **Settings that keep a call on this VM** (generated into `.env` by `setup.sh`):
 
@@ -24,6 +24,7 @@ gateway (br-sim)                               VM, e.g. 203-0-113-7.sslip.io
 |---|---|
 | `ENABLE_P2P=false` | Media always goes through our videobridge, never peer-to-peer |
 | `JVB_DISABLE_STUN=true` + `JVB_ADVERTISE_IPS=<ip>` | The bridge does not ask external STUN servers |
+| Opus DTX (in the call URL of runner and peer, no server setting exists) | A muted microphone sends ~5 instead of 50 packets/s |
 | `ENABLE_PREJOIN_PAGE=false` | Server-side. Turning the prejoin page off *in the URL* makes Jitsi join without camera and microphone, as a safeguard against manipulated links (found while testing) |
 
 Checked in the net-log: during a call, the runner's browser contacts only the VM.

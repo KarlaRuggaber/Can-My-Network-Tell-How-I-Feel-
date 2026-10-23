@@ -31,7 +31,11 @@ INSECURE_TLS = os.environ.get("PEER_INSECURE_TLS") == "1"
 MAX_CALLS = 3
 MAX_DURATION = 4 * 3600
 GRACE = 60  # the peer stays a bit longer than the runner, which leaves at its deadline
-IDLE_LEAVE = 45  # leave once no media has arrived for this long (the runner has left)
+IDLE_LEAVE = 45  # leave once the peer has been alone (or without media) for this long
+MEMBERS = """
+() => (window.APP && APP.conference && typeof APP.conference.membersCount === 'number')
+      ? APP.conference.membersCount : null
+"""
 INBOUND_BYTES = """
 async () => {
   let total = 0;
@@ -69,6 +73,9 @@ def call_url(room: str, video: bool, name: str) -> str:
     makes Jitsi join without camera and microphone, as a safeguard."""
     cfg = {
         "config.disableDeepLinking": True,
+        # Opus DTX: a muted microphone sends ~5 packets/s instead of 50 silence packets/s
+        # (Jitsi default), like Zoom/Teams when muted. Matters for --mic-share.
+        "config.audioQuality.enableOpusDtx": True,
         "config.startWithAudioMuted": False,
         "config.startWithVideoMuted": not video,
         "config.startAudioOnly": not video,
@@ -98,18 +105,23 @@ class CallPeer:
             page = await ctx.new_page()
             await page.goto(call_url(room, video, "peer"), wait_until="domcontentloaded", timeout=30_000)
             log.info("joined %s (video=%s) for %.0f s", room, video, duration)
-            # Stay for the planned duration, but leave early once the runner is gone: no
-            # inbound media for IDLE_LEAVE seconds (after the first minute).
-            start = last_change = time.monotonic()
+            # Stay for the planned duration, but leave early once the runner is gone. Signal:
+            # Jitsi's participant count (the peer alone). A muted runner without camera sends
+            # no media (mic share), so media is only the fallback when the count is missing.
+            start = last_company = time.monotonic()
             last_bytes = -1
             while time.monotonic() - start < duration + GRACE:
                 await asyncio.sleep(15)
-                received = await page.evaluate(INBOUND_BYTES)
                 now = time.monotonic()
-                if received != last_bytes:
-                    last_bytes, last_change = received, now
-                elif now - start > 60 and now - last_change >= IDLE_LEAVE:
-                    log.info("no media in %s for %d s, leaving early", room, IDLE_LEAVE)
+                members = await page.evaluate(MEMBERS)
+                if members is None:
+                    received = await page.evaluate(INBOUND_BYTES)
+                    if received != last_bytes:
+                        last_bytes, last_company = received, now
+                elif members > 1:
+                    last_company = now
+                if now - start > 60 and now - last_company >= IDLE_LEAVE:
+                    log.info("runner gone from %s for %d s (members=%s), leaving early", room, IDLE_LEAVE, members)
                     break
         except Exception as e:  # noqa: BLE001 - one failed call must not stop the service
             log.warning("call %s failed: %s", room, e)

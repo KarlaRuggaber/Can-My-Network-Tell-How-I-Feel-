@@ -58,6 +58,18 @@ def parse_range(text: str, integer: bool = False) -> tuple[float, float]:
     return a, b
 
 
+def parse_share(text: str) -> float:
+    """'0.1' or '10%' -> 0.1, must be in (0, 1]."""
+    t = text.strip()
+    try:
+        value = float(t[:-1]) / 100 if t.endswith("%") else float(t)
+    except ValueError:
+        raise UsageError(f"bad share '{text}' (use e.g. 0.1 or 10%)") from None
+    if not 0 < value <= 1:
+        raise UsageError(f"share must be > 0 and <= 1, got '{text}'")
+    return value
+
+
 def container_source_ip() -> str | None:
     """Source IP this container uses towards the gateway (no packet is sent)."""
     try:
@@ -126,6 +138,10 @@ def cmd_run(args) -> int:
         overrides["dwell"] = parse_range(args.dwell)
     if args.lookups:
         overrides["lookups"] = parse_range(args.lookups, integer=True)
+    if args.mic_share:
+        overrides["mic_share"] = parse_share(args.mic_share)
+        if activity_id not in ("video_call", "voice_call"):
+            log.warning("--mic-share only affects video_call and voice_call")
 
     mix = None
     status = None
@@ -262,6 +278,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--pages", help="override page count range, e.g. 2-4")
     r.add_argument("--dwell", help="override dwell range, e.g. 20-90 or 1m-3m")
     r.add_argument("--platform", help="call platform from the plan (zoom/teams/jitsi/discord); all calls use the peer VM")
+    r.add_argument("--mic-share", help="calls: share of the time the microphone is on, e.g. 0.1 or 10%% (profile option mic_share)")
     r.add_argument("--lookups", help="override lookup count range (sh_adjacent_lookup), e.g. 1-3")
     r.add_argument("--dry-run", action="store_true", help="no network: print the planned sequence")
     r.add_argument("--headed", action="store_true", help="show the browser (needs a display)")

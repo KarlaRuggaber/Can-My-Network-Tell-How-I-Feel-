@@ -20,4 +20,4 @@ BROWSER_MODE = "call"
 
 
 def run(ctx, rng, duration, mix):
-    return run_call(ctx, duration, video=True)
+    return run_call(ctx, rng, duration, video=True)

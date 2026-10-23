@@ -85,6 +85,9 @@ class Driver(Protocol):
     def join_call(self, url: str, timeout: float) -> str:
         """Open a call room and wait until the media connection is up; return host."""
 
+    def set_mic(self, on: bool) -> None:
+        """Mute or unmute the microphone in the running call."""
+
     def play_game(self, url: str, timeout: float) -> str:
         """Open the game page and wait until it is connected; return host."""
 
@@ -109,6 +112,7 @@ class RunContext:
         self.visited: list[str] = []
         self.page_errors = 0
         self.run_key = ""  # profile/seed/block_id, set by the CLI (call room names)
+        self._bad_checks = 0
 
     # --- time ---
     def elapsed(self) -> float:
@@ -227,17 +231,21 @@ class RunContext:
             return None
         return self._record(self.driver.play_game(url, timeout))
 
-    def watch_media(self, check_every: float = 15.0) -> str:
-        """Keep media playing until it ends or the deadline; return the last state.
+    def watch_media(self, check_every: float = 15.0, max_seconds: float | None = None) -> str:
+        """Keep media playing until it ends, the deadline, or `max_seconds`; return the last state.
 
         A missing player, no data ('stalled'), a pause that resume_media() could not undo or a
         media error is tolerated for two checks in a row (buffering, YouTube switching to the
-        next video); the third one fails the run.
+        next video); the third one fails the run. The count carries over between calls, so a
+        call watched in short pieces (mic schedule) still fails after three bad checks.
         """
+        stop_at = None if max_seconds is None else self.clock.now() + max_seconds
         state = "playing"
-        bad = 0
         while self.remaining() > 0:
-            self.idle(check_every)
+            left = self.remaining() if stop_at is None else min(self.remaining(), stop_at - self.clock.now())
+            if left <= 0:
+                break
+            self.idle(min(check_every, left))
             if self.remaining() <= 0:
                 break
             state = self.driver.media_state()
@@ -247,9 +255,12 @@ class RunContext:
             if state == "paused":
                 self.driver.resume_media()
             if state in ("error", "none", "stalled", "paused"):
-                bad += 1
-                if bad >= 3:
+                self._bad_checks += 1
+                if self._bad_checks >= 3:
                     raise PageError(f"media stopped playing (state={state})")
             else:
-                bad = 0
+                self._bad_checks = 0
         return state
+
+    def set_mic(self, on: bool) -> None:
+        self.driver.set_mic(on)

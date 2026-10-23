@@ -35,12 +35,15 @@ class Peer:
         """Room name derived from the run and the secret token: unique and not guessable."""
         return "r-" + hmac.new(self.token.encode(), run_key.encode(), hashlib.sha256).hexdigest()[:24]
 
-    def call_url(self, room: str, video: bool, name: str) -> str:
+    def call_url(self, room: str, video: bool, name: str, audio_muted: bool = False) -> str:
         """Same URL hash as the peer: mute state, no mobile app page. Not the prejoin page:
         switching it off in the URL makes Jitsi join without media (server setting instead)."""
         cfg = {
             "config.disableDeepLinking": True,
-            "config.startWithAudioMuted": False,
+            # Opus DTX: a muted microphone sends ~5 packets/s instead of 50 silence packets/s
+            # (Jitsi default), like Zoom/Teams when muted. Matters for --mic-share.
+            "config.audioQuality.enableOpusDtx": True,
+            "config.startWithAudioMuted": audio_muted,
             "config.startWithVideoMuted": not video,
             "config.startAudioOnly": not video,
             "userInfo.displayName": name,

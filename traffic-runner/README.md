@@ -94,6 +94,7 @@ sudo scripts/run-activity.sh student_a_phone \
 | `--pages`, `--dwell` | Profile overrides of the catalog defaults (§1 "Frequency keys"), e.g. `--pages 2-4 --dwell 1m-3m` |
 | `--lookups` | Number of DNS lookups for `sh_adjacent_lookup`, e.g. `--lookups 1-3` (profile key `lookups`) |
 | `--platform` | Call platform from the scheduler's plan (zoom/teams/jitsi/discord). Accepted and ignored, because all calls use the peer VM's Jitsi |
+| `--mic-share` | Calls only: share of the time the microphone is on, e.g. `0.1` or `10%` (profile option `mic_share`, social anxiety). The call starts muted; speaking turns of 3–15 s alternate with muted pauses drawn so the long-run share matches (0.1: pauses of ~81 s on average). Drawn from the seed. The camera is not affected |
 | `--dry-run` | No network, prints the plan |
 
 **Exit codes:**
@@ -221,6 +222,7 @@ Measured on 2026-10-16, locally (laptop, Docker Desktop) and on the gateway. All
 | `study_block` PDF | +1.4 to 5.4 MB per download | | – | 1–3 per hour |
 | `video_call` (laptop, 2 min) | 9.4 MiB | 13 MiB | – | upload-heavy ≈ 0.9 Mbit/s up; ~2 MiB of the download is the Jitsi page |
 | `voice_call` (90 s) | 2.5 MiB | 0.5 MiB | – | ≈ 40 kbit/s audio plus the page |
+| `voice_call` 3 min, `--mic-share` 1.0 / 0.3 / 0.1 | – | 55 / 25 / 5 kbit/s | – | 50 / 24 / 5 packets/s up. Muted = Opus DTX, ~5 packets/s |
 | `gaming_session` game phase | ≈ 60 kbit/s | ≈ 50 kbit/s | – | small packets both ways; the store pages dominate the volume |
 | `idle_connected` | 0 | 0 | 0 / 0 | |
 
@@ -446,6 +448,7 @@ Checks after step 5:
 - **SRF live TV is not used.** Its player exposes no quality levels, so it would run at 540p (about 1.5–2 Mbit/s). `video_stream` plays SRF on-demand videos.
 - **YouTube quality is best effort.** The quality API is unofficial. The first seconds sometimes run at 240p before 144p takes effect, and the decoded resolution is logged. Ads play as for any user without a login.
 - **Fresh context every run.** Each block sees and rejects the cookie banner again. That is realistic for a clean device, but more consent traffic than a regular user generates.
+- **Muted microphone = Opus DTX.** Jitsi's default keeps sending 50 silence packets/s after muting, about 20 kbit/s on the wire. Both call URLs enable Opus DTX (`config.audioQuality.enableOpusDtx`), so a muted mic sends ~5 packets/s, like Zoom or Teams when muted. Without this, `--mic-share` would barely lower the upstream.
 - **Calls and gaming run against our own VM.**
   - Every call platform (Zoom, Teams, Jitsi, Discord voice) is the self-hosted Jitsi on the peer VM, because the real platforms need accounts. Their hosts are in no thesis list, like jit.si and zoom.us; only teams.microsoft.com would have counted as PRODUCTIVITY.
   - The game is a toy WebSocket game with the traffic pattern of browser games (small, frequent, symmetric). It is not a real game title.

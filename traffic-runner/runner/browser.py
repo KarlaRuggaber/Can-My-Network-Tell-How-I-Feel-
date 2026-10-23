@@ -118,6 +118,22 @@ GAME_STATE = """
 }
 """
 
+# Mute/unmute like the call's own mute button (Jitsi API); otherwise disable the audio track.
+SET_MIC = """
+(on) => {
+  try {
+    if (window.APP && APP.conference && typeof APP.conference.muteAudio === 'function') {
+      APP.conference.muteAudio(!on);
+      return 'jitsi';
+    }
+  } catch (e) {}
+  for (const pc of window.__runnerPCs || []) {
+    for (const s of pc.getSenders()) { if (s.track && s.track.kind === 'audio') s.track.enabled = on; }
+  }
+  return 'track';
+}
+"""
+
 FAKE_MEDIA_ARGS = ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"]
 
 MEDIA_STATE = """
@@ -446,6 +462,14 @@ class BrowserDriver:
         self._state_js = CALL_STATE
         log.info("call connected: %s", url.split("#")[0])
         return host_of(self.page.url)
+
+    def set_mic(self, on: bool) -> None:
+        try:
+            how = self.page.evaluate(SET_MIC, on)
+        except self._error_cls as e:
+            log.warning("could not %s the microphone: %s", "unmute" if on else "mute", str(e).splitlines()[0])
+            return
+        log.debug("microphone %s (%s)", "on" if on else "off", how)
 
     def play_game(self, url: str, timeout: float) -> str:
         """Open the game page and wait until its WebSocket is connected. Returns the host."""

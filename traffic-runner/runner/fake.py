@@ -117,6 +117,9 @@ class FakeDriver:
         self._media_started = self.clock.now()
         return self._load(url, timeout)
 
+    def set_mic(self, on):
+        self.calls.append(("mic", on))
+
     def play_game(self, url, timeout):
         self.calls.append(("game", url))
         self._media_started = self.clock.now()

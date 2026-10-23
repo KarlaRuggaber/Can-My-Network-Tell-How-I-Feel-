@@ -258,3 +258,72 @@ def test_gaming_session_same_seed_same_plan(peer_vm):
     a = run_with_key("gaming_session", "gaming", 3600, 3, "k")
     b = run_with_key("gaming_session", "gaming", 3600, 3, "k")
     assert a == b
+
+
+def run_call_with_share(peer_vm_joins, share, duration=3600, seed=7, activity="voice_call"):
+    mixes = load_mixes()
+    clock = FakeClock()
+    driver = FakeDriver(clock)
+    ctx = RunContext(driver, clock, duration, {"mic_share": share} if share is not None else None)
+    ctx.mixes = mixes
+    ctx.run_key = "sad/1/c1"
+    ACTIVITIES[activity].run(ctx, random.Random(f"{seed}/c1"), duration, None)
+    return driver.calls, clock.now()
+
+
+@pytest.mark.parametrize("share", [0.1, 0.3, 0.5])
+def test_mic_schedule_meets_share_on_average(share):
+    from runner.activities._call import mic_schedule
+    talk = total = 0.0
+    for seed in range(40):
+        for muted, t in mic_schedule(random.Random(seed), 3600, share):
+            talk += t
+            total += muted + t
+    assert talk / total == pytest.approx(share, abs=0.03)
+
+
+def test_mic_schedule_is_reproducible_and_off_at_full_share():
+    from runner.activities._call import mic_schedule
+    assert mic_schedule(random.Random(1), 1800, 0.1) == mic_schedule(random.Random(1), 1800, 0.1)
+    assert mic_schedule(random.Random(1), 1800, 0.1) != mic_schedule(random.Random(2), 1800, 0.1)
+    assert mic_schedule(random.Random(1), 1800, 1.0) == []
+
+
+def test_call_with_mic_share_starts_muted_and_toggles(peer_vm):
+    calls, end = run_call_with_share(peer_vm, 0.1)
+    mics = [c[1] for c in calls if c[0] == "mic"]
+    assert mics and mics[0] is True  # first action is unmuting: the call starts muted
+    assert all(a != b for a, b in zip(mics, mics[1:]))  # strictly alternating
+    assert end == pytest.approx(3600)
+    url = [c for c in calls if c[0] == "call"][0][1]
+    assert url.startswith("https://peer.test/r-")
+
+
+def test_call_without_mic_share_never_toggles(peer_vm):
+    calls, end = run_call_with_share(peer_vm, None)
+    assert not [c for c in calls if c[0] == "mic"]
+    assert end == pytest.approx(3600)
+
+
+def test_call_url_starts_muted_only_with_schedule():
+    from runner.peer import Peer
+    p = Peer("https://peer.test", "secret")
+    assert "startWithAudioMuted=true" in p.call_url("r-x", video=False, name="runner", audio_muted=True)
+    assert "startWithAudioMuted=false" in p.call_url("r-x", video=False, name="runner")
+
+
+def test_dropped_call_fails_even_when_watched_in_pieces(peer_vm):
+    from runner.context import PageError
+
+    class DroppingDriver(FakeDriver):
+        def media_state(self):
+            return "stalled" if self.clock.now() > 300 else "playing"
+
+    mixes = load_mixes()
+    clock = FakeClock()
+    ctx = RunContext(DroppingDriver(clock), clock, 3600, {"mic_share": 0.1})
+    ctx.mixes = mixes
+    ctx.run_key = "sad/1/c2"
+    with pytest.raises(PageError):
+        ACTIVITIES["voice_call"].run(ctx, random.Random("3/c2"), 3600, None)
+    assert clock.now() < 420  # three bad checks after the drop, not at the end of the block

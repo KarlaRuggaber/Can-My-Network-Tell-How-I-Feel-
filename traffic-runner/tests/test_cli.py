@@ -80,3 +80,12 @@ def test_peer_activities_without_vm_log_not_implemented(logdir, monkeypatch, act
     monkeypatch.delenv("RUNNER_PEER_TOKEN", raising=False)
     assert cli.main(BASE + ["--activity", activity, "--duration", "60"]) == cli.EXIT_NOT_IMPLEMENTED
     assert rows(logdir)[0]["status"] == "not_implemented"
+
+
+def test_parse_share():
+    assert cli.parse_share("0.1") == 0.1
+    assert cli.parse_share("10%") == pytest.approx(0.1)
+    assert cli.parse_share("1") == 1.0
+    for bad in ("0", "1.5", "-0.1", "abc", "%"):
+        with pytest.raises(cli.UsageError):
+            cli.parse_share(bad)

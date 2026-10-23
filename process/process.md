@@ -198,6 +198,19 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
         - `peer.sim` in the feed
       - **RAM:** with two parallel calls, 1.3 GB of 7.1 GB was left, so watch it once more persons run in parallel.
     - **For Thierry:** the scheduler should pass `--lookups` (`sh_adjacent_lookup`). `--platform` is accepted but has no effect.
+  - **`--mic-share` for calls** (SAD profile: mic on only 10 % of the time). The call starts muted, then speaking turns of 3–15 s alternate with muted pauses drawn from the seed.
+    - Two problems found while testing and fixed:
+      - Jitsi keeps sending 50 silence packets/s after muting (fixed with Opus DTX, ~5 packets/s).
+      - The peer left calls with a muted runner, because it judged presence by media (now judged by Jitsi's participant count).
+    - Measured, voice call over 3 min:
+
+      | Mic share | Upload | Packets up |
+      |---|---|---|
+      | 100 % | 55 kbit/s | 50/s |
+      | 30 % | 25 kbit/s | 24/s |
+      | 10 % | 5 kbit/s | 5/s |
+
+    - Thierry can pass `--mic-share 0.1` from the plan.
   - **Deploy (after Thierry's note):** runner config is no longer mounted into the containers but baked into the image, so a `git pull` can no longer mix new config with old runner code. New `traffic-runner/scripts/deploy.sh` does pull, rebuild, recreate and tests in one step, and refuses while activities are running. Deployment.md §8 lists it.
   - **Finding:** `social_passive` on Reddit costs about 33 MiB/min because the feed auto-plays videos, so a 1–2 h block is 2–4 GB of hotspot volume. **Decided 23.10: accepted.** Real users get the same autoplay, and the data volume is not a problem.
 - **Next / open:**
