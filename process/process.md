@@ -204,6 +204,10 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
     - **Runner:** `messaging` (Slack web, desktop profile because Slack refuses phone browsers) and `social_post` (generated 1–3 MB image, only into r/CMNTHIF, target checked before and after posting) are implemented and load per-device login sessions.
     - **Sessions** are captured by hand on the laptop (`scripts/capture_session.py`) and stored root-only on the gateway.
     - **Bot service:** `peer-vm/slackbot`, host network.
+  - **Pilot feedback (Thierry, 23.10):** in Maria's YouTube block the video stalled after 2 min with four browsers on the hotspot. The runner logged `error`, and 29 minutes of the block stayed silent.
+    - `video_stream` now recovers: reload the same video, then up to three other videos. The replacements are drawn with the seed up front.
+    - 217 tests.
+    - Deploy during the live run: stop the executors, run `deploy.sh`, start them again.
     - **Live on the gateway (23.10, `student_a_phone`):**
       - `messaging`: 4 messages in 3 min, `ok`; the bot answers.
       - `social_post`: noise image posted to r/CMNTHIF, `ok`.

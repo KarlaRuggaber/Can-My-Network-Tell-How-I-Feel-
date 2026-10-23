@@ -135,9 +135,95 @@ def test_media_that_does_not_play_fails(state):
     clock = FakeClock()
     ctx = RunContext(StuckDriver(clock), clock, 600)
     ctx.mixes = mixes
+    driver = ctx.driver
     with pytest.raises(PageError):
         ACTIVITIES["video_stream"].run(ctx, random.Random("1/b1"), 600, parse_mix("streaming", mixes, kind="video"))
-    assert clock.now() < 60  # fails after three checks, not at the end of the block
+    plays = [c for c in driver.calls if c[0] in ("youtube", "srf")]
+    assert len(plays) == 1 + ACTIVITIES["video_stream"].MAX_RECOVERIES  # start + every recovery
+    assert clock.now() < 300  # gives up after the recoveries, not at the end of the block
+
+
+def _stalling_driver(*stall_times):
+    """Media stalls at each given time until the next play (a restart clears the stall)."""
+    class Driver(FakeDriver):
+        pending = sorted(stall_times)
+        stalled = False
+
+        def _play(self):
+            self.stalled = False
+
+        def play_youtube(self, *a):
+            self._play()
+            return super().play_youtube(*a)
+
+        def play_srf(self, *a):
+            self._play()
+            return super().play_srf(*a)
+
+        def media_state(self):
+            if self.pending and self.clock.now() >= self.pending[0]:
+                self.pending = self.pending[1:]
+                self.stalled = True
+            return "stalled" if self.stalled else "playing"
+    return Driver
+
+
+def test_video_stream_recovers_from_a_stall_and_fills_the_block():
+    mixes = load_mixes()
+    clock = FakeClock()
+    driver = _stalling_driver(300)(clock)
+    ctx = RunContext(driver, clock, 1800)
+    ctx.mixes = mixes
+    ACTIVITIES["video_stream"].run(ctx, random.Random("1/b1"), 1800, parse_mix("streaming", mixes, kind="video"))
+    plays = [c for c in driver.calls if c[0] in ("youtube", "srf")]
+    assert len(plays) == 2 and plays[0] == plays[1]  # first recovery reloads the same video
+    assert clock.now() == pytest.approx(1800)
+
+
+def test_video_stream_switches_video_after_a_second_stall():
+    mixes = load_mixes()
+    clock = FakeClock()
+
+    driver = _stalling_driver(300, 700)(clock)
+    ctx = RunContext(driver, clock, 1800)
+    ctx.mixes = mixes
+    ACTIVITIES["video_stream"].run(ctx, random.Random("2/b7"), 1800, parse_mix("streaming", mixes, kind="video"))
+    plays = [c for c in driver.calls if c[0] in ("youtube", "srf")]
+    assert len(plays) == 3 and plays[0] == plays[1]
+    assert clock.now() == pytest.approx(1800)
+
+
+def test_video_stream_recovery_is_reproducible():
+    def once():
+        mixes = load_mixes()
+        clock = FakeClock()
+        driver = _stalling_driver(*range(0, 10_000, 5))(clock)
+        ctx = RunContext(driver, clock, 900)
+        ctx.mixes = mixes
+        with pytest.raises(Exception):
+            ACTIVITIES["video_stream"].run(ctx, random.Random("4/b2"), 900, parse_mix("streaming", mixes, kind="video"))
+        return driver.calls
+    assert once() == once()
+
+
+def test_video_stream_first_video_unchanged_by_recovery_draws():
+    """The start video is the first draw, as before the recovery feature (same seeds, same videos)."""
+    mixes = load_mixes()
+    rng = random.Random("1/b1")
+    mix = parse_mix("streaming", mixes, kind="video")
+    site = mix.pick(rng)
+    terms = mixes.video.get("youtube_search_terms") or []
+    expected = (rng.choice(terms), rng.randrange(int(mixes.video.get("result_pool", 5))))
+    clock = FakeClock()
+    driver = FakeDriver(clock, media_length=100)
+    ctx = RunContext(driver, clock, 600)
+    ctx.mixes = mixes
+    ACTIVITIES["video_stream"].run(ctx, random.Random("1/b1"), 600, mix)
+    first = [c for c in driver.calls if c[0] in ("youtube", "srf")][0]
+    if site.host.endswith("youtube.com"):
+        assert first[1:] == expected
+    else:
+        assert first[2] == expected[1]
 
 
 def test_music_background_uses_radio_page():

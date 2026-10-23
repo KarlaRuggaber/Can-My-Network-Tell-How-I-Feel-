@@ -22,6 +22,10 @@ class PageError(RuntimeError):
     """A page could not be loaded (timeout, DNS/TLS error, ...). Not fatal for a run."""
 
 
+class MediaStalled(PageError):
+    """Media stopped playing for three checks in a row (watch_media)."""
+
+
 class NotImplementedActivity(RuntimeError):
     """Activity exists in the catalog but is not implemented (e.g. needs test accounts)."""
 
@@ -265,7 +269,8 @@ class RunContext:
             if state in ("error", "none", "stalled", "paused"):
                 self._bad_checks += 1
                 if self._bad_checks >= 3:
-                    raise PageError(f"media stopped playing (state={state})")
+                    self._bad_checks = 0  # a caller that recovers (video_stream) starts fresh
+                    raise MediaStalled(f"media stopped playing (state={state})")
             else:
                 self._bad_checks = 0
         return state
