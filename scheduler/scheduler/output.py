@@ -61,6 +61,8 @@ def command(row: dict[str, str]) -> str:
         args += ["--dwell", row["dwell"]]
     if row["lookups"]:
         args += ["--lookups", row["lookups"]]
+    if row["platform"]:
+        args += ["--platform", row["platform"]]
     return shlex.join(args)
 
 

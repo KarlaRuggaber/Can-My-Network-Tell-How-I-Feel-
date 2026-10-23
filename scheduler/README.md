@@ -251,7 +251,7 @@ The first eight columns are the runner's ground-truth columns (catalog §1) with
 - `status` ≠ `ok` = failed or stub
 - `end` earlier than planned = `phone_check` done or video over
 
-Runner state 23.10 (after Karla's `4132a06`): `messaging`, `social_post`, `video_call`, `voice_call` (test accounts / call counterpart) and `gaming_session` are still stubs. Their rows log `not_implemented` and produce no traffic. Measured over 10 seeds, that is **23 % of the student's planned activity time** (gaming 7 %, its voice chat 7 %, messaging 4 %, calls 4 %) and **11 % of the 9-to-5's** (work/private calls 8 %, messaging 3 %). For live runs this is the main gap between plan and data: the calls carry the upstream signal that the SAD profile reduces. `away` is the executor's job: the runner README proposes disconnecting the container from `br-sim` for the period.
+Runner state 23.10 (after Karla's `04d776d`): calls and `gaming_session` run against the self-hosted peer (`peer-vm/`, Jitsi plus a WebSocket game); every `--platform` maps to it. Only `messaging` and `social_post` are still stubs (they need test accounts): their rows log `not_implemented` and produce no traffic. Measured over 10 seeds that is **5 % of the student's planned activity time** (messaging 4 %, posting 0.5 %) and **3 % of the 9-to-5's** (messaging). `away` is the executor's job: no runs during the period (the runner README also mentions disconnecting the container from `br-sim`).
 
 **Synthetic (later).** The synthesizer reads `plan.csv` directly. For each row it takes a recorded snippet of the same `activity_id`, role and `mix` (from the live runs' PCAPs, cut by the ground-truth rows). It trims or loops the snippet to `duration`, shifts it to `start` and rewrites the addresses to the device's IP/MAC from `devices.csv`. Nothing is added outside planned rows: idle stays empty and away is a gap. The synthetic PCAPs then go through the same ingest (`tapingest --once`) as the live ones. Every packet stays traceable to a `block_id` → profile block → profile, which is the traceability the project objective asks for.
 
@@ -281,7 +281,7 @@ Each item says what the scheduler does now. All are small to change.
 - **C5 "Evening blocks"** (for "replaces evening blocks") are not defined. Now: the blocks under the `# evening` comment in §9 (`group: evening`); `bedtime_check` is not one.
 - **C6 Noise lines. Decided 23.10: yes.** One duration factor per day (§3). Open: whether it should be per block instead.
 - **C7 Last night.** Activity after midnight of the last plan day is dropped (it would count for a day outside the plan anyway).
-- **C8 Calls in the runner.** `platform` has no runner option and calls are stubs. A platform option, and for SAD a mic share, will be needed (§8).
+- **C8 Calls in the runner.** The commands pass `--platform`, which the runner accepts and ignores: every call runs on the peer's Jitsi. Consequence for the 9-to-5: `teams.microsoft.com` would have counted as PRODUCTIVITY (C2_F6), the peer's host does not. SAD's mic share still has no runner option (§8).
 
 **Student**
 - **S1 Campus start on late-lecture days (accepted 23.10).** The profile says `U("08:00", "14:00")` for all days, but the late-lecture wake is N(09:30, 30m), so campus could start before waking. Now: `U("10:30", "14:00")` on late days, 08:00 on early days, and never earlier than wake + 20 min (`not_before`).

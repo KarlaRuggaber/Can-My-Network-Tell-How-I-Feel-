@@ -327,6 +327,8 @@ def test_cli_writes_plan_and_commands(tmp_path):
     first = cmds[0].split("\t")
     assert first[4].startswith("scripts/run-activity.sh student_a_phone --activity ")
     assert "--block-id" in first[4] and "--seed 42" in first[4]
+    calls = [c for c in cmds if "--activity video_call" in c or "--activity voice_call" in c]
+    assert calls and all("--platform " in c for c in calls)
 
 
 def test_cli_baseline_only_for_clinical(tmp_path):
