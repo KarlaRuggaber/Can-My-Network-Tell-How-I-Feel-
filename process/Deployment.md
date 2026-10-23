@@ -24,10 +24,10 @@ The work was done with the support of an AI assistant (Claude), which wrote and 
  runner containers ─────────── br-sim (10.42.1.1) ─┘
                                    │
         tapcap@eno1   ──► /var/lib/tapcap/ready/cap-<ms>.pcap       (60 s files)
-        tapcap@br-sim ──► /var/lib/tapcap/sim/ready/cap-<ms>.pcap   (since 16.10, not yet watched by the ingest)
+        tapcap@br-sim ──► /var/lib/tapcap/sim/ready/cap-<ms>.pcap   (since 16.10, watched by the ingest since 23.10)
                                    │  polled every 10 s
                                    ▼
-        tapingest.service ── /etc/tapingest/devices.csv (IP → dataset)
+        tapingest.service ── traffic-runner/config/devices.csv (IP → dataset, same list as the runner)
                                    │  merge into 5-min windows
                                    ▼
         /opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet/<dataset>/<dataset>__YYYYMMDD_HHMM.parquet
@@ -45,7 +45,8 @@ The work was done with the support of an AI assistant (Claude), which wrote and 
 | Code | `git clone` of this repository (owned by root), app in `app_pcap_to_dsm5/` | `/opt/can-my-network` |
 | Python venv for the ingest | scapy 2.8.0, pandas 3.0.6, pyarrow 26.0.0, Python 3.14.4 | `/opt/can-my-network/app_pcap_to_dsm5/.venv` |
 | Ingest service | `tapingest.service`, user `tapingest` (member of group `tapcap`), enabled at boot | `/etc/systemd/system/tapingest.service` |
-| Device map | `devices.csv` (IP → dataset) | `/etc/tapingest/devices.csv` |
+| Device map | `devices.csv` (IP → dataset), in git, the same file the runner containers are generated from | `/opt/can-my-network/traffic-runner/config/devices.csv` |
+| Runner containers | `student01_phone`, `student01_laptop` (Karla, see `traffic-runner/README.md`), image `traffic-runner:0.1.0` | `/opt/can-my-network/traffic-runner` |
 | Ingest state | SQLite list of processed capture files | `/var/lib/tapingest/state.sqlite` |
 | App data | Parquet partitions, owned by `tapingest` | `/opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet/` |
 | App feature cache | Daily metric CSVs written by the app | `/opt/can-my-network/app_pcap_to_dsm5/app/feature_cache/` |
@@ -88,7 +89,7 @@ It also keeps `processed_parquet/known_ips.txt` up to date, like the upload page
 
 ### devices.csv
 
-One row per device. The same file is meant for the traffic runner (Karla's containers), so the format is fixed:
+One row per device. Since 23.10 the ingest reads the runner's own file, `traffic-runner/config/devices.csv`, so there is only one list:
 
 ```csv
 device,role,mac,ip,dataset
@@ -106,7 +107,7 @@ student01_laptop,laptop,02:00:0a:2a:01:0c,10.42.1.12,gw_student_01
 
 The file is validated when loaded (columns, valid IPv4, unique ip/device/mac, safe dataset name) and reloaded automatically when it changes. Lines starting with `#` are ignored. A change only applies to files ingested afterwards.
 
-The deployed file still holds the four example devices (10.42.1.11/.12/.21/.22) of the planned runner containers. Because those do not exist yet, **all current traffic goes to `gw_unassigned`**.
+It lists the two runner containers (`student01_phone`, `student01_laptop` → `gw_student_01`). Traffic of all other devices, including the real phones on `eno1`, goes to `gw_unassigned`.
 
 ### App changes (folder `app_pcap_to_dsm5/` in this repository)
 
@@ -250,6 +251,34 @@ The app repository's `origin` is Stephan Nef's (`nefste/app_pcap_to_dsm5_public`
 
 The old folder `/opt/app_pcap_to_dsm5_public` stays as a backup for now (it still contains the code archive's version and Stephan's `user_profiles.json`). The unfiltered data from before the filter is in `/var/tmp/tapingest-unfiltered-202610161547/`.
 
+### 7.6 Runner integration and first pilot (23.10.2026)
+
+Karla's runner (`traffic-runner/`, merged on 16.10) had been running on the gateway from a copy in `~/traffic-runner`, with its own capture `tapcap@br-sim` writing to `/var/lib/tapcap/sim/ready` ([HardwareSetup.md](HardwareSetup.md), [traffic-runner/README.md](../traffic-runner/README.md) §7). Two of her open points were for the ingest (README §9, items 1, 2 and 7):
+
+| Step | What | Check |
+| --- | --- | --- |
+| 1 | `git pull` of the clone on the gateway (it was still at `5ea3fe0`) | `traffic-runner/` present, clone clean |
+| 2 | Runner moved from `~/traffic-runner` to the clone: `docker compose down` in the copy, `logs/ground_truth.csv` carried over (7 lines), `up -d --no-build` in the clone. The copy matched the repo except the README. The image has a fixed tag and was not rebuilt | Both containers run from `/opt/can-my-network/traffic-runner` with the same IPs and MACs; `gen_compose.py --check` passes |
+| 3 | `tapingest`: second `--watch /var/lib/tapcap/sim/ready`, `--devices` pointing to `traffic-runner/config/devices.csv` in the clone. Old copy `/etc/tapingest/devices.csv` removed (backup in `/root`) | Log: "Loaded 2 device(s)", both folders watched |
+| 4 | Backfill: the 27 sim files since 16.10 (Karla's acceptance runs) were ingested in 17 s | Dataset `gw_student_01` with partitions 16.10 18:35–18:55 |
+
+**Pilot.** `student01_phone` ran `browse` for 5 minutes (`--mix news,search --seed 7 --profile pilot --block-id p001`). The runner picked www.nzz.ch, rejected the cookie banner and opened two pages. Ground-truth log: `2026-10-23T08:48:31+02:00 – 08:53:32, browse, www.nzz.ch, ok`. The br-sim counters show about 16 MB of traffic.
+
+| Check | Result |
+| --- | --- |
+| Dataset | `gw_student_01`, partitions 23.10 08:45 and 08:50 |
+| Rows | 20 762, only the phone (10.42.1.11) and the gateway as DNS server |
+| Inside the ground-truth block | 99.9 % of the rows (the rest are 17 packets until 08:53:48 while the browser closed) |
+| DNS | 237 queries, 86 distinct names: `www.nzz.ch` and its asset hosts, plus many ad/tracking hosts |
+| Domains in the app (its own `enrich_with_hostnames`) | Top SLDs: jwpsrv.com, nzz.ch, static-nzz.ch, googlesyndication.com, google.com, adnz.co … |
+| Rows without a domain | **63.8 %** |
+
+**Finding 1: incoming packets get no domain.** Outbound rows (phone → server, 7 341) have a domain in 100 % of cases, inbound rows (server → phone, 13 421) in only 1.3 %, although all of them come from servers whose domain is known from the outbound rows. The cause is the one described in MasterThesisInc §5: `enrich_with_hostnames` looks up only the destination IP. Every downlink-based metric (streaming, downstream volume per category) therefore sees almost nothing. Fixing the lookup (remote IP regardless of direction) is now the most important data-quality item.
+
+**Finding 2: one page visit creates many domains.** One news site produced 86 distinct DNS names, mostly ads and tracking. This confirms catalog pitfall §5.7: UniqueSLD (C2_F1, threshold < 40) will never fire on scripted days without re-tuning.
+
+**Finding 3: Chromium background traffic.** The run contains `android.clients.google.com` and `accounts.google.com`, which the app reduces to `google.com`, a PRODUCTIVITY domain (C2_F6). This is Karla's runner point 5; it should be suppressed in the runner.
+
 ## 8. Operating the system
 
 ### Open the app
@@ -279,15 +308,11 @@ Note: the system clock of the gateway is **UTC**. `journalctl` and `date` show U
 
 ### Add or change devices
 
-Edit `/etc/tapingest/devices.csv`. The service reloads it on the next scan, no restart needed. If the access point is replaced, update `--exclude-mac` in the unit (MAC from `/var/lib/misc/dnsmasq.leases`). Real phones need a fixed IP first: add `dhcp-host=<mac>,<ip>` in dnsmasq, and set the phone's "Private Wi-Fi Address" to "Fixed" for the study network.
+Simulated devices: edit `traffic-runner/config/devices.csv` in the repo, run `python3 traffic-runner/scripts/gen_compose.py`, commit and push. On the gateway: `sudo git -C /opt/can-my-network pull`, then `cd /opt/can-my-network/traffic-runner && sudo docker compose up -d`. The ingest reloads the file on its next scan, no restart needed. Real devices are not in this file yet (a row there would also create a runner container); see open issue 10. If the access point is replaced, update `--exclude-mac` in the unit (MAC from `/var/lib/misc/dnsmasq.leases`). Real phones need a fixed IP first: add `dhcp-host=<mac>,<ip>` in dnsmasq, and set the phone's "Private Wi-Fi Address" to "Fixed" for the study network.
 
-### Add a second capture folder (br-sim)
+### Capture folders
 
-`tapcap@br-sim` runs since 16.10 and writes to its own folder `/var/lib/tapcap/sim/ready`, so the two instances cannot collide ([HardwareSetup.md §15](HardwareSetup.md)). Add `--watch /var/lib/tapcap/sim/ready` to the `ExecStart` line and run:
-
-```bash
-sudo systemctl daemon-reload && sudo systemctl restart tapingest
-```
+The ingest watches `/var/lib/tapcap/ready` (tapcap@eno1, real devices) and, since 23.10, `/var/lib/tapcap/sim/ready` (tapcap@br-sim, runner containers). The two tapcap instances write to separate folders, so their `cap-<ms>.pcap` names cannot collide ([HardwareSetup.md §15](HardwareSetup.md)). A further folder is one more `--watch` line in the unit, then `sudo systemctl daemon-reload && sudo systemctl restart tapingest`.
 
 ### Deploy a new code version
 
@@ -339,6 +364,9 @@ sudo systemctl start tapingest
 | 15 | Code | `git pull` on the gateway would conflict with live data | Ingest and app write inside the clone; upstream tracked `user_profiles.json` | `.gitignore` for runtime paths; `user_profiles.json` not imported |
 | 16 | Docker | `No matching distribution found for setuptools` during the image build | pip download failed over the hotspot | Started the existing image (2 min downtime), retried the build |
 | 17 | Data | Window 17:55 missing | Phone idle, all packets were background and dropped | Expected behaviour, no fix needed |
+| 18 | Integration | Runner traffic did not reach the Parquet data | Ingest watched only `/var/lib/tapcap/ready`; ingest and runner each had their own `devices.csv` | Second `--watch`, ingest reads the runner's `devices.csv` from the clone (Section 7.6) |
+| 19 | Deployment | The clone on the gateway did not contain `traffic-runner/` | Nobody had pulled since 16.10; the runner ran from a copy | `git pull`, runner moved into the clone |
+| 20 | Data | 63.8 % of the pilot's rows without a domain | App looks up hostnames by destination IP only, so inbound packets never get one | Open, see open issue 7 |
 
 ## 10. Security notes
 
@@ -353,12 +381,14 @@ sudo systemctl start tapingest
 1. ~~Background filter~~ Done (Section 3.1). Still to decide after looking at real nights: always-on keep-alives such as Apple push (5223).
 2. **Remove the temporary access** (Section 10).
 3. ~~Own fork of the app repo~~ Done differently: app imported into this repository (Section 7.5). After a few days without problems, delete `/opt/app_pcap_to_dsm5_public`, `/var/tmp/tapingest-unfiltered-*` and `/root/tapingest.service.bak-*` on the gateway. The local `app_pcap_to_dsm5_public` clone and the `live-ingest-*.tar.gz` archives on Thierry's laptop are obsolete.
-4. **br-sim integration:** a second `--watch` folder, and one shared `devices.csv` for the runner and the ingest (e.g. the runner reads `/etc/tapingest/devices.csv`).
-5. **First end-to-end pilot:** one runner container (e.g. `student01_phone`) runs `browse` for 5 minutes, and `gw_student_01` appears in the app with exactly those domains.
+4. ~~br-sim integration~~ Done 23.10 (Section 7.6).
+5. ~~First end-to-end pilot~~ Done 23.10 (Section 7.6): 99.9 % of the rows inside the ground-truth block, the visited site and its hosts in the DNS data.
 6. **Validation 3–6** from MasterThesisInc §8 on real data: packet counts vs. `capinfos`, a known action at a noted time, plausible domain names, night silence of an unused phone.
-7. **SNI as a second hostname source** (MasterThesisInc §5 / `feed.ndjson`).
+7. **Hostnames for inbound packets** (MasterThesisInc §5): look up the remote IP regardless of direction in `enrich_with_hostnames`. In the pilot this would give a domain to ~98 % of the 64 % unlabelled rows. SNI from `feed.ndjson` as a second source belongs to the same change. It changes metric values compared to the thesis, so record it in the report.
 8. **Throughput:** 1500–3500 packets/s on the mini-PC. Enough for a few devices; a high-quality video stream alone can reach 500–1000 packets/s. Watch "still pending" in the log during runner tests.
-9. **Retention policy** for captures and Parquet.
+9. **Retention policy** for captures and Parquet. Currently `ready/` keeps two days, `sim/ready/` forever. Raw pcaps are needed to trace a likelihood back to packets and for the snippet library, so decide what to keep and where.
+10. **Real devices in the device map.** The ingest reads one `devices.csv`, which also generates runner containers. Real test phones need either a second `--devices` file or a role the runner's generator skips.
+11. **Dataset names** without trailing digits (Karla's README §9 item 4): the app groups `gw_student_01` and `gw_student_02` as `gw_student`. Agree on a convention before more profiles run.
 
 ## 12. Appendix: configuration and commands
 
@@ -379,7 +409,8 @@ Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=/opt/can-my-network/app_pcap_to_dsm5
 ExecStart=/opt/can-my-network/app_pcap_to_dsm5/.venv/bin/python ingest/tapingest.py \
     --watch /var/lib/tapcap/ready \
-    --devices /etc/tapingest/devices.csv \
+    --watch /var/lib/tapcap/sim/ready \
+    --devices /opt/can-my-network/traffic-runner/config/devices.csv \
     --out /opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet \
     --state /var/lib/tapingest/state.sqlite --since 2026-10-16T17:09 \
     --exclude-mac 8c:30:66:4c:df:d1
@@ -420,8 +451,7 @@ sudo .venv/bin/pip install -r ingest/requirements.txt
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin tapingest
 sudo usermod -aG tapcap tapingest
 sudo install -d -o tapingest -g tapingest -m 755 app/processed_parquet
-sudo install -d -m 755 /etc/tapingest
-sudo cp ingest/devices.example.csv /etc/tapingest/devices.csv
+# devices: the unit reads /opt/can-my-network/traffic-runner/config/devices.csv (same list as the runner)
 
 # read check as the service user (expect the pcap magic d4 c3 b2 a1)
 sudo -u tapingest bash -c 'f=$(ls -t /var/lib/tapcap/ready/*.pcap | head -1); head -c 4 "$f" | od -An -tx1'

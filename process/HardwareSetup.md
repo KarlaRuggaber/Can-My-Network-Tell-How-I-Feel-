@@ -523,6 +523,6 @@ The files are versioned in [traffic-runner/gateway/](../traffic-runner/gateway/)
 **Finding on retention.** `/etc/tmpfiles.d/tapcap.conf` has the age `2d` on `/var/lib/tapcap/ready`. The `systemd-tmpfiles-clean` timer therefore deletes captures older than two days; on 16.10 only 170 files dating from 02.10 onwards were left. This contradicts "nothing is deleted automatically" in §13 and in Deployment.md. If the raw pcaps must be kept, remove the age, or archive them after ingest.
 
 **Open.**
-- The ingest service still watches only `/var/lib/tapcap/ready`. Add `--watch /var/lib/tapcap/sim/ready` (Deployment.md §8, "Add a second capture folder").
-- `/etc/tapingest/devices.csv` and the runner's `config/devices.csv` must list the same devices.
+- ~~The ingest service still watches only `/var/lib/tapcap/ready`.~~ Done 23.10: it also watches `/var/lib/tapcap/sim/ready` (Deployment.md §7.6).
+- ~~`/etc/tapingest/devices.csv` and the runner's `config/devices.csv` must list the same devices.~~ Done 23.10: the ingest reads the runner's file, the copy in `/etc/tapingest` is gone.
 - The Docker default address pools contain 172.20.0.0/16, which overlaps the hotspot subnet 172.20.10.0/28. This is harmless for `sim`, whose subnet is fixed. Set `default-address-pools` in `/etc/docker/daemon.json` before more Docker networks are created automatically.

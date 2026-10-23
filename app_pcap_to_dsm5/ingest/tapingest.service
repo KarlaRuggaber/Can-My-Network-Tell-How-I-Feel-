@@ -18,7 +18,8 @@ WorkingDirectory=/opt/can-my-network/app_pcap_to_dsm5
 # Add one --watch per capture folder, e.g. the br-sim instance of tapcap.
 ExecStart=/opt/can-my-network/app_pcap_to_dsm5/.venv/bin/python ingest/tapingest.py \
     --watch /var/lib/tapcap/ready \
-    --devices /etc/tapingest/devices.csv \
+    --watch /var/lib/tapcap/sim/ready \
+    --devices /opt/can-my-network/traffic-runner/config/devices.csv \
     --out /opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet \
     --state /var/lib/tapingest/state.sqlite \
     --exclude-mac 00:00:00:00:00:00

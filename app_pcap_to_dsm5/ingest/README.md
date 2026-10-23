@@ -103,8 +103,8 @@ sudo .venv/bin/pip install -r ingest/requirements.txt
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin tapingest
 sudo usermod -aG tapcap tapingest                      # read /var/lib/tapcap/ready
 sudo install -d -o tapingest -g tapingest -m 755 app/processed_parquet
-sudo install -d -m 755 /etc/tapingest
-sudo cp ingest/devices.example.csv /etc/tapingest/devices.csv   # then edit
+# devices: the unit reads ../traffic-runner/config/devices.csv from the same clone,
+# the list the runner containers are generated from (one list for both)
 
 sudo cp ingest/tapingest.service /etc/systemd/system/   # then set --exclude-mac to the AP's MAC
 sudo systemctl daemon-reload

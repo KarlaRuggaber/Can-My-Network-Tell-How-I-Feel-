@@ -151,6 +151,21 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
 - **Next / open:**
 - **Blockers / notes:**
 
+**Runner integration and first end-to-end pilot:** Fri 23.10
+- **Done:**
+  - Runner moved into the git clone on the gateway; the ingest now watches the br-sim capture folder and reads the runner's `devices.csv` (one list for both).
+  - First end-to-end pilot: `student01_phone` browsed www.nzz.ch for 5 min. Dataset `gw_student_01` appeared in the app; 99.9 % of its rows fall inside the ground-truth block, the visited site and its hosts are in the DNS data. Details: [Deployment.md](Deployment.md) §7.6.
+- **Findings:**
+  - 64 % of the pilot's rows have no domain: the app looks up hostnames by destination IP only, so inbound packets are never labelled (MasterThesisInc §5).
+  - One news site produced 86 distinct DNS names (ads/tracking), so UniqueSLD (C2_F1) needs re-tuning for scripted days.
+  - Chromium background requests (`android.clients.google.com`) count as `google.com` = PRODUCTIVITY.
+- **Next / open:**
+  - Fix the inbound hostname lookup (+ SNI as second source)
+  - Suppress Chromium background traffic in the runner
+  - Decide retention of raw pcaps (`ready/` keeps 2 days, `sim/ready/` forever)
+  - Dataset naming convention (no trailing digits), real devices in the device map
+  - Scheduler; night test with an idle phone; remove temporary access on the gateway
+
 </details>
 
 <details>

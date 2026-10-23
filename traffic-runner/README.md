@@ -382,8 +382,8 @@ Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `
 State 2026-10-16. The same list is in `process/process.md` (week 5).
 
 **Ingest (tapingest, see `process/Deployment.md`)**
-1. **Watch the sim folder.** br-sim pcaps are in `/var/lib/tapcap/sim/ready/`. `tapingest` still watches only `/var/lib/tapcap/ready`, so the simulated devices do not reach the Parquet data yet. Add `--watch /var/lib/tapcap/sim/ready` (Deployment.md §8).
-2. **One devices.csv.** The ingest reads `/etc/tapingest/devices.csv` (currently 4 example devices), the runner reads `config/devices.csv` (2 devices). Both must list the same devices.
+1. ~~**Watch the sim folder.**~~ Done 23.10 (Deployment.md §7.6). br-sim pcaps are in `/var/lib/tapcap/sim/ready/`. `tapingest` still watches only `/var/lib/tapcap/ready`, so the simulated devices do not reach the Parquet data yet. Add `--watch /var/lib/tapcap/sim/ready` (Deployment.md §8).
+2. ~~**One devices.csv.**~~ Done 23.10: the ingest reads `config/devices.csv` from the clone (Deployment.md §7.6). The ingest reads `/etc/tapingest/devices.csv` (currently 4 example devices), the runner reads `config/devices.csv` (2 devices). Both must list the same devices.
    - Either generate the compose file from the ingest file, or copy it into `config/`.
    - The ingest format allows `#` comment lines. The runner's validator rejects them so far.
 3. **Retention.** `/etc/tmpfiles.d/tapcap.conf` has age `2d` on `ready/`, so `systemd-tmpfiles-clean` deletes pcaps older than 2 days (only 170 files remained from 2 Oct on). This contradicts "nothing is deleted automatically" in HardwareSetup and Deployment. The sim folder has no age.
@@ -393,7 +393,7 @@ State 2026-10-16. The same list is in `process/process.md` (week 5).
 
 5. **Chromium background traffic counts as PRODUCTIVITY.** Both containers open TLS connections to `android.clients.google.com`. The pipeline reduces this to `google.com`, which is in the PRODUCTIVITY list (C2_F6). Suppress it in the runner with launch flags before profiles run, or drop these hosts in the ingest.
 6. **Cookie consent.** The runner rejects banners, or leaves them open where there is no reject button. Decide whether the simulated users should accept instead: that is closer to typical users and produces more third-party traffic, and therefore more UniqueSLD (catalog §5.7).
-7. **Gateway location.** The runner currently runs from a copy in `~/traffic-runner`. Since PR #1 is merged, it is also in the git clone `/opt/can-my-network/traffic-runner`. Switch to the clone so that updates are a `git pull`: `docker compose down` in the old folder, then `up -d` in the new one. Carry `logs/ground_truth.csv` over.
+7. ~~**Gateway location.**~~ Done 23.10: the runner runs from `/opt/can-my-network/traffic-runner`, `logs/ground_truth.csv` carried over. `~/traffic-runner` is kept as a backup. The runner currently runs from a copy in `~/traffic-runner`. Since PR #1 is merged, it is also in the git clone `/opt/can-my-network/traffic-runner`. Switch to the clone so that updates are a `git pull`: `docker compose down` in the old folder, then `up -d` in the new one. Carry `logs/ground_truth.csv` over.
 8. **YouTube quality on the laptop role.** On the gateway the laptop again played 240p in the first 2 minutes (the 144p preference applied only on the phone role). Check over a longer run whether it drops to 144p, otherwise force the quality via the player menu.
 
 **Activity catalog**
