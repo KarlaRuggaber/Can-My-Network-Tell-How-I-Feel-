@@ -159,8 +159,9 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - 64 % of the pilot's rows have no domain: the app looks up hostnames by destination IP only, so inbound packets are never labelled (MasterThesisInc §5).
   - One news site produced 86 distinct DNS names (ads/tracking), so UniqueSLD (C2_F1) needs re-tuning for scripted days.
   - Chromium background requests (`android.clients.google.com`) count as `google.com` = PRODUCTIVITY.
+  - Fixed the same day: inbound packets now get the hostname of their source. Rows without a domain 63.8 % → 0.3 %; streaming detection works for the first time on gateway data (0 → 5 742 rows on the 16.10 YouTube run). Thesis datasets unchanged. Details: [Deployment.md](Deployment.md) §7.7.
 - **Next / open:**
-  - Fix the inbound hostname lookup (+ SNI as second source)
+  - SNI as second hostname source only if devices without visible DNS are used (needs the server IP in `feed.ndjson`)
   - Suppress Chromium background traffic in the runner
   - ~~Decide retention of raw pcaps~~ → decided 23.10: keep all (entry below)
   - ~~Dataset naming convention~~ → decided 23.10 (entry below); real devices in the device map

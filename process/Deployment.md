@@ -145,7 +145,7 @@ Pages 01 and 02 now compute a cheap signature of the selected datasets (number o
 | Partitions overwritten | Avoided by processing whole days | Avoided by merging into existing partitions, idempotent via `Capture File` | Done |
 | Identity | Split per client **MAC** (`/etc/tapgw/devices.json`) | Split per **IP**, MAC as fallback (`/etc/tapingest/devices.csv`, shared with the runner) | Done. Real devices need a fixed DHCP lease (`dhcp-host=`) |
 | Background filter (§3) | Drop gateway services, AP/controller traffic, mDNS/SSDP/NTP, broadcasts | Implemented as specified (Section 3.1), AP excluded by MAC, drop counts per rule in the state db | Done |
-| SNI in hostnames (§5) | Patch `enrich_with_hostnames` + SNI column | Not implemented | Open |
+| SNI in hostnames (§5) | Patch `enrich_with_hostnames` + SNI column | Inbound lookup implemented (Section 7.7); SNI not added (not needed while DNS is visible, feed lacks the server IP) | Inbound: done. SNI: open, low priority |
 | Output location | `/var/lib/tapcap/parquet`, mounted read-only | `app/processed_parquet` in the repo, mounted read-write | Done. Read-write so the upload page keeps working |
 | Hosting | Option A: app on the gateway via SSH tunnel | Option A, Docker, Streamlit bound to 127.0.0.1 | Done |
 | Feature cache | Press "Refresh cached day metrics" | Detected automatically | Done |
@@ -273,11 +273,39 @@ Karla's runner (`traffic-runner/`, merged on 16.10) had been running on the gate
 | Domains in the app (its own `enrich_with_hostnames`) | Top SLDs: jwpsrv.com, nzz.ch, static-nzz.ch, googlesyndication.com, google.com, adnz.co … |
 | Rows without a domain | **63.8 %** |
 
-**Finding 1: incoming packets get no domain.** Outbound rows (phone → server, 7 341) have a domain in 100 % of cases, inbound rows (server → phone, 13 421) in only 1.3 %, although all of them come from servers whose domain is known from the outbound rows. The cause is the one described in MasterThesisInc §5: `enrich_with_hostnames` looks up only the destination IP. Every downlink-based metric (streaming, downstream volume per category) therefore sees almost nothing. Fixing the lookup (remote IP regardless of direction) is now the most important data-quality item.
+**Finding 1: incoming packets get no domain.** Outbound rows (phone → server, 7 341) have a domain in 100 % of cases, inbound rows (server → phone, 13 421) in only 1.3 %, although all of them come from servers whose domain is known from the outbound rows. The cause is the one described in MasterThesisInc §5: `enrich_with_hostnames` looks up only the destination IP. Every downlink-based metric (streaming, downstream volume per category) therefore sees almost nothing. Fixed the same day, see Section 7.7.
 
 **Finding 2: one page visit creates many domains.** One news site produced 86 distinct DNS names, mostly ads and tracking. This confirms catalog pitfall §5.7: UniqueSLD (C2_F1, threshold < 40) will never fire on scripted days without re-tuning.
 
 **Finding 3: Chromium background traffic.** The run contains `android.clients.google.com` and `accounts.google.com`, which the app reduces to `google.com`, a PRODUCTIVITY domain (C2_F6). This is Karla's runner point 5; it should be suppressed in the runner.
+
+### 7.7 Hostnames for inbound packets (23.10.2026)
+
+**Change** (commit `27b0cbe`, `app/metrics/common.py`). `enrich_with_hostnames` now looks up the remote side of each packet: the destination for outgoing packets, the **source** for incoming ones (public source, private destination). Rows without a private client keep the old behaviour (destination lookup). The thesis code looked up the destination only, so no inbound packet ever got a hostname, and `streaming_inbound_mask` (C1/C2 streaming metrics), which needs a domain on inbound rows, could never match on gateway data.
+
+**Tests.** `app_pcap_to_dsm5/tests/test_hostnames.py` (4 cases: outbound and inbound get the server name, DNS rows keep their own name, public-to-public rows unchanged, data without a source column). All pass; on the old code exactly the inbound case fails. App pages 01, 02 and 03 run headless without errors on the pilot data.
+
+**Effect, same data evaluated with the old and the new code:**
+
+| Data | Measure | Old | New |
+| --- | --- | --- | --- |
+| Pilot 23.10 (browse nzz.ch) | Rows without SLD | 63.8 % | 0.3 % |
+| | Inbound rows without SLD | 100 % | 0 % |
+| | C2_F6 ProductivityHits | 436 | 875 |
+| | F5_RevisitRatio | 0.9943 | 0.9979 |
+| Karla's runs 16.10 (incl. YouTube) | Rows without SLD | 68.1 % | 0.3 % |
+| | Streaming inbound rows | 0 | 5 742 |
+| | C2_F5 PassiveActiveByteRatio | 0.0 | 1.76 |
+| | C2_F7 / C7_F7 SocialOutgoingShareUp | 1.0 | 0.39 |
+| | C2_F6 ProductivityHits | 1 761 | 3 519 |
+| Thesis ONU datasets (game, instant-message, mail, video, web-browsing) | All measures | | **identical** |
+| Thesis BRAS datasets | No IP columns, function returns early | | identical |
+
+All other metric values of these days are unchanged. The thesis datasets are not affected because their captures have no private client addresses, so the thesis results stay reproducible. On gateway data the change is a deliberate methodology change compared to the thesis and must be reported as such. Two side effects to keep in mind: ProductivityHits roughly doubles, because the downlink from `google.com` now counts too (this includes Chromium's background traffic, runner point 5), and the share values C2_F7/C7_F7 were stuck at 1.0 before.
+
+**SNI not added.** DNS already labels 99.7 % of the rows of the runner devices, so a second source would add almost nothing for them. `feed.ndjson` records client IP and SNI but **not the server IP**, so its names cannot be mapped to packets. Parsing the TLS ClientHello in the ingest would miss QUIC and ClientHellos split across segments (Chrome's post-quantum key share makes them larger than one segment). SNI becomes relevant for devices whose DNS the gateway does not see (DNS-over-HTTPS, iCloud Private Relay); then add `-e ip.dst` to `tapfeed` and join the feed in the ingest.
+
+**Deployment.** `git pull` on the gateway, app image rebuilt, container recreated. The feature cache of the gateway data (one CSV, computed with the old lookup) was moved to `/var/tmp/feature_cache-before-hostfix-202610230709/`, because the cache only notices new data, not new code. Check on the gateway afterwards: inbound rows of the pilot without SLD 98.7 % → 0.5 %.
 
 ## 8. Operating the system
 
@@ -325,6 +353,8 @@ sudo systemctl restart tapingest                               # if ingest/ chan
 cd /opt/can-my-network/app_pcap_to_dsm5/app && sudo docker compose -f docker-compose.yml -f docker-compose.gateway.yml up -d --build   # if app/ changed
 ```
 
+If the update changes how metrics are computed (`app/metrics/`), also move the files in `app/feature_cache/` away: the cache is invalidated by new data, not by new code, and would keep serving the old values.
+
 The clone is owned by root, so use `sudo git -C …` (as kathy, plain `git` refuses with "dubious ownership"). If `tapingest.service` in the repo changed, copy it again and re-apply the local settings (`--since`, `--exclude-mac`), see the appendix. If the image build fails on a pip download, retry it; the running container keeps working meanwhile.
 
 ### Re-process data
@@ -366,7 +396,8 @@ sudo systemctl start tapingest
 | 17 | Data | Window 17:55 missing | Phone idle, all packets were background and dropped | Expected behaviour, no fix needed |
 | 18 | Integration | Runner traffic did not reach the Parquet data | Ingest watched only `/var/lib/tapcap/ready`; ingest and runner each had their own `devices.csv` | Second `--watch`, ingest reads the runner's `devices.csv` from the clone (Section 7.6) |
 | 19 | Deployment | The clone on the gateway did not contain `traffic-runner/` | Nobody had pulled since 16.10; the runner ran from a copy | `git pull`, runner moved into the clone |
-| 20 | Data | 63.8 % of the pilot's rows without a domain | App looks up hostnames by destination IP only, so inbound packets never get one | Open, see open issue 7 |
+| 20 | Data | 63.8 % of the pilot's rows without a domain | App looks up hostnames by destination IP only, so inbound packets never get one | Remote-side lookup (Section 7.7): 0.3 % |
+| 21 | App | After a metric change, the app would still show old values | The feature-cache CSV is only invalidated by newer partitions | Move `feature_cache/` away after metric changes (Section 8) |
 
 ## 10. Security notes
 
@@ -384,7 +415,7 @@ sudo systemctl start tapingest
 4. ~~br-sim integration~~ Done 23.10 (Section 7.6).
 5. ~~First end-to-end pilot~~ Done 23.10 (Section 7.6): 99.9 % of the rows inside the ground-truth block, the visited site and its hosts in the DNS data.
 6. **Validation 3–6** from MasterThesisInc §8 on real data: packet counts vs. `capinfos`, a known action at a noted time, plausible domain names, night silence of an unused phone.
-7. **Hostnames for inbound packets** (MasterThesisInc §5): look up the remote IP regardless of direction in `enrich_with_hostnames`. In the pilot this would give a domain to ~98 % of the 64 % unlabelled rows. SNI from `feed.ndjson` as a second source belongs to the same change. It changes metric values compared to the thesis, so record it in the report.
+7. ~~Hostnames for inbound packets~~ Done 23.10 (Section 7.7). Still open, only needed for devices without visible DNS: SNI as a second source (`-e ip.dst` in `tapfeed`, then join in the ingest).
 8. **Throughput:** 1500–3500 packets/s on the mini-PC. Enough for a few devices; a high-quality video stream alone can reach 500–1000 packets/s. Watch "still pending" in the log during runner tests.
 9. **Retention policy.** Decided 23.10: raw pcaps are kept in both folders (the `2d` age on `ready/` was removed, HardwareSetup §15). Still open: a policy for Parquet and for when the disk fills up.
 10. **Real devices in the device map.** The ingest reads one `devices.csv`, which also generates runner containers. Real test phones need either a second `--devices` file or a role the runner's generator skips.
