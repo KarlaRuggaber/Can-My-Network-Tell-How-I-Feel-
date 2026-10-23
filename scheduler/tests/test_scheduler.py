@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from scheduler import cli, devices, dist, output, planner, spec
+from scheduler import catalog, cli, devices, dist, output, planner, spec
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNNER_DEVICES = ROOT.parent / "traffic-runner" / "config" / "devices.csv"
@@ -509,8 +509,8 @@ def test_mdd_suicidality_sequence(seed):
             n = int(e.block_id.rsplit("-s", 1)[1])
             assert e.activity == ["repeat_visit_loop", "crisis_resource_visit", "sh_adjacent_lookup"][n - 1]
             if e.activity == "sh_adjacent_lookup":
-                assert e.lookups == "1-3"
-                assert "--lookups 1-3" in output.command(output.rows(
+                assert e.lookups in {"1", "2", "3"}   # drawn from 1-3 per row, passed as one number
+                assert f"--lookups {e.lookups}" in output.command(output.rows(
                     planner.Plan(plan.seed, plan.profile, [], [], [e], plan.horizon), ROLES, "gw_x_a")[0])
 
 
@@ -594,3 +594,23 @@ def test_spec_rejects_bad_clinical_constructs(tmp_path):
                          "sequence: [{activity: crisis_resource_visit, probability: 0.5}]}\n"))
     with pytest.raises(spec.SpecError, match="unless_after"):
         spec.load(broken("  anchors:\n    wake: [{day_types: all, shift: 10m, unless_after: nope}]\n"))
+
+
+def test_lookups_are_drawn_per_row():
+    seen = Counter()
+    for seed in range(20):
+        for e in clinical("mdd-severe-suicidality", seed).entries:
+            if e.activity == "sh_adjacent_lookup":
+                seen[e.lookups] += 1
+    assert set(seen) == {"1", "2", "3"}
+    assert make("mdd-severe-suicidality", 5, days=29, baseline_days=14).entries == \
+        make("mdd-severe-suicidality", 5, days=29, baseline_days=14).entries   # reproducible
+
+
+def test_options_reach_the_runner_only_when_it_knows_them(monkeypatch):
+    plan = clinical("social-anxiety-moderate", 1)
+    rows = [r for r in output.rows(plan, ROLES, "gw_x_a") if r["options"]]
+    assert rows and all(r["options"] == "mic_share=0.1" for r in rows)
+    assert "--mic-share" not in output.command(rows[0])
+    monkeypatch.setitem(catalog.RUNNER_OPTION_FLAGS, "mic_share", "--mic-share")
+    assert output.command(rows[0]).endswith("--mic-share 0.1")

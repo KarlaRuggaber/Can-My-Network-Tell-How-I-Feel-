@@ -27,7 +27,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from . import catalog
-from .dist import Dist, sample_count
+from .dist import NUMBER, Dist, parse, sample_count
 from .spec import WEEKDAYS, Block, Freq, Profile, Step, TimeRef
 
 UTC = timezone.utc
@@ -562,8 +562,9 @@ def _default_mix(activity: str) -> dict[str, float] | None:
     return {key: 1.0} if key else None
 
 
-def _entry(o: _Occ, s, e, block_id, *, activity: str | None = None, step: Step | None = None) -> Entry:
-    """A plan row of occurrence `o`. `activity`: a part of a split block; `step`: a step of a sequence."""
+def _entry(o: _Occ, s, e, block_id, seed: int, *, activity: str | None = None, step: Step | None = None) -> Entry:
+    """A plan row of occurrence `o`. `activity`: a part of a split block; `step`: a step of a sequence.
+    `lookups` is drawn here (one number per row), so the plan says exactly what the runner does."""
     b, ctx = o.block, o.ctx
     if step is not None:
         act, mix, pages, dwell, lookups = step.activity, step.mix, step.pages, step.dwell, step.lookups
@@ -571,6 +572,8 @@ def _entry(o: _Occ, s, e, block_id, *, activity: str | None = None, step: Step |
         act, mix, pages, dwell, lookups = activity, None, None, None, None
     else:
         act, mix, pages, dwell, lookups = b.activity, b.mix, b.pages, b.dwell, b.lookups
+    if lookups is not None:
+        lookups = str(sample_count(rng_for(seed, block_id, "lookups"), parse(lookups, NUMBER)))
     return Entry(start=s, end=e, role=b.device, activity=act, block_id=block_id, profile_block=b.id,
                  day=ctx.date, phase=ctx.phase.name, profile=ctx.phase.profile.name,
                  mix=mix or _default_mix(act), pages=pages, dwell=dwell, lookups=lookups,
@@ -599,7 +602,7 @@ def _place(o: _Occ, board: _Board, plan: Plan) -> list[Entry]:
         if not segs:
             plan.dropped["no free time in window"] += 1
             return []
-        return [_entry(o, s, e, base_id if len(segs) == 1 else f"{base_id}{_letter(i)}", activity=act)
+        return [_entry(o, s, e, base_id if len(segs) == 1 else f"{base_id}{_letter(i)}", plan.seed, activity=act)
                 for i, (s, e, act) in enumerate(segs)]
     t = o.start
     while True:
@@ -616,10 +619,10 @@ def _place(o: _Occ, board: _Board, plan: Plan) -> list[Entry]:
             break
         t = max(p.end for p in c)
     if o.steps is None:
-        return [_entry(o, t, e, base_id)]
+        return [_entry(o, t, e, base_id, plan.seed)]
     out = []
     for i, st, dur in o.steps:   # back to back; -s<n> = position in the profile's sequence
-        out.append(_entry(o, t, t + dur, f"{base_id}-s{i}", step=st))
+        out.append(_entry(o, t, t + dur, f"{base_id}-s{i}", plan.seed, step=st))
         t += dur
     return out
 

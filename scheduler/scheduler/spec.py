@@ -414,7 +414,16 @@ def _steps(steps, device: str, what: str) -> tuple[Step, ...]:
 
 
 def _opt_str(d: dict, key: str) -> str | None:
-    return str(d[key]) if key in d else None
+    if key not in d:
+        return None
+    if key == "lookups":   # drawn per plan row (planner), so it must be a count: 2, 1-3, Poisson(2)
+        try:
+            lo = parse(d[key], NUMBER).bounds()[0]
+        except DistError as e:
+            raise SpecError(f"lookups: {e}") from None
+        if lo < 1:
+            raise SpecError(f"lookups must be >= 1, got {d[key]}")
+    return str(d[key])
 
 
 def _block(d: dict, index: int, prof: dict) -> Block:

@@ -2,7 +2,7 @@
 
 Turns a profile (its §9 "Script specification") and a seed into the **ground-truth plan**: one row per scripted block, with absolute start/end times, device, activity and mix. The same plan drives the live runs (the runner executes it block by block) and, later, the synthetic snippet stitching. Every row has a `block_id`, which the runner writes into `ground_truth.csv`. A reported likelihood can therefore be traced back through the day's rows to the profile block that produced them.
 
-This folder holds the scheduler only. It reads `traffic-runner/config/devices.csv` but never changes it, and it does not execute anything (there is no executor yet, see §6).
+This folder holds the scheduler and the executor that replays a plan live on the gateway (§5.1). It reads `traffic-runner/config/devices.csv` but never changes it.
 
 ```
 scheduler/
@@ -17,6 +17,7 @@ scheduler/
     devices.py           devices.csv -> device names per dataset and role
     planner.py           day contexts, occurrences, conflict resolution
     output.py            plan CSV + runner commands
+    executor.py          python -m scheduler execute: replays the commands live (stdlib only)
   tests/                 pytest
 ```
 
@@ -151,7 +152,7 @@ blocks:                                # list order = priority for overlaps (§3
 | `device`, `activity` | Role (`phone`/`laptop`) and catalog §2 activity ID. The catalog's device column is enforced |
 | `mix` | Catalog §3 categories with weights. Required for `phone_check`, `browse`, `repeat_visit_loop`; the other activities default to their own category (`study_block` → `study`, ...) |
 | `pages`, `dwell` | Passed to the runner (`--pages`, `--dwell`). For `phone_check`, `pages` makes `duration` an upper bound (catalog §2) |
-| `lookups` | `sh_adjacent_lookup`: number of DNS lookups (`--lookups 1-3`) |
+| `lookups` | `sh_adjacent_lookup`: number of DNS lookups, a count or range (`1-3`). The scheduler draws one number per row and passes it (`--lookups 2`) |
 | `noise: false` | The day's duration noise (§3) does not apply, for durations a threshold depends on (insomnia's ≤ 5 min night bursts) |
 | `with: music_background` | Companion on the same device for the whole block (and each of its pieces) |
 | `voice: true` | `gaming_session` with a parallel `voice_call` on `discord` |
@@ -227,8 +228,8 @@ The rules of catalog §1, plus the decisions the catalog leaves open (marked ⚑
 | `block_id` | `<yyyymmdd>-<profile block>-<nn>[a-z][-s<n>][-bg\|-voice]`, unique within the plan, e.g. `20261026-work_pm-01b`. Letters = pieces (or `split` parts) of a block; `-s<n>` = step n of a sequence (n = position in the profile, so `-s2` is always the same step); `-bg`/`-voice` = companions |
 | `mix` | Runner syntax `news:0.4,messaging:0.4` (empty for calls, music, away) |
 | `duration` | Seconds (`--duration`) |
-| `pages`, `dwell`, `lookups` | Runner overrides, where set |
-| `platform`, `options` | Call platform; recorded options without a runner flag yet (`mic_share=0.1`) |
+| `pages`, `dwell`, `lookups` | Runner overrides, where set. `lookups` is drawn per row (e.g. `2` from the profile's `1-3`), so the plan records exactly what the runner does |
+| `platform`, `options` | Call platform (passed as `--platform`; the runner accepts it and runs every call on the peer's Jitsi); options (`mic_share=0.1`). An option reaches the runner only once it is listed in `catalog.RUNNER_OPTION_FLAGS`: add `"mic_share": "--mic-share"` there when the runner has the flag. Until then it is recorded only, because an unknown flag makes the runner exit without a log row |
 | `day` | Day the block belongs to (a night block of day d can start on d+1) |
 | `phase` | `warmup`, `baseline` or `profile` |
 | `dataset`, `profile_block`, `companion_of` | Dataset; block ID in the profile YAML; host `block_id` of a companion |
@@ -246,12 +247,52 @@ The first eight columns are the runner's ground-truth columns (catalog §1) with
 
 ## 5. How the plan is consumed
 
-**Live (runner, executor still to be written).** The executor reads `plan.commands.tsv`. It waits until each `start` (absolute times, so a restart can skip what is past) and launches the command in the background, because blocks on different devices overlap (and companions start together with their host). It doesn't wait for a command before starting the next one. The runner appends one row per block to `traffic-runner/logs/ground_truth.csv` with the real end and `status`. After the run, join log and plan on `block_id`:
-- missing rows = not executed
-- `status` ≠ `ok` = failed or stub
-- `end` earlier than planned = `phone_check` done or video over
+### 5.1 Live: the executor
 
-Runner state 23.10 (after Karla's `04d776d`): calls and `gaming_session` run against the self-hosted peer (`peer-vm/`, Jitsi plus a WebSocket game); every `--platform` maps to it. Only `messaging` and `social_post` are still stubs (they need test accounts): their rows log `not_implemented` and produce no traffic. Measured over 10 seeds that is **5 % of the student's planned activity time** (messaging 4 %, posting 0.5 %) and **3 % of the 9-to-5's** (messaging). `away` is the executor's job: no runs during the period (the runner README also mentions disconnecting the container from `br-sim`).
+`python -m scheduler execute` reads `plan.commands.tsv` and starts each block at its absolute `start` as its own process: `sudo /opt/can-my-network/traffic-runner/scripts/run-activity.sh <device> …` (the script detaches stdin, so the processes don't hang in the background). Blocks on different devices run in parallel; a companion starts together with its host. Away rows are comments in the file: away means no run, and an idle runner container sends nothing, so that already looks like away in the data. The executor needs only the standard library, so the gateway's `python3` is enough. Make the plan anywhere with PyYAML and copy the `.commands.tsv` over.
+
+```bash
+python3 -m scheduler execute --commands /var/lib/traffic-executor/gw_student_a.commands.tsv \
+    --state /var/lib/traffic-executor/gw_student_a.state.jsonl --log-dir /var/log/traffic-executor/gw_student_a
+python3 -m scheduler execute --commands … --state … --status      # progress: started, late, missed, exit codes, next block
+python3 -m scheduler execute --commands … --state … --dry-run     # what would happen now; writes nothing
+```
+
+| Rule | How |
+|---|---|
+| Time | Absolute instants from the plan (with offset), compared in UTC. The switch to winter time on Sun 25.10.2026 (the first run's warm-up day) needs nothing special: 02:30+02:00 runs 40 min before 02:10+01:00 (tested) |
+| Never twice | Each block ID goes into the state file (JSON lines, fsync) **before** its process starts. After a restart or reboot every block with an entry is skipped, also one whose process the reboot killed (its ground-truth row is then missing). A second executor on the same state file is refused (file lock) |
+| Late start (executor was down) | Up to `--grace` (60 s) after `start`: runs as planned. Later: runs with the time left (`--duration` = end − now) if at least `--min-remaining` (5 min) is left, otherwise recorded as `missed`. `--no-catch-up`: every block later than the grace is missed |
+| Stopping | SIGTERM stops the executor, not the running blocks (own session; in systemd `KillMode=process`), so their ground-truth rows are written |
+| Output | One log file per block with `--log-dir`, otherwise the executor's stdout (journald). Exit codes go into the state file (runner: 0 ok, 1 error, 2 usage, 3 not_implemented) |
+
+One executor per plan (= per dataset), e.g. as a systemd template unit `/etc/systemd/system/traffic-executor@.service`:
+
+```ini
+[Unit]
+Description=Traffic executor for %i
+After=docker.service network-online.target
+
+[Service]
+WorkingDirectory=/opt/can-my-network/scheduler
+ExecStart=/usr/bin/python3 -m scheduler execute --commands /var/lib/traffic-executor/%i.commands.tsv --state /var/lib/traffic-executor/%i.state.jsonl --log-dir /var/log/traffic-executor/%i
+Restart=on-failure
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`sudo systemctl enable --now traffic-executor@gw_student_a`. After a reboot systemd starts it again, and the state file makes it continue where it stopped.
+
+**Deploys.** `traffic-runner/scripts/deploy.sh` refuses while an activity runs, and a block that starts while the containers are being recreated fails (no ground-truth row). Deploy in a gap: `sudo systemctl stop traffic-executor@…`, wait until no activity runs (`--status`, or deploy.sh's own check), deploy, start the executor again. Blocks that fell into the gap run late or are missed, as above.
+
+**After the run**, join the runner's `traffic-runner/logs/ground_truth.csv` with the plan on `block_id`:
+- missing rows = not executed (see the state file: `missed`, or started but interrupted)
+- `status` ≠ `ok` = failed or stub
+- `end` earlier than planned = `phone_check` done or video over; `start` later than planned = a late start
+
+Runner state 23.10 (after Karla's `04d776d`): calls and `gaming_session` run against the self-hosted peer (`peer-vm/`, Jitsi plus a WebSocket game); every `--platform` maps to it. Only `messaging` and `social_post` are still stubs (they need test accounts): their rows log `not_implemented` and produce no traffic. Measured over 10 seeds that is **5 % of the student's planned activity time** (messaging 4 %, posting 0.5 %) and **3 % of the 9-to-5's** (messaging). Away needs nothing from the executor: no run is the same as away in the data (Karla, 23.10).
 
 **Synthetic (later).** The synthesizer reads `plan.csv` directly. For each row it takes a recorded snippet of the same `activity_id`, role and `mix` (from the live runs' PCAPs, cut by the ground-truth rows). It trims or loops the snippet to `duration`, shifts it to `start` and rewrites the addresses to the device's IP/MAC from `devices.csv`. Nothing is added outside planned rows: idle stays empty and away is a gap. The synthetic PCAPs then go through the same ingest (`tapingest --once`) as the live ones. Every packet stays traceable to a `block_id` → profile block → profile, which is the traceability the project objective asks for.
 
@@ -267,7 +308,7 @@ Runner state 23.10 (after Karla's `04d776d`): calls and `gaming_session` run aga
 | `tier2-clinical/mdd-severe-suicidality` | ✓ | defaults of §8 (23.10). Sensitive: review with Lukasz before use (profile header) |
 | `tier2-clinical/social-anxiety-moderate` | ✓ | defaults of §8 (23.10) |
 
-Not done: an executor (§5), and the synthesizer.
+Not done: the synthesizer.
 
 ## 7. Ambiguities in the profile markdown (decisions needed)
 
@@ -315,11 +356,11 @@ Their §9 patches use constructs without defined semantics. These defaults were 
 - `then: "idle_connected until wake"`: nothing is scheduled between the early waking and `wake`; `wake_check` still runs. The morning after an early waking has no wake shift (`unless_after`).
 - `rumination` `count_per_day` → `count`; window 14:00–02:00, clipped to sleep.
 - `evening_stream` `may_cross_midnight`: may pass midnight, still ends by sleep.
-- `suicidality_overlay` → a `sequence` block: steps back to back on the phone; the loop runs with p = 0.7, the crisis pages always, the DNS lookups with p = 0.5 (`--lookups 1-3`, runner since `4132a06`). 2–4 episodes per window on different nights, 23:00–04:00, also after sleep onset. Rows carry `flag=sensitive`. The loop has no mix in §9; it uses the rumination mix.
+- `suicidality_overlay` → a `sequence` block: steps back to back on the phone; the loop runs with p = 0.7, the crisis pages always, the DNS lookups with p = 0.5 (1–3, drawn per episode and passed as `--lookups N`; runner since `4132a06`). 2–4 episodes per window on different nights, 23:00–04:00, also after sleep onset. Rows carry `flag=sensitive`. The loop has no mix in §9; it uses the rumination mix.
 - `weekend_anchors`: weekend wake N(09:30, 30m), Fri/Sat sleep N(00:30, 45m), then the shifts.
 
 **Social anxiety**
-- `group_call` `camera: false`, `mic: "on only 10% of the time"`: the person attends mandatory calls with the camera off and stays muted except for ~10 % of the call. Camera off → `voice_call`. The mic share is recorded as `options: mic_share=0.1`. Effect on the data only once calls exist in the runner and it has an option for it (e.g. `--mic-share 0.1`: the fake microphone sends audio only in that share of the time).
+- `group_call` `camera: false`, `mic: "on only 10% of the time"`: the person attends mandatory calls with the camera off and stays muted except for ~10 % of the call. Camera off → `voice_call`. The mic share is recorded as `options: mic_share=0.1`. Calls run since 23.10; the share reaches the runner as `--mic-share 0.1` as soon as Karla's flag exists and is listed in `catalog.RUNNER_OPTION_FLAGS` (§4).
 - `going_out` `keep_per_window: 0-1` + `home_instead_of_out` `replaces: going_out`: the baseline's going-out evenings are drawn as for the student. 0–1 per window are kept, the others are spent at home in the would-be period.
 - `split: {video_stream: .5, gaming_session: .3, social_passive: .2}`: consecutive parts by share, in this order (option b).
 - On a home evening the laptop evening blocks (`gaming`, `evening_stream`) give way (`cancels`), the phone evening blocks stay, and sleep onset = end of the home block (`sleep_when_replaced: end`).

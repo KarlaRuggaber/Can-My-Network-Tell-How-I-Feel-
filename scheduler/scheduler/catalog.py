@@ -44,6 +44,12 @@ SPLITTABLE = {"work_block", "study_block"}
 COMPANIONS = {"music_background"}
 
 CALL_PLATFORMS = {"zoom", "teams", "jitsi", "discord"}
+
+# Block `options` the runner understands, option -> runner flag. Options not listed here are only recorded in the
+# plan: an unknown flag would make the runner exit with a usage error and write no ground-truth row.
+# Add "mic_share": "--mic-share" once the runner has it (Karla, announced 23.10).
+RUNNER_OPTION_FLAGS: dict[str, str] = {}
+
 GAMING_VOICE_PLATFORM = "discord"
 
 

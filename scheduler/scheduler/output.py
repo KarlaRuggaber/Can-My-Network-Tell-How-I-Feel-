@@ -63,6 +63,10 @@ def command(row: dict[str, str]) -> str:
         args += ["--lookups", row["lookups"]]
     if row["platform"]:
         args += ["--platform", row["platform"]]
+    for opt in filter(None, row["options"].split(";")):
+        key, _, value = opt.partition("=")
+        if key in catalog.RUNNER_OPTION_FLAGS:
+            args += [catalog.RUNNER_OPTION_FLAGS[key], value]
     return shlex.join(args)
 
 
