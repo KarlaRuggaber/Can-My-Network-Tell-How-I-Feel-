@@ -178,6 +178,9 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
     - `music_background` source: SRF radio live pages, which count as srf.ch = STREAMING.
     - `work`/`study` sets: `notion.so` and `office.com` now redirect to `notion.com` / `m365.cloud.microsoft`, which are in no thesis list. They were replaced by list domains that load without login (github, gitlab, trello, asana, todoist, microsoft.com).
   - **Runner updated to match:** new `phone_check` rule, radio page playback, cookie rejection now also covers 20min. 108 tests pass. Live check on the laptop: radio page plays, `work`/`study` pages load, a 3-min `phone_check` opened 6 pages.
+  - **Five more activities implemented**, all login-free: `social_passive`, `work_block`, `study_block` (incl. PDF downloads), `crisis_resource_visit`, `sh_adjacent_lookup`. Only `gaming_session`, `away` (scheduler) and the account-based activities remain stubs. 163 tests pass. Each one was run live once on the laptop.
+  - **Deploy (after Thierry's note):** runner config is no longer mounted into the containers but baked into the image, so a `git pull` can no longer mix new config with old runner code. New `traffic-runner/scripts/deploy.sh` does pull, rebuild, recreate and tests in one step, and refuses while activities are running. Deployment.md §8 lists it.
+  - **Finding:** `social_passive` on Reddit costs about 33 MiB/min because the feed auto-plays videos, so a 1–2 h block is 2–4 GB of hotspot volume. **Decided 23.10: accepted.** Real users get the same autoplay, and the data volume is not a problem.
 - **Next / open:**
   - ~~Rename the devices~~ done 23.10: `student_a_phone`/`student_a_laptop` → `gw_student_a`; the validator enforces the convention.
   - ~~Deploy the new runner version~~ done 23.10. The ingest picked up the new device list without a restart, and a test run landed in `gw_student_a`.

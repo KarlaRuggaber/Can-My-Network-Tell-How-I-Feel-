@@ -29,7 +29,7 @@ def test_stub_logs_not_implemented(logdir):
 
 
 def test_catalog_only_activity_logs_not_implemented(logdir):
-    assert cli.main(BASE + ["--activity", "work_block"]) == cli.EXIT_NOT_IMPLEMENTED
+    assert cli.main(BASE + ["--activity", "gaming_session"]) == cli.EXIT_NOT_IMPLEMENTED
     assert rows(logdir)[0]["status"] == "not_implemented"
 
 

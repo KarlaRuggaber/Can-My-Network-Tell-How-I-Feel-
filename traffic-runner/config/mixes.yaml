@@ -114,6 +114,15 @@ video:
     - podcast deutsch
   result_pool: 5
 
+# study_block PDF downloads (catalog §2: 1-5 MB), chosen with the run's RNG. The runner
+# opens `page` and fetches `pdf` from it (same origin), so the browser downloads the file.
+# arxiv.org is in no thesis list.
+documents:
+  pdfs:
+    - {page: "https://arxiv.org/abs/1811.10154", pdf: "https://arxiv.org/pdf/1811.10154"}  # Rudin 2019, 1.4 MB
+    - {page: "https://arxiv.org/abs/1706.03762", pdf: "https://arxiv.org/pdf/1706.03762"}  # 2.2 MB
+    - {page: "https://arxiv.org/abs/2511.12772", pdf: "https://arxiv.org/pdf/2511.12772"}  # CareNet (Nef & Rodrigues), 5.4 MB
+
 # music_background (catalog §3 `audio`), chosen with the run's RNG:
 #   kind: page    SRF radio live page: the page load counts as srf.ch (STREAMING); the
 #                 stream comes from *.akamaized.net (no thesis list); lowest quality level

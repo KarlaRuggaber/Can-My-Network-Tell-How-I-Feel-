@@ -52,6 +52,25 @@ class FakeDriver:
         self.calls.append(("dwell", round(seconds, 3), len(scrolls)))
         self.clock.sleep(seconds)
 
+    def scroll_feed(self, seconds, rng):
+        loads = 0
+        t = 0.0
+        while t < seconds:
+            t += rng.uniform(5.0, 15.0)
+            loads += 1
+        self.calls.append(("feed", round(seconds, 3), loads))
+        self.clock.sleep(seconds)
+
+    def download(self, page_url, file_url, timeout):
+        host = self._load(page_url, timeout)
+        self.calls.append(("download", file_url))
+        self.clock.sleep(min(3.0, timeout))
+        return host
+
+    def dns_lookup(self, name):
+        self.calls.append(("dns", name))
+        return False
+
     def follow_link(self, rng, timeout):
         if not self.url:
             return None

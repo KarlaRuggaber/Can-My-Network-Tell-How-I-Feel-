@@ -171,6 +171,7 @@ class Mixes:
     video: dict = field(default_factory=dict)
     audio: dict = field(default_factory=dict)
     consent: dict = field(default_factory=dict)
+    documents: dict = field(default_factory=dict)
 
 
 def load_mixes(path: Path | None = None) -> Mixes:
@@ -202,7 +203,8 @@ def load_mixes(path: Path | None = None) -> Mixes:
         categories[cat] = sites
     if errors:
         raise ConfigError("\n".join(errors))
-    return Mixes(categories, data.get("video") or {}, data.get("audio") or {}, data.get("consent") or {})
+    return Mixes(categories, data.get("video") or {}, data.get("audio") or {}, data.get("consent") or {},
+                 data.get("documents") or {})
 
 
 @dataclass(frozen=True)

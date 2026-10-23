@@ -20,7 +20,7 @@ This is only the runner. It does not cover the scheduler (profile → 14-day pla
 | Device identity | Fixed `ipv4_address` and `mac_address` per container, taken from `config/devices.csv` |
 | Firewall and NAT | Docker runs with `"iptables": false`. All rules stay in `/etc/nftables.conf`. br-sim may reach DNS, ping and the internet, nothing else, and it is never forwarded to eno1. |
 | DNS | `config/resolv.conf` (`nameserver 10.42.1.1`) is mounted over `/etc/resolv.conf`. Every lookup goes from the container IP straight to dnsmasq, so `log-queries` and tapfeed attribute it to the device. |
-| Container lifecycle | Containers idle with `sleep infinity`. A run is `scripts/run-activity.sh <device> ...` (a `docker compose exec` with stdin detached, see section 3). Each run starts a **new browser process with a fresh context**, so no DNS, HTTP or cookie state carries over between blocks (catalog §5.2). |
+| Container lifecycle | Containers idle with `sleep infinity`. A run is `scripts/run-activity.sh <device> ...` (a `docker compose exec` with stdin detached, see section 3). Each run starts a **new browser process with a fresh context**, so no DNS, HTTP or cookie state carries over between blocks (catalog §5.2). Code **and config** are baked into the image (`COPY config`); only `logs/` and `/etc/resolv.conf` are mounted. A `git pull` alone therefore never changes the running runner. Deploy with `scripts/deploy.sh` (section 7). |
 | Randomness | All randomness comes from `random.Random(f"{seed}/{block_id}")`. The same seed and block ID give the same sequence of choices. |
 
 ```
@@ -92,6 +92,7 @@ sudo scripts/run-activity.sh student_a_phone \
 | `--mix` | `news,social_passive` (equal weights) or `news:.2,social_passive:.4` (as in the profiles). Categories come from `config/mixes.yaml`. |
 | `--seed`, `--profile`, `--block-id` | Logged as given. `seed` and `block-id` seed the RNG. |
 | `--pages`, `--dwell` | Profile overrides of the catalog defaults (§1 "Frequency keys"), e.g. `--pages 2-4 --dwell 1m-3m` |
+| `--lookups` | Number of DNS lookups for `sh_adjacent_lookup`, e.g. `--lookups 1-3` (profile key `lookups`) |
 | `--dry-run` | No network, prints the plan |
 
 **Exit codes:**
@@ -113,8 +114,13 @@ sudo scripts/run-activity.sh student_a_phone \
 | `video_stream` | ok | Picks a playable `streaming` site with the RNG and plays at the **lowest quality**. The decoded resolution is logged to stderr. Runs to the end of the video or the block. **YouTube:** search for a term from `mixes.yaml`, play one of the first 5 results; 144p preference plus `setPlaybackQualityRange('tiny')`, re-applied every check. **SRF:** one of the first 5 on-demand videos on the Play SRF page, lowest video.js quality level (270p in the tests). | 30–120 min |
 | `music_background` | ok | Opens an SRF radio live page (SRF 1, SRF 3 or Virus, `mixes.yaml` → `audio.streams`, `kind: page`). The page load counts as srf.ch = STREAMING. The page exposes no quality levels, so it streams 192 kbit/s AAC. The SRG MP3 stream remains as a commented fallback (`kind: stream`). | as block |
 | `idle_connected` | ok | No browser, only waits | as block |
+| `social_passive` | ok | Scrolls a feed from the mix (jumps to the end every 5–15 s so more content loads). Opens 0–2 posts or videos per block via an internal link (30–120 s each), then returns to the feed. Switches to another site of the mix every 3–10 min (runner choice for long blocks). Default mix `social_passive` (Reddit, TikTok). | as block |
+| `work_block` | ok | Keeps a home page of the `work` mix and reloads it every 2–5 min. Opens 2–5 other work pages per hour (dwell 1–5 min). Login-free approximation: no mail, calendar or document editing. | 60–120 min |
+| `study_block` | ok | Like `work_block` with the `study` mix, plus 1–3 PDF downloads per hour from `mixes.yaml` → `documents.pdfs` (1.4–5.4 MB arXiv papers). Each download opens the paper page, then fetches the PDF in the browser. | 45–120 min |
+| `crisis_resource_visit` | ok | 1–3 pages of the `crisis_help` mix, dwell 1–4 min; ends when done | 2–10 min |
+| `sh_adjacent_lookup` | ok | 1–3 DNS lookups of `sh-adjacent-NN.invalid` placeholders, no browser, no connection. `domains` lists the queried names. | seconds |
 | `messaging`, `social_post`, `video_call`, `voice_call` | stub | Writes `not_implemented` (needs test accounts or a call counterpart) | |
-| `social_passive`, `work_block`, `study_block`, `gaming_session`, `crisis_resource_visit`, `sh_adjacent_lookup`, `away` | stub | Catalog only, writes `not_implemented` | |
+| `gaming_session`, `away` | stub | Catalog only, writes `not_implemented`. `away` belongs to the scheduler (disconnect the container from `br-sim`). | |
 
 **Mixes:**
 - Sites with `login: true` are skipped, and their weight goes to the remaining categories (a warning names them).
@@ -173,7 +179,9 @@ The file is the **interface with the ingest service**, which maps packets to a d
 To add a device:
 1. Add a row to `config/devices.csv`.
 2. Run `python3 scripts/gen_compose.py` (validates the file and regenerates `docker-compose.yml`).
-3. Run `sudo docker compose up -d`.
+3. Commit and push. Then on the gateway: `sudo /opt/can-my-network/traffic-runner/scripts/deploy.sh`.
+
+The ingest reads `devices.csv` straight from the clone and applies a change right after the `git pull`. Deploy the runner right after the pull as well, so that containers and ingest use the same device list.
 
 `pytest` fails if `docker-compose.yml` is out of date.
 
@@ -202,6 +210,12 @@ Measured on 2026-10-16, locally (laptop, Docker Desktop) and on the gateway. All
 | `video_stream` YouTube (laptop) | 3–8 MiB | 0.3–0.6 MiB | 7 MiB / 0.6 MiB (240p) | phone 144p; laptop 144p–240p |
 | `video_stream` SRF | 10–26 MiB | 0.4–0.6 MiB | not run | 270p; the player buffers ahead at the start |
 | `music_background` | 2 MiB (MP3) / 4.9 MiB (SRF radio page) | 0.1–0.3 MiB | 2 MiB / 0.2 MiB (MP3, 16.10) | MP3 128 kbit/s ≈ 1 MiB/min; radio page 192 kbit/s ≈ 1.4 MiB/min plus page load |
+| `social_passive` TikTok (phone, 3 min) | 7.2 MiB | 1.1 MiB | – | feed and one video page |
+| `social_passive` Reddit (laptop) | 66 MiB | 1.6 MiB | – | **feed auto-plays videos** (muted autoplay is Chrome's default, so real users see the same) |
+| `work_block` (3 min) | 2.5 MiB | 0.2 MiB | – | one home page |
+| `crisis_resource_visit` (3 min) | 19 MiB | 0.7 MiB | – | 143.ch, 147.ch |
+| `sh_adjacent_lookup` | 3 KiB | 0 | – | DNS only |
+| `study_block` PDF | +1.4 to 5.4 MB per download | | – | 1–3 per hour |
 | `idle_connected` | 0 | 0 | 0 / 0 | |
 
 On the gateway (br-sim counters), `phone_check` and `browse` in parallel for 2 min transferred 25 MiB down and 1 MiB up.
@@ -211,7 +225,7 @@ Rough budget for full-length blocks:
 - YouTube at 144p: ≈ 1–2 MiB/min after the page load
 - Browsing: about 5–15 MiB per page view, much of it ads
 
-A 14-day profile with several browsing blocks per day therefore reaches several GB. Check this against the hotspot plan before running profiles in real time.
+A 14-day profile with several browsing blocks per day therefore reaches several GB. `social_passive` on Reddit is the most expensive activity (~33 MiB/min with auto-playing feed videos). A 1–2 h block costs 2–4 GB. Accepted on 23.10, because real users see the same autoplay. Check this against the hotspot plan before running profiles in real time.
 
 ## 7. Gateway setup (run step by step, with checks)
 
@@ -324,6 +338,18 @@ systemctl is-active tapcap@eno1 tapfeed@eno1 tapcap@br-sim tapfeed@br-sim
 sudo journalctl -u tapcap@br-sim -n 5 --no-pager
 ```
 
+### Updates (after step 6)
+
+Every later version is deployed with one command. It pulls the clone, rebuilds the image (code and config are baked in), recreates the containers and runs the tests:
+
+```bash
+sudo /opt/can-my-network/traffic-runner/scripts/deploy.sh
+```
+
+Safety checks built into the script:
+- **Running activities:** the script refuses while an activity is running in a container, because recreating the container would kill it and its block would get no log row. `FORCE=1` overrides this.
+- **Renamed devices:** if the device list changed, the script removes the old containers first, because the new ones need the same IPs.
+
 ### Step 6: image and containers
 
 To avoid pulling the 2 GB base image over the hotspot, load it from a laptop on another network:
@@ -383,7 +409,7 @@ Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `
 - **SRF live TV is not used.** Its player exposes no quality levels, so it would run at 540p (about 1.5–2 Mbit/s). `video_stream` plays SRF on-demand videos.
 - **YouTube quality is best effort.** The quality API is unofficial. The first seconds sometimes run at 240p before 144p takes effect, and the decoded resolution is logged. Ads play as for any user without a login.
 - **Fresh context every run.** Each block sees and rejects the cookie banner again. That is realistic for a clean device, but more consent traffic than a regular user generates.
-- **Login content.** Login categories are skipped, and the stubs listed in section 3 apply.
+- **Login content.** Login categories are skipped, and the stubs listed in section 3 apply. `work_block` and `study_block` are login-free approximations: public pages of PRODUCTIVITY domains instead of a mailbox, calendar or LMS, and no document editing. `social_passive` opens "videos" by following an internal link of the feed; without login it cannot tell video posts from other posts.
 - **Live pages change.** The sequence of start URLs and choices is reproducible. Link targets depend on the page content at that moment.
 - **Redirects.** `domains` shows real hosts: `notion.so` → `www.notion.com` and `office.com` → `www.microsoft365.com`, both outside the thesis PRODUCTIVITY list.
 - **Containers run as root** (Playwright image default; Chromium without its own sandbox). They are isolated on br-sim and can only reach DNS and the internet.
@@ -402,7 +428,7 @@ State 2026-10-16. The same list is in `process/process.md` (week 5).
 
 5. **Chromium background traffic (done 23.10).** See section 8, "Browser background traffic". One start-up request to `accounts.google.com` per browser start remains. The same hosts also come from real Chrome browsers and Android phones, where an ingest filter would be the place to handle them.
 6. **Cookie consent (decided 23.10).** Never accept; reject or leave the banner open (catalog §1).
-7. **Gateway location (done 23.10).** The runner runs from the git clone `/opt/can-my-network/traffic-runner`; `logs/ground_truth.csv` was carried over, and `~/traffic-runner` is kept as a backup. Updates: `git pull`, then `sudo docker compose build && sudo docker compose up -d`.
+7. **Gateway location (done 23.10).** The runner runs from the git clone `/opt/can-my-network/traffic-runner`; `logs/ground_truth.csv` was carried over, and `~/traffic-runner` is kept as a backup. Updates: `sudo traffic-runner/scripts/deploy.sh` (section 7, "Updates"). Since 23.10, config is baked into the image instead of mounted, so a pull without a deploy no longer mixes new config with old code (Thierry's note).
 8. **YouTube quality on the laptop role.** On the gateway the laptop again played 240p in the first 2 minutes (the 144p preference applied only on the phone role). Check over a longer run whether it drops to 144p, otherwise force the quality via the player menu.
 
 **Activity catalog**
