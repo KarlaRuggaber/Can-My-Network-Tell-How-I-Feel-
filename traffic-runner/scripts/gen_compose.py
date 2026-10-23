@@ -64,7 +64,8 @@ def service(device, build: bool) -> str:
         "    dns: [10.42.1.1]",
         "    volumes:",
         "      - ./logs:/logs",
-        "      - ./config:/app/config:ro",
+        # Code and config come from the image (Dockerfile: COPY config), so a git pull alone
+        # never mixes new config with old code. Only the DNS setting is mounted.
         "      - ./config/resolv.conf:/etc/resolv.conf:ro",
         f"    shm_size: {SHM_SIZE}",
         f"    mem_limit: {MEM_LIMIT}",

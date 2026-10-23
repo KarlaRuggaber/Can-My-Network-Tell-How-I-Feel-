@@ -351,7 +351,10 @@ sudo git -C /opt/can-my-network pull
 sudo git -C /opt/can-my-network log --oneline -1               # which version runs
 sudo systemctl restart tapingest                               # if ingest/ changed
 cd /opt/can-my-network/app_pcap_to_dsm5/app && sudo docker compose -f docker-compose.yml -f docker-compose.gateway.yml up -d --build   # if app/ changed
+sudo /opt/can-my-network/traffic-runner/scripts/deploy.sh                                   # if traffic-runner/ changed
 ```
+
+The runner bakes code and config into its image, so a pull alone does not change it. `deploy.sh` rebuilds it, recreates the containers and runs its tests. It refuses while an activity is running (`FORCE=1` overrides). The ingest reads `traffic-runner/config/devices.csv` straight from the clone, so a changed device list applies to the ingest at the pull. Run `deploy.sh` right after such a pull.
 
 If the update changes how metrics are computed (`app/metrics/`), also move the files in `app/feature_cache/` away: the cache is invalidated by new data, not by new code, and would keep serving the old values.
 

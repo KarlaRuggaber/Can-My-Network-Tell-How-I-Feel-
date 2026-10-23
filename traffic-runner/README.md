@@ -20,7 +20,7 @@ This is only the runner. It does not cover the scheduler (profile → 14-day pla
 | Device identity | Fixed `ipv4_address` and `mac_address` per container, taken from `config/devices.csv` |
 | Firewall and NAT | Docker runs with `"iptables": false`. All rules stay in `/etc/nftables.conf`. br-sim may reach DNS, ping and the internet, nothing else, and it is never forwarded to eno1. |
 | DNS | `config/resolv.conf` (`nameserver 10.42.1.1`) is mounted over `/etc/resolv.conf`. Every lookup goes from the container IP straight to dnsmasq, so `log-queries` and tapfeed attribute it to the device. |
-| Container lifecycle | Containers idle with `sleep infinity`. A run is `scripts/run-activity.sh <device> ...` (a `docker compose exec` with stdin detached, see section 3). Each run starts a **new browser process with a fresh context**, so no DNS, HTTP or cookie state carries over between blocks (catalog §5.2). |
+| Container lifecycle | Containers idle with `sleep infinity`. A run is `scripts/run-activity.sh <device> ...` (a `docker compose exec` with stdin detached, see section 3). Each run starts a **new browser process with a fresh context**, so no DNS, HTTP or cookie state carries over between blocks (catalog §5.2). Code **and config** are baked into the image (`COPY config`); only `logs/` and `/etc/resolv.conf` are mounted. A `git pull` alone therefore never changes the running runner. Deploy with `scripts/deploy.sh` (section 7). |
 | Randomness | All randomness comes from `random.Random(f"{seed}/{block_id}")`. The same seed and block ID give the same sequence of choices. |
 
 ```
@@ -179,7 +179,9 @@ The file is the **interface with the ingest service**, which maps packets to a d
 To add a device:
 1. Add a row to `config/devices.csv`.
 2. Run `python3 scripts/gen_compose.py` (validates the file and regenerates `docker-compose.yml`).
-3. Run `sudo docker compose up -d`.
+3. Commit and push. Then on the gateway: `sudo /opt/can-my-network/traffic-runner/scripts/deploy.sh`.
+
+The ingest reads `devices.csv` straight from the clone and applies a change right after the `git pull`. Deploy the runner right after the pull as well, so that containers and ingest use the same device list.
 
 `pytest` fails if `docker-compose.yml` is out of date.
 
@@ -336,6 +338,18 @@ systemctl is-active tapcap@eno1 tapfeed@eno1 tapcap@br-sim tapfeed@br-sim
 sudo journalctl -u tapcap@br-sim -n 5 --no-pager
 ```
 
+### Updates (after step 6)
+
+Every later version is deployed with one command. It pulls the clone, rebuilds the image (code and config are baked in), recreates the containers and runs the tests:
+
+```bash
+sudo /opt/can-my-network/traffic-runner/scripts/deploy.sh
+```
+
+Safety checks built into the script:
+- **Running activities:** the script refuses while an activity is running in a container, because recreating the container would kill it and its block would get no log row. `FORCE=1` overrides this.
+- **Renamed devices:** if the device list changed, the script removes the old containers first, because the new ones need the same IPs.
+
 ### Step 6: image and containers
 
 To avoid pulling the 2 GB base image over the hotspot, load it from a laptop on another network:
@@ -414,7 +428,7 @@ State 2026-10-16. The same list is in `process/process.md` (week 5).
 
 5. **Chromium background traffic (done 23.10).** See section 8, "Browser background traffic". One start-up request to `accounts.google.com` per browser start remains. The same hosts also come from real Chrome browsers and Android phones, where an ingest filter would be the place to handle them.
 6. **Cookie consent (decided 23.10).** Never accept; reject or leave the banner open (catalog §1).
-7. **Gateway location (done 23.10).** The runner runs from the git clone `/opt/can-my-network/traffic-runner`; `logs/ground_truth.csv` was carried over, and `~/traffic-runner` is kept as a backup. Updates: `git pull`, then `sudo docker compose build && sudo docker compose up -d`.
+7. **Gateway location (done 23.10).** The runner runs from the git clone `/opt/can-my-network/traffic-runner`; `logs/ground_truth.csv` was carried over, and `~/traffic-runner` is kept as a backup. Updates: `sudo traffic-runner/scripts/deploy.sh` (section 7, "Updates"). Since 23.10, config is baked into the image instead of mounted, so a pull without a deploy no longer mixes new config with old code (Thierry's note).
 8. **YouTube quality on the laptop role.** On the gateway the laptop again played 240p in the first 2 minutes (the 144p preference applied only on the phone role). Check over a longer run whether it drops to 144p, otherwise force the quality via the player menu.
 
 **Activity catalog**
