@@ -50,8 +50,9 @@ CALL_PLATFORMS = {"zoom", "teams", "jitsi", "discord"}
 RUNNER_OPTION_FLAGS: dict[str, str] = {"mic_share": "--mic-share"}   # runner since dca94cd (23.10)
 
 # Activities that are still stubs in the runner (they log not_implemented by design). Any other activity that
-# logs not_implemented is a problem, e.g. calls when the peer stack is down (report.py).
-RUNNER_STUBS = {"messaging", "social_post"}
+# logs not_implemented is a problem, e.g. calls when the peer stack is down, or messaging/social_post without
+# the device's login session (report.py). None left since the runner's test accounts (23.10).
+RUNNER_STUBS: set[str] = set()
 
 GAMING_VOICE_PLATFORM = "discord"
 

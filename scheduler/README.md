@@ -277,7 +277,7 @@ One executor per plan (= per dataset), as the systemd template unit [`systemd/tr
 - `status` ≠ `ok` = failed or stub
 - `end` earlier than planned = `phone_check` done or video over; `start` later than planned = a late start
 
-Runner state 23.10 (after Karla's `04d776d`): calls and `gaming_session` run against the self-hosted peer (`peer-vm/`, Jitsi plus a WebSocket game); every `--platform` maps to it. Only `messaging` and `social_post` are still stubs (they need test accounts): their rows log `not_implemented` and produce no traffic. Measured over 10 seeds that is **5 % of the student's planned activity time** (messaging 4 %, posting 0.5 %) and **3 % of the 9-to-5's** (messaging). Away needs nothing from the executor: no run is the same as away in the data (Karla, 23.10).
+Runner state 23.10 (after Karla's `04d776d`): calls and `gaming_session` run against the self-hosted peer (`peer-vm/`, Jitsi plus a WebSocket game); every `--platform` maps to it. Since the test accounts of 23.10 (traffic-runner README §8a), `messaging` (Slack DM with a reply bot) and `social_post` (a private subreddit) run as well. They need the device's login session in `traffic-runner/sessions/`; without it the runner logs `not_implemented`, which the push report flags. Before that, these two were the only stubs: 5 % of the student's and 3 % of the 9-to-5's planned activity time. Away needs nothing from the executor: no run is the same as away in the data (Karla, 23.10).
 
 ### 5.2 Push report
 
@@ -285,7 +285,7 @@ Runner state 23.10 (after Karla's `04d776d`): calls and `gaming_session` run aga
 
 | What | Counted as a problem |
 |---|---|
-| Blocks due in the window | `error`; `not_implemented` other than the runner's stubs (`messaging`, `social_post`: e.g. calls when the peer stack is down); no log row: `missed`, `interrupted` (started, reboot), `not started`; logged twice. Starts more than 2 min late are counted, not flagged |
+| Blocks due in the window | `error`; `not_implemented` (e.g. calls when the peer stack is down, or `messaging`/`social_post` without the device's login session in `traffic-runner/sessions/`; the runner has no stubs left in `catalog.RUNNER_STUBS`); no log row: `missed`, `interrupted` (started, reboot), `not started`; logged twice. Starts more than 2 min late are counted, not flagged |
 | Executor | `traffic-executor@<dataset>` not active while blocks are still to come |
 | Data path | no new Parquet partition for 35 min although blocks ran (capture or ingest down) |
 | Gateway | memory below 300 MB available (minimum of the per-minute samples), any OOM kill (from the kernel log, with the process names), less than 5 GB free disk, `tapcap@eno1`, `tapcap@br-sim`, `tapingest` or `docker` not active |
