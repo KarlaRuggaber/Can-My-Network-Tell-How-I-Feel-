@@ -65,6 +65,10 @@ class FakeDriver:
         self.calls.append(("idle", round(seconds, 3)))
         self.clock.sleep(seconds)
 
+    def new_context(self):
+        self.calls.append(("new_context",))
+        self.url = None
+
     def restart(self):
         self.calls.append(("restart",))
         self.url = None

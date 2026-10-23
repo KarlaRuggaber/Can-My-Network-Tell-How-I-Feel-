@@ -13,6 +13,11 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages \
         -r requirements.txt -r requirements-dev.txt \
  && python3 -c "import playwright, importlib.metadata as m; v = m.version('playwright'); assert v == '1.63.0', v"
 
+# Managed browser policy: switches off Chromium's own background requests (search
+# integration, network time, sign-in, sync). Playwright's build is "Chrome for Testing",
+# which reads policies only from this folder.
+COPY config/chromium-policy.json /etc/opt/chrome_for_testing/policies/managed/runner.json
+
 COPY runner ./runner
 COPY config ./config
 COPY scripts ./scripts

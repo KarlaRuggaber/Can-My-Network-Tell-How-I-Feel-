@@ -1,0 +1,10 @@
+{
+  "ComponentUpdatesEnabled": false,
+  "BrowserNetworkTimeQueriesEnabled": false,
+  "DefaultSearchProviderEnabled": false,
+  "SearchSuggestEnabled": false,
+  "BrowserSignin": 0,
+  "SyncDisabled": true,
+  "MetricsReportingEnabled": false,
+  "PromotionalTabsEnabled": false
+}

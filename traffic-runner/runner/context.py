@@ -58,6 +58,9 @@ class Driver(Protocol):
     def restart(self) -> None:
         """Close the browser; the next call starts a fresh one (no DNS/HTTP cache)."""
 
+    def new_context(self) -> None:
+        """Close the browser context; the next call opens a new one (no cookies, DNS/HTTP cache)."""
+
     def play_youtube(self, search_term: str, result_index: int, timeout: float) -> str:
         """Search YouTube, play the n-th result at the lowest quality; return host."""
 
@@ -146,6 +149,9 @@ class RunContext:
 
     def fresh_browser(self) -> None:
         self.driver.restart()
+
+    def fresh_context(self) -> None:
+        self.driver.new_context()
 
     def play_youtube(self, search_term: str, result_index: int) -> str | None:
         timeout = self._nav_timeout()

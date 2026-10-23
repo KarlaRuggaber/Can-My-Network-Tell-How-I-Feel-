@@ -17,8 +17,14 @@ from .context import PageError
 
 log = logging.getLogger("runner")
 
+# Browser-internal background services that no page needs: the push channel (GCM) and the
+# component updater. Chromium resolves them to "not found" itself, so not even a DNS query
+# leaves the container. Other background requests (search integration, network time) are
+# switched off by config/chromium-policy.json, which the Dockerfile installs as a managed policy.
+BACKGROUND_HOSTS = ("android.clients.google.com", "mtalk.google.com", "update.googleapis.com")
 LAUNCH_ARGS = [
     "--autoplay-policy=no-user-gesture-required",
+    "--host-resolver-rules=" + ", ".join(f"MAP {h} ~NOTFOUND" for h in BACKGROUND_HOSTS),
 ]
 CONSENT_WAIT_MS = 5000  # banners can appear a few seconds after DOMContentLoaded
 CONSENT_POLL_MS = 500
@@ -139,14 +145,26 @@ class BrowserDriver:
             self._pw = sync_playwright().start()
         descriptor = dict(self._pw.devices[self.playwright_device])
         descriptor.pop("default_browser_type", None)
-        # channel="chromium": the full Chromium build in new headless mode instead of the
-        # stripped headless shell. Several shops (digitec, galaxus, zalando) reject the shell.
-        self._browser = self._pw.chromium.launch(channel="chromium", headless=self.headless, args=LAUNCH_ARGS)
+        if self._browser is None:
+            # channel="chromium": the full Chromium build in new headless mode instead of the
+            # stripped headless shell. Several shops (digitec, galaxus, zalando) reject the shell.
+            self._browser = self._pw.chromium.launch(channel="chromium", headless=self.headless, args=LAUNCH_ARGS)
         self._context = self._browser.new_context(**descriptor, **self.context_options)
         self._context.add_init_script(YT_QUALITY_INIT)
         self.page = self._context.new_page()
         self.page.set_default_timeout(15_000)
         log.debug("browser started (%s)", self.playwright_device)
+
+    def new_context(self) -> None:
+        """Close the context only; the next call opens a new one in the same browser. A new
+        context has empty cookies and its own DNS and HTTP cache, so the next visit does a
+        fresh DNS lookup, without a browser restart and its start-up requests."""
+        try:
+            if self._context is not None:
+                self._context.close()
+        except Exception:  # noqa: BLE001
+            pass
+        self._context = self.page = None
 
     def restart(self) -> None:
         for obj in (self._context, self._browser):

@@ -97,11 +97,11 @@ def test_browse_ranges():
     assert any(c[0] == "follow" for c in calls)
 
 
-def test_repeat_visit_loop_fresh_browser_and_interval():
+def test_repeat_visit_loop_fresh_context_and_interval():
     calls, visited, _ = run_once("repeat_visit_loop", "news", 1800, seed=5)
     assert len(visited) <= 3
     opens = [i for i, c in enumerate(calls) if c[0] == "open"]
-    assert all(calls[i - 1] == ("restart",) for i in opens)  # fresh browser before every visit
+    assert all(calls[i - 1] == ("new_context",) for i in opens)  # fresh DNS cache before every visit
     # visit + idle = 60-180 s; the fake load takes 2 s
     idles = [c[1] for c in calls if c[0] == "idle"][:-1]  # last one is cut by the deadline
     assert all(58 <= i <= 178 for i in idles)

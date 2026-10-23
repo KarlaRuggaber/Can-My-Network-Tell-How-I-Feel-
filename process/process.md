@@ -179,9 +179,14 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
     - `work`/`study` sets: `notion.so` and `office.com` now redirect to `notion.com` / `m365.cloud.microsoft`, which are in no thesis list. They were replaced by list domains that load without login (github, gitlab, trello, asana, todoist, microsoft.com).
   - **Runner updated to match:** new `phone_check` rule, radio page playback, cookie rejection now also covers 20min. 108 tests pass. Live check on the laptop: radio page plays, `work`/`study` pages load, a 3-min `phone_check` opened 6 pages.
 - **Next / open:**
-  - Rename the devices in the shared `traffic-runner/config/devices.csv` to the new convention. Since 23.10 the ingest reads this file too. Then add the naming check to the validator.
-  - Deploy the new runner version on the gateway: `git pull` in `/opt/can-my-network`, then rebuild the image.
-  - Suppress Chromium background traffic (`android.clients.google.com` = PRODUCTIVITY).
+  - ~~Rename the devices~~ done 23.10: `student_a_phone`/`student_a_laptop` → `gw_student_a`; the validator enforces the convention.
+  - ~~Deploy the new runner version~~ done 23.10. The ingest picked up the new device list without a restart, and a test run landed in `gw_student_a`.
+  - ~~Suppress Chromium background traffic~~ done 23.10:
+    - Push and updater hosts are blocked inside the browser.
+    - Search integration and network time are switched off by a managed Chrome policy.
+    - `repeat_visit_loop` uses a new context instead of a new browser.
+    - Only one `accounts.google.com` request per browser start remains (runner README §8).
+    - Real Chrome/Android devices send the same hosts; that is a case for the ingest filter.
   - Scheduler.
 - **Blockers / notes:**
   - The SRF radio page offers no quality levels, so `music_background` streams 192 kbit/s (≈ 85 MiB/h).

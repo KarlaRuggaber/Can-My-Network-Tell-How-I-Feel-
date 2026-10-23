@@ -1,8 +1,10 @@
 """repeat_visit_loop: revisit the same 2-3 pages every 1-3 min with a fresh DNS lookup
 each time (catalog §2, rumination dial).
 
-Each revisit starts a new browser process. Chromium keeps its host cache per process, so
-this is the only reliable way to force a new DNS query for every visit.
+Each revisit opens a new browser context. Chromium keeps a separate DNS cache per context,
+so every visit does a fresh DNS query (checked in the net-log: 3 contexts, 3 lookups; 2
+visits in one context, 1 lookup). The browser process itself keeps running, which avoids
+its start-up requests (accounts.google.com) on every revisit.
 """
 
 ID = "repeat_visit_loop"
@@ -34,7 +36,7 @@ def run(ctx, rng, duration, mix):
         url = rng.choice(urls)
         interval = rng.uniform(*INTERVAL)
         visit_start = ctx.elapsed()
-        ctx.fresh_browser()
+        ctx.fresh_context()
         ctx.open(url)
         ctx.idle(interval - (ctx.elapsed() - visit_start))
     return ctx.visited

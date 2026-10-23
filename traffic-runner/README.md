@@ -363,6 +363,17 @@ Then run each MVP activity for 2 minutes (`repeat_visit_loop`, `video_stream`, `
 
 - **No WiFi layer.** Containers sit on a Linux bridge with static IPs. There is no 802.11, no DHCP and no association, so the feed has no `hostname` events for them. MACs are only visible on br-sim (as on eno1 for real devices).
 - **No OS background traffic.** A container that is not running an activity is silent. `idle_connected` is therefore cleaner than a real idle phone, and the ingest filter for background traffic is not exercised by simulated devices.
+- **Browser background traffic is switched off** (since 23.10). Even on a blank page, Playwright's Chromium (a "Chrome for Testing" build with Google API keys) contacts six Google hosts on its own. Five of them count as `google.com` = PRODUCTIVITY (C2_F6). Measured in the net-log, per 90 s:
+
+  | Host | Source | Now |
+  |---|---|---|
+  | `android.clients.google.com`, `mtalk.google.com` | push channel (GCM) | `--host-resolver-rules` → `~NOTFOUND`, no DNS query leaves the container |
+  | `update.googleapis.com` | component updater | same |
+  | `www.google.com` (`/`, `/async/folae`) | built-in search integration | policy `DefaultSearchProviderEnabled=false` |
+  | `clients2.google.com/time` | network time | policy `BrowserNetworkTimeQueriesEnabled=false` |
+  | `accounts.google.com/ListAccounts` | sign-in check, **once per browser start** | remains; no switch found (`BrowserSignin=0` does not stop it) |
+
+  The policies are in `config/chromium-policy.json`. The Dockerfile installs them in `/etc/opt/chrome_for_testing/policies/managed/`, the only folder this build reads. Pages still reach `www.google.com` and `accounts.google.com` normally (e.g. reCAPTCHA, Google login), because neither host is blocked. To keep the remaining start-up request rare, `repeat_visit_loop` opens a new browser *context* per revisit instead of a new browser. A new context has its own DNS cache, so every visit still triggers a fresh lookup.
 - **Only Chromium.**
   - The runner uses the full Chromium build in new headless mode (`channel="chromium"`). The stripped headless shell is rejected outright by digitec, galaxus and zalando (`ERR_HTTP2_PROTOCOL_ERROR`, timeout).
   - Nothing hides automation: `navigator.webdriver` stays `true`. Reddit answers with a JavaScript challenge before the page. The browser passes it on its own, the URL then carries `js_challenge=1`, and the traffic includes the challenge round trip. CAPTCHAs are never solved; a site that shows one is simply logged as visited.
@@ -389,7 +400,7 @@ State 2026-10-16. The same list is in `process/process.md` (week 5).
 
 **Runner**
 
-5. **Chromium background traffic counts as PRODUCTIVITY.** Both containers open TLS connections to `android.clients.google.com`. The pipeline reduces this to `google.com`, which is in the PRODUCTIVITY list (C2_F6). Suppress it in the runner with launch flags before profiles run, or drop these hosts in the ingest.
+5. **Chromium background traffic (done 23.10).** See section 8, "Browser background traffic". One start-up request to `accounts.google.com` per browser start remains. The same hosts also come from real Chrome browsers and Android phones, where an ingest filter would be the place to handle them.
 6. **Cookie consent (decided 23.10).** Never accept; reject or leave the banner open (catalog §1).
 7. **Gateway location (done 23.10).** The runner runs from the git clone `/opt/can-my-network/traffic-runner`; `logs/ground_truth.csv` was carried over, and `~/traffic-runner` is kept as a backup. Updates: `git pull`, then `sudo docker compose build && sudo docker compose up -d`.
 8. **YouTube quality on the laptop role.** On the gateway the laptop again played 240p in the first 2 minutes (the 144p preference applied only on the phone role). Check over a longer run whether it drops to 144p, otherwise force the quality via the player menu.
