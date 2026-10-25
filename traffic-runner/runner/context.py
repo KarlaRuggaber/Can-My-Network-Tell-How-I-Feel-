@@ -15,6 +15,7 @@ from typing import Protocol
 log = logging.getLogger("runner")
 
 NAV_TIMEOUT = 45.0  # seconds, capped by the remaining time
+DISCORD_HOST = "discord.com"  # social_post upload target (runner/discord.py)
 MIN_NAV_TIME = 10.0  # do not start a navigation with less time left than this (mobile pages need ~5-10 s)
 
 
@@ -95,8 +96,8 @@ class Driver(Protocol):
     def send_message(self, text: str) -> None:
         """Type and send a message in the open chat. Raises PageError."""
 
-    def reddit_post(self, subreddit: str, title: str, image: str, timeout: float) -> str | None:
-        """Create an image post in exactly `subreddit`; return host. Raises PageError."""
+    def webhook_post(self, url: str, image: str, content: str, timeout: float) -> dict:
+        """Post the image through a Discord webhook; return Discord's message object. Raises PageError."""
 
     def play_game(self, url: str, timeout: float) -> str:
         """Open the game page and wait until it is connected; return host."""
@@ -124,6 +125,7 @@ class RunContext:
         self.run_key = ""  # profile/seed/block_id, set by the CLI (call room names)
         self.session_meta: dict = {}  # meta of the device's login session (runner/sessions.py)
         self.accounts: dict = {}  # config/accounts.yaml
+        self.webhook_url = ""  # social_post: Discord webhook (runner/discord.py), set by the CLI
         self._bad_checks = 0
 
     # --- time ---
@@ -281,8 +283,17 @@ class RunContext:
     def send_message(self, text: str) -> None:
         self.driver.send_message(text)
 
-    def reddit_post(self, subreddit: str, title: str, image) -> str | None:
+    def webhook_post(self, image, content: str) -> dict | None:
+        """Post through the Discord webhook and check that the message landed in exactly the
+        configured channel (accounts.yaml discord.channel_id / webhook_id). None if no time is left."""
         timeout = self._nav_timeout()
         if timeout is None:
             return None
-        return self._record(self.driver.reddit_post(subreddit, title, str(image), timeout))
+        cfg = self.accounts.get("discord") or {}
+        msg = self.driver.webhook_post(self.webhook_url, str(image), content, timeout)
+        if (str(msg.get("channel_id")) != str(cfg.get("channel_id"))
+                or str(msg.get("webhook_id")) != str(cfg.get("webhook_id"))):
+            raise PageError(f"Discord message {msg.get('id')} landed in channel {msg.get('channel_id')} "
+                            f"(webhook {msg.get('webhook_id')}), expected {cfg.get('channel_id')}")
+        self._record(DISCORD_HOST)
+        return msg

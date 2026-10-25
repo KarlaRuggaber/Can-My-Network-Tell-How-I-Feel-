@@ -278,6 +278,14 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - Runner (Karla): `video_stream` aborts the block when YouTube stalls; reload or pick another video instead
   - Synthesizer
 
+**`social_post` moved from Reddit to Discord:** Sun 25.10
+- **Done:**
+  - Cause of the failed post at 18:24 (`gw_mdd_suicidality_a`): Reddit flagged the shared account u/CMNTHIF as automated ("confirm you're human, or register the account as an app within 6 days") and covered the post button. Not a gateway problem. Reddit's policy requires automated accounts to register as apps, and API access needs an approval without a timeline.
+  - Decided: `social_post` posts through a webhook of a private Discord server (`discord.com` is in the thesis SOCIAL list, so the same social-upload metrics count it). The Reddit account gets registered as an app (label). Branch `social-post-discord`: `runner/discord.py`, ID and channel checks, browser opens the uploaded image afterwards, Reddit UI code removed; 226 runner tests pass; a probe against Discord got the normal `404 Unknown Webhook`. Details: traffic-runner README §8a.
+- **Next / open:**
+  - Create the Discord server, channel and webhook; IDs into `accounts.yaml`, URL onto the gateway; test post; then merge and deploy (Maria posts 8×, Carl 18× in the run, Carl's next post Mon 26.10 19:29)
+  - Karla: confirm the catalog change (§3 `social_post`)
+
 </details>
 
 <details>

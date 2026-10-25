@@ -121,10 +121,18 @@ class FakeDriver:
         self.calls.append(("message", text))
         self.clock.sleep(len(text) * 0.06)
 
-    def reddit_post(self, subreddit, title, image, timeout):
+    webhook_channel_id = ""  # channel the fake Discord reports; tests and --dry-run set it
+
+    def webhook_post(self, url, image, content, timeout):
         import os
-        self.calls.append(("reddit_post", subreddit, title, os.path.getsize(image)))
-        return self._load(f"https://www.reddit.com/r/{subreddit}/comments/fake/", timeout)
+        from .discord import webhook_id
+        size = os.path.getsize(image)
+        hook = webhook_id(url)
+        self.calls.append(("webhook_post", hook, content, size))
+        self.clock.sleep(min(LOAD_TIME, timeout))
+        channel = self.webhook_channel_id
+        return {"id": "1", "webhook_id": hook, "channel_id": channel,
+                "attachments": [{"size": size, "url": f"https://cdn.discordapp.com/attachments/{channel}/1/test.png"}]}
 
     def set_mic(self, on):
         self.calls.append(("mic", on))

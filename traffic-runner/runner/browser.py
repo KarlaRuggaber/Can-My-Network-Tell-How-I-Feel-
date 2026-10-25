@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, urlsplit
 
+from . import discord
 from .context import PageError
 
 log = logging.getLogger("runner")
@@ -158,24 +159,6 @@ MEDIA_STARTED = """
 
 
 SLACK_COMPOSER = '[data-qa="message_input"] [contenteditable="true"], div[role="textbox"][contenteditable="true"]'
-REDDIT_POST_BUTTON = re.compile(r"^\s*(post|posten|veröffentlichen)\s*$", re.I)
-REDDIT_TITLE = re.compile(r"(title|titel)", re.I)
-REDDIT_IMAGE_INPUT = 'post-composer-toolbar-button-image input[type="file"]'
-
-
-def reddit_sub_root(url: str, subreddit: str) -> bool:
-    """True only for the front page of exactly this subreddit (where phones land after posting)."""
-    parts = [p for p in urlsplit(url).path.lower().split("/") if p]
-    return host_of(url).endswith("reddit.com") and parts == ["r", subreddit.lower()]
-
-
-def reddit_target_ok(url: str, subreddit: str, page: str) -> bool:
-    """True if `url` is the given page ("submit" or "comments") of exactly `subreddit`."""
-    parts = [p for p in urlsplit(url).path.lower().split("/") if p]
-    return (host_of(url).endswith("reddit.com") and len(parts) >= 3
-            and parts[0] == "r" and parts[1] == subreddit.lower() and parts[2] == page)
-
-
 def host_of(url: str) -> str:
     return urlsplit(url).hostname or ""
 
@@ -513,37 +496,12 @@ class BrowserDriver:
         except Exception:  # noqa: BLE001 - a debug aid must never hide the real error
             return "-"
 
-    def reddit_post(self, subreddit: str, title: str, image: str, timeout: float) -> str | None:
-        """Create an image post in `subreddit` only. Returns the host, or raises PageError."""
-        self.open(f"https://www.reddit.com/r/{subreddit}/submit/?type=IMAGE", timeout)
-        if "/login" in self.page.url:
-            raise PageError("Reddit session expired: capture it again with scripts/capture_session.py")
-        if not reddit_target_ok(self.page.url, subreddit, "submit"):
-            raise PageError(f"not on the submit page of r/{subreddit}: {self.page.url}")
-        try:
-            title_box = self.page.get_by_role("textbox", name=REDDIT_TITLE).first
-            title_box.wait_for(state="visible", timeout=20_000)
-            title_box.fill(title)
-            # On phones Reddit ignores ?type=IMAGE and shows the text form without an image tab.
-            # Its toolbar image button attaches the picture as the post's image (checked 23.10).
-            self.page.locator(REDDIT_IMAGE_INPUT).first.set_input_files(str(image))
-            self.page.locator('img[src^="blob:"]').first.wait_for(state="visible", timeout=20_000)
-            self.page.wait_for_timeout(8_000)  # upload of 1-3 MB
-            # Safety check right before the click: still exactly this subreddit's submit page.
-            if not reddit_target_ok(self.page.url, subreddit, "submit"):
-                raise PageError(f"left the submit page of r/{subreddit}: {self.page.url}")
-            self.page.get_by_role("button", name=REDDIT_POST_BUTTON).last.click()
-            # Success = Reddit leaves the submit page: to the new post (desktop) or, on phones,
-            # to the subreddit's front page (checked live 23.10). Errors keep the form open.
-            self.page.wait_for_url(lambda u: "/submit" not in u, timeout=timeout * 1000)
-        except self._error_cls as e:
-            shot = self._debug_screenshot("reddit-post")
-            raise PageError(f"Reddit post failed: {str(e).splitlines()[0]} (url {self.page.url}, screenshot {shot})") from None
-        url = self.page.url
-        if not (reddit_target_ok(url, subreddit, "comments") or reddit_sub_root(url, subreddit)):
-            raise PageError(f"post ended up outside r/{subreddit}: {url}")
-        log.info("posted to r/%s: %s", subreddit, url)
-        return host_of(url)
+    def webhook_post(self, url: str, image: str, content: str, timeout: float) -> dict:
+        """Post through the Discord webhook. Not a browser step: runner/discord.py sends the
+        request from this container, so the upload still leaves from the device's IP."""
+        msg = discord.post_image(url, image, content, timeout)
+        log.info("posted to Discord channel %s: message %s", msg.get("channel_id"), msg.get("id"))
+        return msg
 
     def set_mic(self, on: bool) -> None:
         try:

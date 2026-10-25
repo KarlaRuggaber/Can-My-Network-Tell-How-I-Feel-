@@ -124,7 +124,7 @@ sudo scripts/run-activity.sh student_a_phone \
 | `video_call`, `voice_call` | ok | WebRTC call against the peer on the peer VM ([peer-vm/](../peer-vm/README.md)). The runner asks the peer to join a room derived from `profile/seed/block_id` and the token, then joins with a fake camera/mic (voice: audio only). It stays until the block ends; three failed connection checks in a row are an error. Every `--platform` runs on this self-hosted Jitsi. Needs `peer.env`, otherwise `not_implemented` | as block |
 | `gaming_session` | ok | Store pages of the `gaming` mix (Steam, Riot) for 2–5 min (at most a quarter of the block), then the game page of the peer VM: a WebSocket game at 20–60 messages per second in each direction (tick drawn with the RNG). Voice chat is a separate `voice_call` row of the scheduler. Needs `peer.env` | 60–120 min |
 | `messaging` | ok | Slack web in the project workspace: the persona's member account sends 3–10 messages, 10–60 s apart, to the bot "CMNTHIF Partner", which replies after 5–40 s (`peer-vm/slackbot`). Always uses a desktop browser profile, because Slack refuses phone browsers. Needs the device's Slack session (section "Test accounts"), otherwise `not_implemented` | 2–10 min |
-| `social_post` | ok | Reddit with the shared account u/CMNTHIF: one generated test image (1–3 MB of random pixels) **only into the private r/CMNTHIF**. The target is checked right before "Post" and again afterwards. Needs the device's Reddit session | 2–5 min |
+| `social_post` | ok | **Discord since 25.10** (was Reddit, see §8a): one generated test image (1–3 MB of random pixels) through the webhook of the private server's `#uploads` channel, sent from the device container, then the browser opens the uploaded image. The webhook ID is checked before the upload and the channel in Discord's reply afterwards. Needs `sessions/discord.webhook` and the IDs in `config/accounts.yaml`, otherwise `not_implemented` | 2–5 min |
 | `away` | stub | Catalog only, writes `not_implemented`. It belongs to the scheduler, where away means no runs. | |
 
 **Mixes:**
@@ -467,7 +467,8 @@ Decided 23.10: email only, no phone numbers.
 | Platform | Account | Used by |
 |---|---|---|
 | **Slack** | own workspace "CMNTHIF Test": Admin plus members Student, Maria, Ben, Carl, and the official app "CMNTHIF Partner" (reply bot) | `messaging` |
-| **Reddit** | one shared account u/CMNTHIF and the **private** subreddit r/CMNTHIF | `social_post` |
+| **Discord** (since 25.10) | private server "CMNTHIF" with one channel `#uploads` and one webhook; no user account in the runner | `social_post` |
+| ~~Reddit~~ (until 25.10) | shared account u/CMNTHIF, private subreddit r/CMNTHIF. Reddit flagged the account as automated on 25.10 (see "Why not Reddit" below) | – |
 
 Passwords and 2FA codes live only in the team's password manager. The runner works with **sessions**:
 - Each session is the login state of one device, captured once by hand. It holds cookies and local storage, never a password.
@@ -488,7 +489,7 @@ The script opens your normal Google Chrome with a temporary, empty profile. Slac
 - When you press Enter, the script connects to the window over localhost, saves the session and deletes the temporary profile. If the wrong tab is open, it tells you and waits again.
 - Slack blocks email sign-ins for a while after too many attempts ("Try again in a few minutes"). Wait about an hour without retrying; every new try can restart the block.
 
-**Live-tested 23.10 on the gateway:** both activities log `ok`. On phones, Reddit ignores `?type=IMAGE` (the runner attaches the image through the toolbar's image button) and goes to `/r/CMNTHIF/` after posting, which counts as success. The bot needs the Slack event `message.im` (Event Subscriptions) and the scopes `im:history` and `chat:write`.
+**Live-tested 23.10 on the gateway** (Reddit, history): both activities log `ok`. On phones, Reddit ignores `?type=IMAGE` (the runner attaches the image through the toolbar's image button) and goes to `/r/CMNTHIF/` after posting, which counts as success. The bot needs the Slack event `message.im` (Event Subscriptions) and the scopes `im:history` and `chat:write`.
 
 A session captured in desktop Chrome works in the runner's headless browser (checked 23.10: the Slack DM with its message box, the Reddit submit page logged in on the Pixel 7 profile).
 
@@ -497,7 +498,7 @@ A session captured in desktop Chrome works in the runner's headless browser (che
 | Activity | Devices | Sessions |
 |---|---|---|
 | `messaging` | the phones of all 4 datasets | **since 23.10 one shared Slack login (member Student), copied to all four phones.** Separate logins per persona were blocked by Slack's sign-in limit ("too many attempts to submit an email address") on two networks. Which member sends is not visible in the encrypted traffic. A persona's own session can replace the copy at any time (same file name, no redeploy) |
-| `social_post` | the phones of student, Maria, Carl (the 9-to-5/insomnia profiles do not post) | the same shared Reddit account; capture once, copy the files for the other two phones (rename to the device name) |
+| `social_post` | the phones of student, Maria, Carl (the 9-to-5/insomnia profiles do not post) | **no session since 25.10**: one Discord webhook for all phones (below) |
 
 **Copy to the gateway**, from the laptop:
 
@@ -518,9 +519,30 @@ cd /opt/can-my-network/peer-vm && sudo docker compose up -d --build slackbot && 
 
 **Expiry and revoking:**
 - A session that expired or was signed out makes the run fail with "session expired: capture it again".
-- To revoke all sessions: Slack admin → member → sign out of all sessions; Reddit → Settings → sign out everywhere.
+- To revoke all sessions: Slack admin → member → sign out of all sessions; Discord → server settings → Integrations → Webhooks → delete the webhook (a new one has a new ID: update `accounts.yaml`).
 
-**At the end of the project:** delete the Slack workspace, the app, the subreddit, the Reddit account and the sessions on the gateway.
+**At the end of the project:** delete the Slack workspace, the app, the Discord server, the Reddit account and subreddit, and the sessions and webhook file on the gateway.
+
+### Discord webhook for `social_post` (since 25.10)
+
+**Why not Reddit.** On 25.10 Reddit showed the shared account "We detected automated activity on your account": confirm a human, or register the account as an app within 6 days to keep posting. The post button was covered, so `social_post` failed (`logs/debug/reddit-post-20261025-182521.png`). Reddit's [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy) says automated accounts must register as apps and must not circumvent the label, and API access needs an explicit approval (no self-service since 11.2025). Confirming "human" would be untrue for this account; an API approval was not realistic within the 6 days. Discord webhooks are Discord's own mechanism for automated posts (no bot user, no approval), and `discord.com` is in the thesis SOCIAL list, so the upload counts for the same social-upload metrics (C2_F7/C7_F7). The Reddit account is registered as an app (label only); `social_passive` still reads Reddit without login.
+
+**How it works** (`runner/discord.py`): the device container posts the image with `?wait=true` as `multipart/form-data` (stdlib only), `allowed_mentions` empty. The webhook URL must carry `discord.webhook_id`, Discord's reply must name `discord.channel_id` and contain the attachment with the exact size; anything else is an `error`, nothing is posted elsewhere. One retry after a rate limit of ≤ 10 s. Afterwards the browser opens the attachment on `cdn.discordapp.com` and stays 20–60 s, like looking at the post. Tests: `tests/test_discord.py` (URL checks incl. lookalike hosts, webhook file, multipart parsed like a server, rate limit, errors), `tests/test_accounts.py`, `tests/test_cli.py`. A probe against a non-existent webhook on 25.10 got Discord's normal `404 Unknown Webhook` JSON (no Cloudflare block of the user agent).
+
+**Set up once:**
+1. In Discord (desktop or web): create a server "CMNTHIF" (private, nobody else invited) with a text channel `#uploads`.
+2. Channel settings → Integrations → Webhooks → New Webhook ("CMNTHIF social_post") → Copy Webhook URL.
+3. IDs: the webhook ID is the number in the URL (`…/webhooks/<id>/<token>`). Channel ID: Discord settings → Advanced → Developer Mode on, then right-click `#uploads` → Copy Channel ID. Put both into `config/accounts.yaml` (`discord.webhook_id`, `discord.channel_id`; not secret), commit, push.
+4. On the gateway, store the URL without echo (it contains the token):
+
+```bash
+read -rsp "Discord webhook URL: " U; echo
+printf '%s\n' "$U" | sudo install -m 600 /dev/stdin /opt/can-my-network/traffic-runner/sessions/discord.webhook; unset U
+sudo git -C /opt/can-my-network pull && cd /opt/can-my-network/traffic-runner && sudo docker compose build && sudo docker compose up -d
+sudo scripts/run-activity.sh mdd_suicidality_a_phone --activity social_post --duration 2m --seed 1 --profile test --block-id discord-test1
+```
+
+The test post must appear in `#uploads`, and the last line of `logs/ground_truth.csv` must read `…,social_post,discord.com;cdn.discordapp.com,test,1,discord-test1,ok`.
 
 ## 9. Open points
 

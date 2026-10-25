@@ -29,6 +29,19 @@ def test_account_activity_without_session_logs_not_implemented(logdir, monkeypat
     assert (r["activity_id"], r["status"], r["domains"]) == ("messaging", "not_implemented", "")
 
 
+def test_social_post_without_discord_webhook_logs_not_implemented(logdir, monkeypatch, tmp_path):
+    monkeypatch.setenv("RUNNER_SESSION_DIR", str(tmp_path))  # no webhook file, IDs empty in accounts.yaml
+    assert cli.main(BASE + ["--activity", "social_post"]) == cli.EXIT_NOT_IMPLEMENTED
+    r = rows(logdir)[0]
+    assert (r["activity_id"], r["status"], r["domains"]) == ("social_post", "not_implemented", "")
+
+
+def test_social_post_dry_run(logdir, capsys):
+    assert cli.main(BASE + ["--activity", "social_post", "--duration", "3m", "--dry-run"]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "webhook_post" in out and "cdn.discordapp.com" in out and "'status': 'ok'" in out
+
+
 def test_catalog_only_activity_logs_not_implemented(logdir):
     assert cli.main(BASE + ["--activity", "away"]) == cli.EXIT_NOT_IMPLEMENTED
     assert rows(logdir)[0]["status"] == "not_implemented"

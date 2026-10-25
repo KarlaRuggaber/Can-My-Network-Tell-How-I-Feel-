@@ -277,7 +277,7 @@ One executor per plan (= per dataset), as the systemd template unit [`systemd/tr
 - `status` ≠ `ok` = failed or stub
 - `end` earlier than planned = `phone_check` done or video over; `start` later than planned = a late start
 
-Runner state 23.10 (after Karla's `04d776d`): calls and `gaming_session` run against the self-hosted peer (`peer-vm/`, Jitsi plus a WebSocket game); every `--platform` maps to it. Since the test accounts of 23.10 (traffic-runner README §8a), `messaging` (Slack DM with a reply bot) and `social_post` (a private subreddit) run as well. They need the device's login session in `traffic-runner/sessions/`; without it the runner logs `not_implemented`, which the push report flags. Before that, these two were the only stubs: 5 % of the student's and 3 % of the 9-to-5's planned activity time. Away needs nothing from the executor: no run is the same as away in the data (Karla, 23.10).
+Runner state 23.10 (after Karla's `04d776d`): calls and `gaming_session` run against the self-hosted peer (`peer-vm/`, Jitsi plus a WebSocket game); every `--platform` maps to it. Since the test accounts of 23.10 (traffic-runner README §8a), `messaging` (Slack DM with a reply bot) and `social_post` (a private subreddit; since 25.10 a Discord webhook, traffic-runner README §8a) run as well. `messaging` needs the device's login session in `traffic-runner/sessions/`, `social_post` the file `sessions/discord.webhook`; without them the runner logs `not_implemented`, which the push report flags. Before that, these two were the only stubs: 5 % of the student's and 3 % of the 9-to-5's planned activity time. Away needs nothing from the executor: no run is the same as away in the data (Karla, 23.10).
 
 ### 5.2 Push report
 
