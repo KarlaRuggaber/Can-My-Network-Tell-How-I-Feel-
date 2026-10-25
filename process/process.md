@@ -284,8 +284,10 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - Decided: `social_post` posts through a webhook of a private Discord server (`discord.com` is in the thesis SOCIAL list, so the same social-upload metrics count it). The Reddit account gets registered as an app (label). Branch `social-post-discord`: `runner/discord.py`, ID and channel checks, browser opens the uploaded image afterwards, Reddit UI code removed; 226 runner tests pass; a probe against Discord got the normal `404 Unknown Webhook`. Details: traffic-runner README §8a.
   - Discord server "CMNTHIF" with `#uploads` and the webhook "CMNTHIF social_post" created; IDs in `accounts.yaml` (webhook `1563995536129007696`, channel `1563991267119988858`), checked against Discord. The webhook URL is in `traffic-runner/sessions/discord.webhook` on the gateway (mode 600, root), transferred from the clipboard without showing the token.
   - Catalog change decided by Thierry for the team (Karla was not available); she can still object in PR #12.
+  - PR #12 merged (`90f80f7`). Deployed on the gateway without interrupting the live runs: new runner image built from `origin/main` in a temporary folder, then, in the phone gap at 20:58, `git pull` and only the four phone containers recreated. The laptops were in 2-hour blocks (stream, gaming) and keep the old image; their activities are unchanged by PR #12. Order mattered: `config/` is mounted live from the clone, and the old `messaging` code refuses an `accounts.yaml` without `reddit:`, so pull and phone switch had to happen together.
+  - **Test post** 20:58:47–20:59:41 from `mdd_suicidality_a_phone`: `ok`, domains `discord.com;cdn.discordapp.com`; "Test upload 8653" appeared in `#uploads`, labelled APP by Discord. In the capture: 1.43 MB upstream from the phone to `discord.com`, all counted as SOCIAL by the app.
 - **Next / open:**
-  - Merge PR #12, deploy the runner between two blocks, test post
+  - Recreate the laptop containers with the new image at the next quiet moment (`docker compose up -d --no-deps --no-build <laptops>`), not urgent
   - Delete the unused Reddit session files on the gateway (`*.reddit*.json`)
 
 </details>

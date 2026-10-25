@@ -544,6 +544,8 @@ sudo scripts/run-activity.sh mdd_suicidality_a_phone --activity social_post --du
 
 The test post must appear in `#uploads`, and the last line of `logs/ground_truth.csv` must read `…,social_post,discord.com;cdn.discordapp.com,test,1,discord-test1,ok`.
 
+**Done 25.10:** server, channel and webhook created, IDs checked against Discord (GET on the webhook), URL stored from the clipboard with `pbpaste | ssh … 'sudo sh -c "umask 077; cat > …/sessions/discord.webhook"'` (on macOS zsh, `read -p` is not a prompt, and `sudo install /dev/stdin` writes an empty file under sudo-rs). Test post at 20:58 `ok`, 1.43 MB upstream to `discord.com` in the capture.
+
 ## 9. Open points
 
 State 2026-10-16. The same list is in `process/process.md` (week 5).
