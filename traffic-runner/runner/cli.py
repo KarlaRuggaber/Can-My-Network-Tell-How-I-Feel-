@@ -11,9 +11,9 @@ import signal
 import socket
 import sys
 
-from . import config, gtlog, sessions
+from . import config, discord, gtlog, sessions
 from .activities import ACTIVITIES, CATALOG_ONLY
-from .context import NotImplementedActivity, RealClock, RunContext
+from .context import NotImplementedActivity, PageError, RealClock, RunContext
 
 log = logging.getLogger("runner")
 
@@ -32,6 +32,9 @@ class Aborted(BaseException):
 class UsageError(Exception):
     pass
 
+
+DRY_RUN_WEBHOOK = "https://discord.com/api/webhooks/100000000000000001/dry-run-token-not-a-secret"
+DRY_RUN_CHANNEL = "200000000000000002"
 
 def parse_duration(text: str) -> float:
     """'300', '90s', '5m', '2h' -> seconds."""
@@ -174,10 +177,30 @@ def cmd_run(args) -> int:
                 log.warning("%s", e)
                 status = "not_implemented"
 
+    # social_post: the Discord webhook (not_implemented while the server is not set up).
+    webhook_platform = getattr(module, "WEBHOOK_PLATFORM", None) if implemented else None
+    accounts = config.load_accounts() if (session_platform or webhook_platform) else {}
+    webhook_url = ""
+    if webhook_platform and status is None:
+        if args.dry_run:
+            webhook_url = DRY_RUN_WEBHOOK
+            accounts = {**accounts, "discord": {"webhook_id": DRY_RUN_WEBHOOK.split("/")[-2],
+                                                "channel_id": DRY_RUN_CHANNEL}}
+        else:
+            try:
+                webhook_url = discord.load_webhook(accounts.get("discord") or {})
+            except NotImplementedActivity as e:
+                log.warning("%s", e)
+                status = "not_implemented"
+            except PageError as e:
+                log.error("%s", e)
+                status = "error"
+
     if args.dry_run:
         from .fake import FakeClock, FakeDriver
         clock = FakeClock()
         driver = FakeDriver(clock)
+        driver.webhook_channel_id = DRY_RUN_CHANNEL
     else:
         from .browser import BrowserDriver
         role_cfg = roles[device.role]
@@ -195,8 +218,8 @@ def cmd_run(args) -> int:
     ctx.mixes = mixes
     ctx.run_key = f"{args.profile}/{args.seed}/{args.block_id}"
     ctx.session_meta = session_meta
-    if session_platform:
-        ctx.accounts = config.load_accounts()
+    ctx.accounts = accounts
+    ctx.webhook_url = webhook_url
 
     start = gtlog.now_iso()
     log.info("start %s on %s (%s, %s), %.0f s, mix=%s, seed=%s, block=%s",

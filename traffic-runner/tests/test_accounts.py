@@ -1,4 +1,4 @@
-"""messaging (Slack) and social_post (Reddit) without network: fake driver, fake sessions."""
+"""messaging (Slack) and social_post (Discord webhook) without network: fake driver, fake sessions."""
 
 import json
 import random
@@ -7,18 +7,23 @@ import pytest
 
 from runner import sessions
 from runner.activities import ACTIVITIES
-from runner.browser import reddit_target_ok
 from runner.config import load_accounts, load_mixes
 from runner.context import NotImplementedActivity, PageError, RunContext
 from runner.fake import FakeClock, FakeDriver
 
 
-def run(activity, duration, seed=1, meta=None):
+WEBHOOK_ID, CHANNEL_ID = "123456789012345678", "987654321098765432"
+WEBHOOK = f"https://discord.com/api/webhooks/{WEBHOOK_ID}/abcdefghijklmnopqrstuvwxyz0123456789"
+
+
+def run(activity, duration, seed=1, meta=None, reply_channel=CHANNEL_ID):
     clock = FakeClock()
     driver = FakeDriver(clock)
+    driver.webhook_channel_id = reply_channel
     ctx = RunContext(driver, clock, duration)
     ctx.mixes = load_mixes()
-    ctx.accounts = load_accounts()
+    ctx.accounts = {**load_accounts(), "discord": {"webhook_id": WEBHOOK_ID, "channel_id": CHANNEL_ID}}
+    ctx.webhook_url = WEBHOOK
     ctx.session_meta = meta if meta is not None else {"dm_url": "https://app.slack.com/client/T1/D1"}
     ACTIVITIES[activity].run(ctx, random.Random(f"{seed}/m1"), duration, None)
     return driver.calls, ctx.visited, clock.now()
@@ -47,29 +52,26 @@ def test_messaging_refuses_expired_session():
 
 
 @pytest.mark.parametrize("seed", range(5))
-def test_social_post_only_to_configured_subreddit(seed):
+def test_social_post_one_upload_through_the_configured_webhook(seed):
     calls, visited, end = run("social_post", 300, seed)
-    posts = [c for c in calls if c[0] == "reddit_post"]
+    posts = [c for c in calls if c[0] == "webhook_post"]
     assert len(posts) == 1
-    _, subreddit, title, size = posts[0]
-    assert subreddit == "CMNTHIF"
+    _, hook, title, size = posts[0]
+    assert hook == WEBHOOK_ID
     assert 1_000_000 * 0.95 <= size <= 3_000_000 * 1.05
-    assert visited == ["www.reddit.com"]
+    opened = [c[1] for c in calls if c[0] == "open"]
+    assert opened == [f"https://cdn.discordapp.com/attachments/{CHANNEL_ID}/1/test.png"]  # looks at the post
+    assert visited == ["discord.com", "cdn.discordapp.com"]
+    assert end <= 300
 
 
-@pytest.mark.parametrize("url, page, ok", [
-    ("https://www.reddit.com/r/CMNTHIF/submit/?type=IMAGE", "submit", True),
-    ("https://www.reddit.com/r/cmnthif/submit", "submit", True),
-    ("https://www.reddit.com/r/CMNTHIF/comments/abc/test_upload/", "comments", True),
-    ("https://www.reddit.com/r/CMNTHIF2/submit", "submit", False),       # lookalike subreddit
-    ("https://www.reddit.com/r/AskReddit/submit", "submit", False),
-    ("https://www.reddit.com/submit", "submit", False),                  # no subreddit chosen
-    ("https://www.reddit.com/user/CMNTHIF/submit", "submit", False),     # profile, public
-    ("https://evil.example/r/CMNTHIF/submit", "submit", False),
-    ("https://www.reddit.com/r/CMNTHIF/comments/abc/", "submit", False),
-])
-def test_reddit_target_check(url, page, ok):
-    assert reddit_target_ok(url, "CMNTHIF", page) is ok
+def test_social_post_refuses_a_message_in_another_channel():
+    with pytest.raises(PageError, match="landed in channel"):
+        run("social_post", 300, reply_channel="111111111111111111")
+
+
+def test_social_post_same_seed_same_upload():
+    assert run("social_post", 300, 4)[0] == run("social_post", 300, 4)[0]
 
 
 def test_sessions_load(tmp_path):
@@ -84,15 +86,5 @@ def test_sessions_load(tmp_path):
 
 def test_accounts_config():
     acc = load_accounts()
-    assert acc["reddit"]["subreddit"] == "CMNTHIF"
+    assert acc["discord"]["server"] == "CMNTHIF" and "reddit" not in acc
     assert set(acc["personas"]) == {"gw_student_a", "gw_insomnia_a", "gw_mdd_suicidality_a", "gw_social_anxiety_a"}
-
-
-def test_reddit_sub_root_only_exact_subreddit():
-    from runner.browser import reddit_sub_root
-    assert reddit_sub_root("https://www.reddit.com/r/CMNTHIF/", "CMNTHIF")
-    assert reddit_sub_root("https://www.reddit.com/r/cmnthif", "CMNTHIF")
-    assert not reddit_sub_root("https://www.reddit.com/r/CMNTHIF2/", "CMNTHIF")
-    assert not reddit_sub_root("https://www.reddit.com/r/CMNTHIF/submit/", "CMNTHIF")
-    assert not reddit_sub_root("https://www.reddit.com/", "CMNTHIF")
-    assert not reddit_sub_root("https://evil.example/r/CMNTHIF/", "CMNTHIF")

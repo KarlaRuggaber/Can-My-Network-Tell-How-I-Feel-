@@ -33,7 +33,7 @@ categories:
     thesis_list: SOCIAL
     sites:
       - {host: instagram.com, url: "https://www.instagram.com/", login: true}
-      - {host: reddit.com, url: "https://www.reddit.com/", login: true}
+      - {host: discord.com, url: "https://discord.com/", login: true}   # runner: webhook of the private server (since 25.10)
 
   streaming:
     thesis_list: STREAMING

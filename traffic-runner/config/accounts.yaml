@@ -4,11 +4,16 @@
 slack:
   start_url: "https://slack.com/signin"
   bot_name: "CMNTHIF Partner"   # the reply bot (peer-vm/slackbot)
-reddit:
-  start_url: "https://www.reddit.com/login/"
-  subreddit: "CMNTHIF"          # private; the ONLY target social_post may post to
-# dataset -> Slack member (display name) and email tag of the persona. Reddit uses one shared
-# account (u/CMNTHIF) for all personas.
+discord:                        # social_post (since 25.10, replaces Reddit): private server CMNTHIF
+  server: "CMNTHIF"
+  channel: "uploads"
+  # Non-secret IDs of the ONLY channel and webhook social_post may post to. Empty = not set up
+  # yet (social_post logs not_implemented). The webhook URL itself (it contains the token) is
+  # the file sessions/discord.webhook on the gateway, root-only, not in git.
+  webhook_id: "1563995536129007696"   # "CMNTHIF social_post", created 25.10
+  channel_id: "1563991267119988858"   # #uploads (server ID 1563991098429538564)
+# dataset -> Slack member (display name) and email tag of the persona. social_post uses one
+# webhook for all personas.
 personas:
   gw_student_a: {name: Student, tag: student}
   gw_insomnia_a: {name: Ben, tag: ben.insomnia}

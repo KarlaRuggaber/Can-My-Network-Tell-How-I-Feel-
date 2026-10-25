@@ -150,9 +150,11 @@ def load_roles(path: Path | None = None) -> dict:
 def load_accounts(path: Path | None = None) -> dict:
     path = Path(path or CONFIG_DIR / "accounts.yaml")
     data = _load_yaml(path)
-    sub = str((data.get("reddit") or {}).get("subreddit", ""))
-    if not sub or not re.match(r"^[A-Za-z0-9_]{3,21}$", sub):
-        raise ConfigError(f"{path}: reddit.subreddit must be a subreddit name, got {sub!r}")
+    discord = data.get("discord") or {}
+    for key in ("webhook_id", "channel_id"):
+        value = str(discord.get(key) or "")
+        if value and not re.match(r"^\d{5,25}$", value):
+            raise ConfigError(f"{path}: discord.{key} must be a Discord ID (digits), got {value!r}")
     return data
 
 

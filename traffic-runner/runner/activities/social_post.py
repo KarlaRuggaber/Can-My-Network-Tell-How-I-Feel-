@@ -1,10 +1,15 @@
-"""social_post: log into a test account and upload 1 photo (1-3 MB) (catalog §2).
+"""social_post: upload 1 photo (1-3 MB) to a social platform (catalog §2).
 
-Platform (decided 23.10): Reddit, shared account u/CMNTHIF, posting ONLY into the private
-subreddit r/CMNTHIF (config/accounts.yaml). The image is generated (random pixels, so the
-upload has the requested size and is obviously not a photo). Before clicking "Post" the
-driver checks that the page is the submit page of exactly that subreddit, and afterwards
-that the new post lives there; anything else is an error, never a post elsewhere.
+Platform (decided 25.10, replaces Reddit): Discord, through a webhook of one channel in the
+project's private server (runner/discord.py, config/accounts.yaml). Reddit flagged the shared
+account as automated and requires app registration plus API approval; Discord webhooks are
+made for automated posts. discord.com is in the thesis SOCIAL list, so the upload counts for
+the same social-upload metrics as before.
+
+The image is generated (random pixels, so the upload has the requested size and is obviously
+not a photo). The webhook must be the configured one, and Discord's reply must name the
+configured channel; anything else is an error, never a post elsewhere. Afterwards the browser
+opens the uploaded image, like looking at the new post.
 """
 
 import tempfile
@@ -21,7 +26,7 @@ NEEDS_MIX = False
 DEFAULT_MIX = None
 MIX_KIND = None
 NEEDS_BROWSER = True
-SESSION_PLATFORM = "reddit"
+WEBHOOK_PLATFORM = "discord"  # the CLI loads the webhook (not_implemented if not set up)
 
 IMAGE_MB = (1.0, 3.0)
 VIEW = (20, 60)
@@ -29,14 +34,15 @@ TITLES = ["Test upload", "Testbild", "Test post (automated)", "Upload test", "Bi
 
 
 def run(ctx, rng, duration, mix):
-    subreddit = ctx.accounts["reddit"]["subreddit"]
     size = int(rng.uniform(*IMAGE_MB) * 1_000_000)
     image_seed = rng.random()
     title = f"{rng.choice(TITLES)} {rng.randint(1000, 9999)}"
     view, view_seed = rng.uniform(*VIEW), rng.random()
     with tempfile.TemporaryDirectory() as tmp:
         image = make_png(Path(tmp) / "test.png", size, image_seed)
-        if not ctx.reddit_post(subreddit, title, image):
+        msg = ctx.webhook_post(image, title)
+        if not msg:
             raise PageError("post was not created")
-    ctx.dwell(view, view_seed)  # look at the new post
+    ctx.open(msg["attachments"][0]["url"])  # look at the new post
+    ctx.dwell(view, view_seed)
     return ctx.visited
