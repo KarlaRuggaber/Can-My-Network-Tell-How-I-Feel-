@@ -7,10 +7,11 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
-from metrics.common import enrich_with_hostnames  # noqa: E402
+from metrics.common import STREAMING_SLDS, enrich_with_hostnames, streaming_inbound_mask  # noqa: E402
 
 CLIENT, GATEWAY, SERVER = "10.42.1.11", "10.42.1.1", "151.101.1.1"
 
@@ -48,3 +49,34 @@ def test_without_source_ip_column_falls_back_to_destination():
     df = pd.DataFrame([_dns_answer(), _row(CLIENT, SERVER)]).drop(columns=["Source IP"])
     out = enrich_with_hostnames(df)
     assert out.loc[1, "ResolvedHost"] == "www.nzz.ch"
+
+
+# --- broadcaster VOD hosts (SERVICE_HOSTS, 25.10) ------------------------------------------------
+
+VOD = "151.101.2.2"
+
+
+def _stream_rows(host):
+    dns = _row(GATEWAY, CLIENT, IsDNS=True, DNS_QNAME=host, DNS_ANS_NAME=host, DNS_ANS_IPS=VOD)
+    return pd.DataFrame([dns, _row(CLIENT, VOD, **{"Source Port": 50000, "Destination Port": 443}),
+                         _row(VOD, CLIENT, **{"Source Port": 443, "Destination Port": 50000, "Length": 1400})])
+
+
+def test_srf_vod_host_counts_as_srf_streaming():
+    out = enrich_with_hostnames(_stream_rows("srf-vod-amd.akamaized.net"))
+    assert out.loc[2, "ResolvedHost"] == "srf-vod-amd.akamaized.net"  # real host kept for tracing
+    assert out.loc[2, "SLD"] == "srf.ch" and "srf.ch" in STREAMING_SLDS
+    assert bool(streaming_inbound_mask(out).loc[2])  # the downstream packet counts as streaming
+
+
+@pytest.mark.parametrize("host", [
+    "colibri-js.akamaized.net",                  # SRF's scripts on the same CDN: not video
+    "images.akamaized.net",                      # other sites on Akamai
+    "srf-vod-amd.akamaized.net.evil.example",    # lookalike
+    "xsrf-vod-amd.akamaized.net",
+    "srf-vod-amd.akamaihd.net",                  # other CDN domain: only add when measured
+])
+def test_other_cdn_hosts_keep_their_sld(host):
+    out = enrich_with_hostnames(_stream_rows(host))
+    assert out.loc[2, "SLD"] != "srf.ch"
+    assert not bool(streaming_inbound_mask(out).loc[2])

@@ -109,6 +109,28 @@ def _sld(host: str | None) -> str | None:
         return ".".join(parts[-2:])
     return host.strip()
 
+# Extension of the thesis lists (25.10.2026, process/process.md week 6): video CDN hosts of
+# broadcasters whose videos are not served from their own domain. The host is attributed to the
+# service, so every SLD-based list (STREAMING_SLDS, ...) counts it; ResolvedHost keeps the real
+# host. Only measured hosts are listed: SRF Play streamed 97 % of its downstream from
+# srf-vod-amd.akamaized.net (pilot 23.10, 1 h), which the SLD rule reduced to akamaized.net,
+# a CDN that no list contains. Other akamaized.net hosts (scripts, images) are left alone.
+SERVICE_HOSTS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"^srf-?vod[a-z0-9-]*\.akamaized\.net$"), "srf.ch"),
+]
+
+
+def _service_sld(host) -> str | None:
+    """The service a known CDN host belongs to (SERVICE_HOSTS), else None."""
+    if not isinstance(host, str):
+        return None
+    h = host.strip().lower().rstrip(".")
+    for pattern, service in SERVICE_HOSTS:
+        if pattern.match(h):
+            return service
+    return None
+
+
 def build_dns_map(df: pd.DataFrame) -> dict[str, str]:
 
     if df is None or df.empty or "IsDNS" not in df.columns:
@@ -196,8 +218,15 @@ def enrich_with_hostnames(df: pd.DataFrame) -> pd.DataFrame:
     else:
         out["ResolvedHost"] = None
 
-    # Compute SLD from the resolved host (if any)
-    out["SLD"] = out["ResolvedHost"].apply(_sld) if "ResolvedHost" in out.columns else None
+    # Compute SLD from the resolved host (if any); known CDN hosts count for their service
+    if "ResolvedHost" in out.columns:
+        out["SLD"] = out["ResolvedHost"].apply(_sld)
+        services = {h: s for h in pd.unique(out["ResolvedHost"].dropna()) if (s := _service_sld(h))}
+        if services:
+            mapped = out["ResolvedHost"].map(services)
+            out["SLD"] = mapped.where(mapped.notna(), out["SLD"])
+    else:
+        out["SLD"] = None
     return out
 
 
