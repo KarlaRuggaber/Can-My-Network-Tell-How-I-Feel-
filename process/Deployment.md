@@ -146,6 +146,7 @@ Pages 01 and 02 now compute a cheap signature of the selected datasets (number o
 | Identity | Split per client **MAC** (`/etc/tapgw/devices.json`) | Split per **IP**, MAC as fallback (`/etc/tapingest/devices.csv`, shared with the runner) | Done. Real devices need a fixed DHCP lease (`dhcp-host=`) |
 | Background filter (§3) | Drop gateway services, AP/controller traffic, mDNS/SSDP/NTP, broadcasts | Implemented as specified (Section 3.1), AP excluded by MAC, drop counts per rule in the state db | Done |
 | SNI in hostnames (§5) | Patch `enrich_with_hostnames` + SNI column | Inbound lookup implemented (Section 7.7); SNI not added (not needed while DNS is visible, feed lacks the server IP) | Inbound: done. SNI: open, low priority |
+| CDN hosts (not in the plan) | – | Broadcaster VOD hosts attributed to their service, e.g. `srf-vod-*.akamaized.net` → `srf.ch` (Section 7.9) | Done 25.10, extension of the thesis lists |
 | Output location | `/var/lib/tapcap/parquet`, mounted read-only | `app/processed_parquet` in the repo, mounted read-write | Done. Read-write so the upload page keeps working |
 | Hosting | Option A: app on the gateway via SSH tunnel | Option A, Docker, Streamlit bound to 127.0.0.1 | Done |
 | Feature cache | Press "Refresh cached day metrics" | Detected automatically | Done |
@@ -394,6 +395,38 @@ Without a fix, the live runs would have run the gateway out of memory within the
 **Remote access.** Thierry installed Tailscale at 16:31 (Section 8, HardwareSetup §17): the gateway is `can-my-network-gw` (100.124.37.62) in his tailnet, tailscaled runs with `--netfilter-mode=off`, and `/etc/nftables.conf` opens only SSH on `tailscale0`. Tested from outside the hotspot (Thierry, and SSH from another network at 16:40).
 
 **SSH from the AP network.** From a laptop on the AP's WiFi, `ssh kathy@10.42.0.1` failed with "Host key verification failed", because `known_hosts` lists the gateway under 172.20.10.10. Same machine, same keys (fingerprints compared). The hotspot address worked from both networks. Since the uplink uses DHCP (23.10 evening, HardwareSetup §17), the gateway no longer has a fixed hotspot address (it got 172.20.10.3); use Tailscale (`can-my-network-gw`, Section 8) for everything.
+
+### 7.9 Broadcaster VOD hosts count as streaming (25.10.2026)
+
+**Why.** Since 25.10 `video_stream` plays SRF only, because YouTube aborts playback in the automated containers (process log, week 6). SRF Play does not stream from `srf.ch` but from the Akamai CDN, `srf-vod-amd.akamaized.net`. The app reduces every host to its last two labels (`_sld`), so the video became `akamaized.net`, which no thesis list contains. Measured on Ben's SRF hour of the pilot (23.10, 16:00–17:00):
+
+| Domain (SLD) | Downstream | Share |
+| --- | --- | --- |
+| `akamaized.net` (`srf-vod-amd…`) | 221.8 MB | 97.1 % |
+| `srf.ch` | 4.2 MB | 1.8 % |
+| rest (tracking, consent, statistics) | 2.4 MB | 1.1 % |
+
+Only the 1.8 % counted as streaming. The streaming metrics (C1 long streaming sessions, C2_F5 passive/active) would have been almost blind for every SRF evening. The same would hold for a real household watching SRF Play, so it is also a limitation of the thesis lists.
+
+**Change** (`808c2cc`, `app/metrics/common.py`): **an extension of the thesis lists.** `SERVICE_HOSTS` attributes known CDN hosts to their service when the SLD is computed: `srf-vod-*.akamaized.net` → `srf.ch`. All SLD-based lists (STREAMING, SOCIAL, …) therefore count it consistently, and `ResolvedHost` keeps the real host for tracing. Only measured hosts are listed. All of `akamaized.net` is deliberately **not** added: many sites load scripts and images from it (SRF's own player scripts come from `colibri-js.akamaized.net`), which would make every such page "streaming".
+
+**Tests.** `app_pcap_to_dsm5/tests/test_hostnames.py`, 6 new cases: the SRF VOD host counts as `srf.ch` and as streaming downstream; `colibri-js.akamaized.net`, other Akamai hosts, a lookalike (`srf-vod-amd.akamaized.net.evil.example`, `xsrf-vod…`) and another CDN domain keep their SLD. 10 tests pass.
+
+**Effect, same data with the old and the new code:**
+
+| Data | Measure | Old | New |
+| --- | --- | --- | --- |
+| Pilot hour 23.10 (Ben, SRF) | Downstream counted as streaming | 4.2 MB (1.8 %) | 225.8 MB (98.9 %) |
+| | Streaming inbound rows | 8 376 | 156 510 |
+| | C2_F5 PassiveActiveByteRatio | 1.03 | 21.46 |
+| | Other 77 day values | | unchanged |
+| Thesis ONU datasets (video, web-browsing, game) | Streaming rows | | identical |
+
+C1's long-session metric did not change because the pilot stream lasted 1 h (C1 counts sessions of ≥ 2 h); the MDD evenings (1.5–3 h) will show it.
+
+**Deployment.** `git pull`, app image rebuilt, container recreated at 23:07; the feature cache was empty. Check in the container: `_service_sld("srf-vod-amd.akamaized.net") == "srf.ch"`, `colibri-js.akamaized.net` unchanged.
+
+**Next.** Other broadcasters in the STREAMING list (ZDF, ARD, ORF) may use CDNs too; measure their video hosts before adding them as a second playable site, and add their hosts to `SERVICE_HOSTS` only from a measurement.
 
 ## 8. Operating the system
 
