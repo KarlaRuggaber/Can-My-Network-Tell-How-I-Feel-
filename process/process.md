@@ -286,9 +286,10 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - Catalog change decided by Thierry for the team (Karla was not available); she can still object in PR #12.
   - PR #12 merged (`90f80f7`). Deployed on the gateway without interrupting the live runs: new runner image built from `origin/main` in a temporary folder, then, in the phone gap at 20:58, `git pull` and only the four phone containers recreated. The laptops were in 2-hour blocks (stream, gaming) and keep the old image; their activities are unchanged by PR #12. Order mattered: `config/` is mounted live from the clone, and the old `messaging` code refuses an `accounts.yaml` without `reddit:`, so pull and phone switch had to happen together.
   - **Test post** 20:58:47–20:59:41 from `mdd_suicidality_a_phone`: `ok`, domains `discord.com;cdn.discordapp.com`; "Test upload 8653" appeared in `#uploads`, labelled APP by Discord. In the capture: 1.43 MB upstream from the phone to `discord.com`, all counted as SOCIAL by the app.
+  - Reddit session files (`*.reddit*.json`, 3 phones) deleted on the gateway with `shred`. Kept: the screenshot of the failed post (`logs/debug/reddit-post-20261025-182521.png`, evidence, no login data). The Reddit account and subreddit still exist (registered as an app); delete them at the end of the project.
+  - Laptop switch scheduled for Mon 26.10 01:00 (no laptop block 00:36–08:00 in any plan): one-off systemd timer `tr-laptop-switch` on the gateway runs `/var/tmp/switch-laptops.sh`, which checks again that no laptop is busy (else aborts without changes), recreates only the four laptop containers and runs an offline smoke test. Log: `/var/tmp/switch-laptops.log`.
 - **Next / open:**
-  - Recreate the laptop containers with the new image at the next quiet moment (`docker compose up -d --no-deps --no-build <laptops>`), not urgent
-  - Delete the unused Reddit session files on the gateway (`*.reddit*.json`)
+  - Check `/var/tmp/switch-laptops.log` on Mon 26.10 (all eight runner containers on image `d5a2b7…`)
 
 </details>
 
