@@ -38,7 +38,9 @@ categories:
   streaming:
     thesis_list: STREAMING
     sites:
-      - {host: youtube.com, url: "https://www.youtube.com/", kind: video}
+      # playable false since 25.10: YouTube aborts playback after ~40 s in the automated containers
+      # ("Ein Fehler ist aufgetreten", player state -1), so video_stream uses SRF only (README §6).
+      - {host: youtube.com, url: "https://www.youtube.com/", kind: video, playable: false}
       - {host: play.srf.ch, url: "https://play.srf.ch/", kind: video}
       - {host: open.spotify.com, url: "https://open.spotify.com/", login: true}
       - {host: netflix.com, url: "https://www.netflix.com/", login: true}
