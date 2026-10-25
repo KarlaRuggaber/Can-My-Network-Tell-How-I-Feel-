@@ -199,3 +199,67 @@ def test_report_needs_no_pyyaml(tmp_path):
             "sys.exit(cli.main(['report', '--help']))")
     r = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+# --- blocks that end before their planned end (25.10: YouTube stream failed after 8 min) --------
+
+def _stream_case(tmp_path, *, logged_end_min=None, running=False):
+    """One 2-h video_stream on the laptop, planned 20:15-22:17, report at 22:05 for 21:05-22:05.
+    Partitions exist until 20:40. logged_end_min: the runner logged an error that many minutes
+    after the start; running: the executor state says the block is running (no log row yet)."""
+    start = datetime(2026, 10, 25, 20, 15, tzinfo=Z)
+    end = datetime(2026, 10, 25, 22, 17, tzinfo=Z)
+    now = datetime(2026, 10, 25, 22, 5, tzinfo=Z).astimezone(UTC)
+    row = {c: "" for c in output.PLAN_COLUMNS} | {
+        "start": start.isoformat(), "end": end.isoformat(), "device": ROLES["laptop"],
+        "activity_id": "video_stream", "block_id": "20261025-weekend_stream-01", "day": "2026-10-25",
+        "phase": "warmup", "profile": "9to5-worker", "seed": "1", "dataset": "gw_x_a"}
+    plans = tmp_path / "plans"
+    plans.mkdir()
+    output.write_plan(plans / "gw_x_a.csv", [row])
+    gt = []
+    if logged_end_min is not None:
+        gt.append(row | {"end": (start + timedelta(minutes=logged_end_min)).isoformat(), "status": "error",
+                         "domains": "www.youtube.com"})
+    write_gt(tmp_path / "gt.csv", gt)
+    events = [{"event": "start", "block_id": row["block_id"]}]
+    if logged_end_min is not None:
+        events.append({"event": "exit", "block_id": row["block_id"], "code": 1})
+    (plans / "gw_x_a.state.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+    partitions(tmp_path / "pq" / "gw_x_a", datetime(2026, 10, 25, 20, 40, tzinfo=Z).astimezone(UTC),
+               back=timedelta(minutes=30))
+    return plans, now
+
+
+def _report(tmp_path, plans, now, hours=1):
+    gt = report._ground_truth(tmp_path / "gt.csv")
+    return report.dataset_report(plans / "gw_x_a.csv", gt, now, now - timedelta(hours=hours), FakeProbe(),
+                                 tmp_path / "pq")
+
+
+def test_block_that_ended_early_is_not_shown_as_running_and_explains_the_data_gap(tmp_path):
+    plans, now = _stream_case(tmp_path, logged_end_min=8)
+    d = _report(tmp_path, plans, now)
+    assert d.running == []
+    assert d.not_running == ["video_stream (x_a_laptop): ended 20:23 (error)"]
+    assert not any("capture or ingest" in p for p in d.problems)  # the gap is explained, no false alarm
+    assert d.data_note.startswith("no block active since")
+
+
+def test_early_error_is_reported_in_the_window_where_it_ends_and_only_once(tmp_path):
+    plans, now = _stream_case(tmp_path, logged_end_min=8)
+    # Hourly watch at :05 with 1-h windows: 20:05-21:05 contains the 20:23 error.
+    d = _report(tmp_path, plans, datetime(2026, 10, 25, 21, 5, tzinfo=Z).astimezone(UTC))
+    assert len(d.problems) == 1 and "error, ended early at 20:23 (planned until 22:17)" in d.problems[0]
+    for hour in (22, 23):  # the later windows, incl. the one after the planned end
+        d = _report(tmp_path, plans, datetime(2026, 10, 25, hour, 5, tzinfo=Z).astimezone(UTC))
+        assert not any("weekend_stream" in p for p in d.problems), hour  # not pushed again
+    daily = _report(tmp_path, plans, datetime(2026, 10, 26, 8, 0, tzinfo=Z).astimezone(UTC), hours=24)
+    assert daily.counts["error"] == 1 and len(daily.problems) == 1  # the daily summary lists it once
+
+
+def test_running_block_without_new_partitions_still_flags_the_data_path(tmp_path):
+    plans, now = _stream_case(tmp_path, running=True)
+    d = _report(tmp_path, plans, now)
+    assert d.running == ["video_stream (x_a_laptop)"]
+    assert any("although blocks ran: video_stream (x_a_laptop) (capture or ingest?)" in p for p in d.problems)

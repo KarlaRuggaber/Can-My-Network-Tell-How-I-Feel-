@@ -4,7 +4,9 @@
     python3 -m scheduler report --hours 1 --only-problems --ntfy ...             # hourly watch: only if something is wrong
     python3 -m scheduler report --sample                                          # every minute: memory sample
 
-Per dataset (a `gw_*.csv` plan in --plans) it checks every block that should have finished in the window:
+Per dataset (a `gw_*.csv` plan in --plans) it checks every block that ended in the window (by its
+ground-truth end, so a block that fails early is reported when it fails; blocks without a log row once
+they should have ended):
 a ground-truth row with status ok, or a stub (RUNNER_STUBS), or else a problem: error, not_implemented,
 missed / interrupted / not started (from the executor's state file), logged twice. It also reports whether the
 executor runs and whether new Parquet partitions arrive, plus memory (minimum from the samples), OOM kills,
@@ -96,7 +98,9 @@ class DatasetReport:
     counts: Counter = field(default_factory=Counter)      # ok, stub, error, missing, ...
     late: int = 0
     problems: list[str] = field(default_factory=list)
-    running: list[str] = field(default_factory=list)
+    running: list[str] = field(default_factory=list)      # planned now and really running
+    not_running: list[str] = field(default_factory=list)  # planned now, but ended early or not started
+    data_note: str = ""                                   # why no new partitions are expected
     phase: str = ""
     day: str = ""
     executor: str = ""
@@ -153,6 +157,35 @@ def _classify(row: dict, gt: dict, state: dict) -> tuple[str, bool]:
 GOOD = {"ok", "stub"}
 
 
+def _live(row: dict, gt: dict, state: dict) -> tuple[str, str, datetime | None]:
+    """Actual state of a block whose planned window contains now: (kind, note, ended_at).
+
+    kind: "running" (executor started it, no exit yet), "ended" (logged or exited before its
+    planned end, e.g. after an error) or "pending" (not started yet, e.g. a late start).
+    """
+    logged = gt.get((row["device"], row["block_id"]), [])
+    if logged:
+        g = logged[-1]
+        return "ended", f"ended {_local(_t(g['end']), '%H:%M')} ({g['status']})", _t(g["end"])
+    kinds = [e["event"] for e in state.get(row["block_id"], [])]
+    if "missed" in kinds:
+        return "ended", "missed", None
+    if "exit" in kinds:
+        return "ended", "exited without a log row", None
+    if any(k in ("start", "late") for k in kinds):
+        return "running", "", None
+    return "pending", "not started", None
+
+
+def _active_after(row: dict, gt: dict, state: dict, t: datetime, now: datetime) -> bool:
+    """True if the block really produced activity after t (not only per plan)."""
+    logged = gt.get((row["device"], row["block_id"]), [])
+    if logged:
+        return _t(logged[-1]["end"]) > t
+    kinds = [e["event"] for e in state.get(row["block_id"], [])]
+    return _t(row["start"]) < now and any(k in ("start", "late") for k in kinds) and "exit" not in kinds
+
+
 def dataset_report(plan_path: Path, gt: dict, now: datetime, since: datetime, probe: Probe,
                    parquet_dir: Path) -> DatasetReport:
     ds = plan_path.stem
@@ -174,16 +207,30 @@ def dataset_report(plan_path: Path, gt: dict, now: datetime, since: datetime, pr
     for r in rows:
         start, end = _t(r["start"]), _t(r["end"])
         if start <= now < end:
-            rep.running.append(f"{r['activity_id']} ({r['device']})")
-        if not (since <= start and end <= now - SETTLE):
-            continue
+            kind, note, _ = _live(r, gt, state)
+            if kind == "running":
+                rep.running.append(f"{r['activity_id']} ({r['device']})")
+            else:
+                rep.not_running.append(f"{r['activity_id']} ({r['device']}): {note}")
+        logged = gt.get((r["device"], r["block_id"]), [])
+        if len(logged) == 1:
+            # Logged blocks count in the window in which they really ended: a block that failed
+            # after 8 of its 120 planned minutes is reported then, not after its planned end, and
+            # every block exactly once.
+            ended = _t(logged[0]["end"])
+            if not (since <= ended <= now):
+                continue
+        elif not (since <= start and end <= now - SETTLE):
+            continue  # not logged (or logged twice): checked once it should have ended
         rep.checked += 1
         outcome, late = _classify(r, gt, state)
         rep.counts[outcome] += 1
         rep.late += late
         if outcome not in GOOD:
+            early = (f", ended early at {_local(_t(logged[0]['end']), '%H:%M')} (planned until {_local(end, '%H:%M')})"
+                     if len(logged) == 1 and _t(logged[0]["end"]) < end - SETTLE else "")
             rep.problems.append(f"{ds}: {r['block_id']} {r['activity_id']} on {r['device']} at "
-                                f"{_local(start, '%d.%m %H:%M')}: {outcome}")
+                                f"{_local(start, '%d.%m %H:%M')}: {outcome}{early}")
     upcoming = [r for r in rows if _t(r["start"]) > now]
     if upcoming:
         n = min(upcoming, key=lambda r: _t(r["start"]))
@@ -205,7 +252,16 @@ def dataset_report(plan_path: Path, gt: dict, now: datetime, since: datetime, pr
     ran_recently = [r for r in rows if _t(r["start"]) < now - STALE and _t(r["end"]) > since]
     if ran_recently and (rep.newest_partition is None or rep.newest_partition < now - STALE - timedelta(minutes=5)):
         last = _local(rep.newest_partition) if rep.newest_partition else "never"
-        rep.problems.append(f"{ds}: no new Parquet partition since {last} although blocks ran (capture or ingest?)")
+        # Only blocks that really ran after the newest partition point at the data path; a
+        # block that ended early (e.g. a failed stream) explains the gap instead.
+        ref = (rep.newest_partition or since) + timedelta(minutes=5)
+        active = [r for r in ran_recently if _active_after(r, gt, state, ref, now)]
+        if active:
+            names = ", ".join(f"{r['activity_id']} ({r['device']})" for r in active[:3])
+            rep.problems.append(f"{ds}: no new Parquet partition since {last} although blocks ran: "
+                                f"{names} (capture or ingest?)")
+        else:
+            rep.data_note = f"no block active since {last}"
     return rep
 
 
@@ -234,9 +290,11 @@ def build(plans_dir: Path, gt_path: Path, parquet_dir: Path, samples: Path, hour
         lines.append(f"  {d.checked} blocks due: {c['ok']} ok, {c['stub']} stub, {bad} problem(s), {d.late} late")
         data = (f"newest partition {_local(d.newest_partition)}, {d.partitions_in_window} in window"
                 if d.newest_partition else "no partitions yet")
-        lines.append(f"  data: {data}")
+        lines.append(f"  data: {data}" + (f" ({d.data_note})" if d.data_note else ""))
         if d.running:
             lines.append(f"  running now: {', '.join(d.running)}")
+        if d.not_running:
+            lines.append(f"  planned now, not running: {', '.join(d.not_running)}")
         if d.next_block:
             lines.append(f"  next: {d.next_block}")
 
