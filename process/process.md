@@ -319,9 +319,13 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - Fixed in the runner (`976edf7`): the log row is written first, closing the browser gets 60 s, and a hung close ends the run's own process group (runner, Playwright, Chromium). Checked in a container: the run is its own group leader (session leader under `docker exec`), its child is ended, the container keeps running. New test; 227 runner tests pass.
   - Deployed with a rolling switch (systemd unit `tr-roll-runner`, log `/var/tmp/roll-runner-20261026.log`): each container gets the new image only while it is idle (no runner process on the host, no planned block within 15 min). 6 of 8 switched at 08:44; Carl's phone and Ben's laptop follow when their blocks end. The busy check now uses the host's process list (`docker top` does not work on this Docker version, so last night's switches relied on the plan only).
   - The 01:00 job: all eight containers were on the then-current image; its dry run picks SRF.
+  - **How often does Reddit's check hit?** All logs since 23.10: 121 Reddit page loads, 45 (37 %) went through the JS challenge, which the browser passes on its own; 1 of 46 reading blocks with Reddit hung (the 22:50 one). Not circumvented (Reddit's rules, `navigator.webdriver` stays `true`).
+  - **Step limits** in the runner (`c36bcb3`): every browser step has a time limit (navigation +30 s, dwell/scroll its length +30 s, short steps 30 s) that shares the alarm with the watchdog. Experiment in a runner container with a page running `while(true){}`: once one Playwright call hangs, every later call hangs too (close, new context, even a new launch); only stopping Playwright helps, and Chromium runs in its own process group. So a hung step stops Playwright and kills leftover child processes, the site counts as hung for the rest of the block, and activities draw another site from their mix (`social_passive` leaves the feed). Without hangs the random draws are unchanged. Also fixed: the close timeout from `976edf7` killed the process group, which does not contain Chromium; it now kills the process tree.
+  - Tests: a `social_passive` block with a really hanging Reddit page (one restart, Reddit avoided afterwards, block runs to its end), guard, mix avoidance, process tree; 234 pass in a runner container (3 runs), 233 + 1 Linux-only on the Mac. Real Chromium in a container: the hung load is interrupted, the next page loads in 5 s in a fresh browser, no Chromium left after close.
+  - Deployed 09:30 with the rolling switch (image `6d5db5…`): 7 of 8 containers at once, Ben's laptop after its work block.
 - **Next / open:**
-  - Reddit's JS challenge also hits `social_passive` (reading without login). Watch whether it keeps happening; if so, drop Reddit from the reading mix like YouTube from `video_stream`
-  - Check `/var/tmp/roll-runner-20261026.log` (all eight containers on `7575dad…`)
+  - Check `/var/tmp/roll-runner-20261026.log` (all eight containers on `6d5db5…`)
+  - Watch the daily report for "hung … restarting the browser" lines in the runner logs; drop Reddit from the reading mix only if hangs pile up
 
 </details>
 
