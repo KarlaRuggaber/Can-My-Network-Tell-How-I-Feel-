@@ -103,3 +103,38 @@ def test_parse_share():
     for bad in ("0", "1.5", "-0.1", "abc", "%"):
         with pytest.raises(cli.UsageError):
             cli.parse_share(bad)
+
+
+class _HangingCloseDriver:
+    """Real-clock stand-in for BrowserDriver whose close() never returns (25.10: a Reddit page
+    stuck in its JS challenge kept a run alive for 2 h after the watchdog)."""
+
+    def __init__(self, *args, **kwargs):
+        self.closed = False
+
+    def idle(self, seconds):
+        import time
+        time.sleep(seconds)
+
+    def close(self):
+        import time
+        time.sleep(30)  # longer than the test's close timeout
+        self.closed = True
+
+
+def test_hung_browser_close_keeps_the_row_and_ends_the_run(logdir, monkeypatch):
+    import runner.browser
+    monkeypatch.setattr(runner.browser, "BrowserDriver", _HangingCloseDriver)
+    monkeypatch.setattr(cli, "CLOSE_TIMEOUT", 1)
+    killed = []
+
+    def fake_kill():
+        killed.append(True)
+        raise SystemExit(137)  # stands in for SIGKILL of the process group
+
+    monkeypatch.setattr(cli, "_kill_own_group", fake_kill)
+    with pytest.raises(SystemExit):
+        cli.main(BASE + ["--activity", "idle_connected", "--duration", "1"])
+    assert killed == [True]
+    r = rows(logdir)[0]  # the row was written before the browser was closed
+    assert (r["activity_id"], r["status"], r["block_id"]) == ("idle_connected", "ok", "b001")

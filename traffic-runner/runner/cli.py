@@ -20,6 +20,7 @@ log = logging.getLogger("runner")
 EXIT_OK, EXIT_ERROR, EXIT_USAGE, EXIT_NOT_IMPLEMENTED = 0, 1, 2, 3
 STATUS_EXIT = {"ok": EXIT_OK, "error": EXIT_ERROR, "not_implemented": EXIT_NOT_IMPLEMENTED}
 WATCHDOG_GRACE = 90  # seconds past the deadline before the run is aborted hard
+CLOSE_TIMEOUT = 60   # seconds for closing the browser after the log row is written
 GATEWAY = "10.42.1.1"
 
 _DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)(s|m|h)?$")
@@ -245,10 +246,8 @@ def cmd_run(args) -> int:
         status = "error"
     finally:
         signal.alarm(0)
-        try:
-            driver.close()
-        except Exception:  # noqa: BLE001
-            log.warning("browser did not close cleanly")
+        # The log row comes first: a browser that hangs while closing (25.10: a Reddit page stuck
+        # in its JS challenge) must not cost the row or keep the run alive for hours.
         row = {
             "start": start,
             "end": gtlog.now_iso(),
@@ -268,7 +267,32 @@ def cmd_run(args) -> int:
         else:
             gtlog.append(row)
             log.info("logged %s: %s, domains=%s", row["status"], activity_id, row["domains"] or "-")
+        _close_with_timeout(driver)
     return STATUS_EXIT[row["status"]]
+
+
+def _kill_own_group() -> None:
+    """End this run and everything it started (Playwright driver, Chromium): same process group."""
+    logging.shutdown()
+    if os.getpgrp() == os.getpid():
+        os.killpg(os.getpgrp(), signal.SIGKILL)
+    os.kill(os.getpid(), signal.SIGKILL)  # not the group leader: only this process
+
+
+def _close_with_timeout(driver) -> None:
+    def hung(signum, frame):
+        log.error("browser did not close within %d s, ending the run's processes", CLOSE_TIMEOUT)
+        _kill_own_group()
+
+    previous = signal.signal(signal.SIGALRM, hung)
+    signal.alarm(CLOSE_TIMEOUT)
+    try:
+        driver.close()
+    except Exception:  # noqa: BLE001
+        log.warning("browser did not close cleanly")
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def _install_signal_handlers(duration: float | None) -> None:
