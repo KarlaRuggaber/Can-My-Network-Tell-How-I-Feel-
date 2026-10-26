@@ -327,6 +327,13 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - Check `/var/tmp/roll-runner-20261026.log` (all eight containers on `6d5db5…`)
   - Watch the daily report for "hung … restarting the browser" lines in the runner logs; drop Reddit from the reading mix only if hangs pile up
 
+**Productivity hits were browser background:** Mon 26.10
+- **Done:**
+  - Karla's runner point 5 ("Chromium background = PRODUCTIVITY") measured: on Sunday Maria had no work or study block at all, yet 11 932 C2_F6 hits, all from `google.com` hosts (search embeds, logins, news, analytics, ads, WebRTC STUN). The cause is the list matching by `google.com`/`microsoft.com`/`live.com`, not only Chromium. In the thesis ONU datasets the hits were Safe Browsing, Chrome/Windows updates and telemetry; not one real productivity visit.
+  - Fixed in the app (`284ff87`, correction of the thesis list): within those domains only tool hosts count (docs, drive, mail, calendar, …, scholar; teams, to-do, www for the study mix's Office stand-in; outlook). Maria 11 932 → 0, Carl 11 453 → 0, Ben with a work block 7 012 → 6 335. Thesis ONU datasets: 30 of 41 change. Deployed. Details: [Deployment.md](Deployment.md) §7.10.
+- **Next / open:**
+  - **Recalibrate C2_F6** on the baseline days: under the current band (below 3 500 → μ = 0) a no-work day now contributes nothing (thesis-alignment B10)
+
 </details>
 
 <details>

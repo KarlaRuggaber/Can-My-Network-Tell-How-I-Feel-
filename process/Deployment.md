@@ -147,6 +147,7 @@ Pages 01 and 02 now compute a cheap signature of the selected datasets (number o
 | Background filter (§3) | Drop gateway services, AP/controller traffic, mDNS/SSDP/NTP, broadcasts | Implemented as specified (Section 3.1), AP excluded by MAC, drop counts per rule in the state db | Done |
 | SNI in hostnames (§5) | Patch `enrich_with_hostnames` + SNI column | Inbound lookup implemented (Section 7.7); SNI not added (not needed while DNS is visible, feed lacks the server IP) | Inbound: done. SNI: open, low priority |
 | CDN hosts (not in the plan) | – | Broadcaster VOD hosts attributed to their service, e.g. `srf-vod-*.akamaized.net` → `srf.ch` (Section 7.9) | Done 25.10, extension of the thesis lists |
+| Productivity list (not in the plan) | – | Shared domains count only tool hosts, e.g. `docs.google.com` but not `accounts.google.com` (Section 7.10) | Done 26.10, correction of the thesis list; changes thesis values, C2_F6 needs recalibration |
 | Output location | `/var/lib/tapcap/parquet`, mounted read-only | `app/processed_parquet` in the repo, mounted read-write | Done. Read-write so the upload page keeps working |
 | Hosting | Option A: app on the gateway via SSH tunnel | Option A, Docker, Streamlit bound to 127.0.0.1 | Done |
 | Feature cache | Press "Refresh cached day metrics" | Detected automatically | Done |
@@ -427,6 +428,37 @@ C1's long-session metric did not change because the pilot stream lasted 1 h (C1 
 **Deployment.** `git pull`, app image rebuilt, container recreated at 23:07; the feature cache was empty. Check in the container: `_service_sld("srf-vod-amd.akamaized.net") == "srf.ch"`, `colibri-js.akamaized.net` unchanged.
 
 **Next.** Other broadcasters in the STREAMING list (ZDF, ARD, ORF) may use CDNs too; measure their video hosts before adding them as a second playable site, and add their hosts to `SERVICE_HOSTS` only from a measurement.
+
+### 7.10 Productivity hits only from tool hosts (26.10.2026)
+
+**Why.** C2_F6 counts packets to the PRODUCTIVITY list; few hits are read as a sign of anhedonia. The list contains `google.com`, `microsoft.com` and `live.com`, and the app reduces every host to its last two labels. So every Google or Microsoft address counted as productive work. The entries `docs.google.com` and `calendar.google.com` in the list could never match.
+
+**Measured** (gateway, 25.10): Maria had **no** work or study block, yet 11 932 hits: `www.google.com` 5 913 (search, reCAPTCHA, ad frames embedded in pages), `accounts.google.com` 2 315, `news.google.com` 1 200, `region1.analytics.google.com` 1 065, `play.google.com` 432, `stun.l.google.com` 376 (WebRTC of the video call), ad/payment hosts ~600, `adsdk.microsoft.com` 107. In Stephan's ONU datasets the hits were Safe Browsing (`sb-ssl.google.com`), Chrome updates (`clients2.google.com`), Windows Update (`*.update.microsoft.com`), Windows telemetry (`*.events.data.microsoft.com`), Edge and Microsoft logins, without a single real productivity visit, even in the `mail-service` captures.
+
+**Change** (`284ff87`, `app/metrics/common.py`, **a correction of the thesis list**): `productivity_mask()`. Within the shared domains only the label directly left of the domain decides:
+
+| Domain | Counted hosts |
+| --- | --- |
+| `google.com` | docs, drive, mail, calendar, meet, keep, tasks, sheets, slides, forms, classroom, sites, script, scholar (study) |
+| `microsoft.com` | teams, to-do, www (the runner's study mix opens `www.microsoft.com/…/microsoft-365` as its no-login Office stand-in) |
+| `live.com` | outlook, mail |
+
+All other list domains (`github.com`, `gitlab.com`, `trello.com`, `office.com`, `outlook.com`, …) are unchanged. Used by `criterion2`, `base_features` and the page 02 popover, which now lists the counted hosts.
+
+**Tests.** `app_pcap_to_dsm5/tests/test_productivity.py`, 13 cases: tool hosts count; the background hosts of 25.10, `google.com` itself, `adsdk.microsoft.com`, `login.live.com` and lookalikes do not; a mixed day; data without `ResolvedHost`. 40 app tests pass.
+
+**Effect:**
+
+| Data | Activity | Old | New |
+| --- | --- | --- | --- |
+| Maria, Sun 25.10 | no work | 11 932 | 0 |
+| Carl, Sun 25.10 | no work | 11 453 | 0 |
+| Ben, Mon 26.10 | work block 08:00–12:00 | 7 012 | 6 335 (todoist 3 585, gitlab 2 316, …) |
+| Thesis ONU datasets | – | 30 of 41 change, mostly to 0 (one keeps 14: `config.teams.microsoft.com`) | |
+
+Unlike Sections 7.7 and 7.9, this **changes thesis values**. The thesis bands for C2_F6 (3 500 / 15 000, inverted) were set on the polluted counts: a no-work day now gives 0 hits and therefore μ = 0, while the background had given it a small μ. C2_F6 must be recalibrated on the baseline days (thesis-alignment B10).
+
+**Deployment.** `git pull`, app image rebuilt, container recreated; the feature cache was empty. Check in the container: `docs.google.com` counts, `accounts.google.com` not, `github.com` unchanged.
 
 ## 8. Operating the system
 

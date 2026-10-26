@@ -50,6 +50,7 @@ Only **C1, C2, C4 and C8** are configured. All other criteria have L_k = 0 and c
 | B7 | History metrics (C4_F3, C4_F4, C6_F9) | Need earlier days of the same dataset → baseline period before each clinical profile (catalog §6). |
 | B8 | C9 under the gate rule | Suicidality is episodic (2–4 nights per 14 days). With N = 6 of 14, **C9 can never be present**, even if configured. Only domain hits (`143.ch`, `147.ch`) are visible; method/forum metrics need URLs or search terms (invisible under HTTPS). |
 | B9 | Reversed directions | C1_F1 (DistinctSocial) and C1_F7 (HourlyCV) are scored opposite to the thesis's own definition. |
+| B10 | C2_F6 counted background traffic (fixed in the app 26.10, `284ff87`) | With `google.com`/`microsoft.com`/`live.com` in the list, Safe Browsing, Chrome/Windows updates, telemetry, logins, ads and STUN counted as productivity: 11 932 hits on a scripted day without any work, and in the thesis ONU datasets not a single real productivity visit. The app now counts only tool hosts there (Deployment.md §7.10). **Consequence for the bands:** a day without work now has ~0 hits, and below 3 500 the current band gives μ = 0, so C2_F6 contributes nothing for exactly the days it should flag (before the fix, background gave e.g. 11 932 → μ ≈ 0.27). Recalibrate C2_F6 on the baseline days (§4), e.g. with `lo` near 0. |
 
 ## 4. Proposal: evaluate the thesis logic with a calibrated config
 
