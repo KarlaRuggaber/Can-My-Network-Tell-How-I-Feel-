@@ -48,6 +48,7 @@ from metrics.common import (
     SOCIAL_SLDS,
     STREAMING_SLDS,
     PRODUCTIVITY_SLDS,
+    productivity_mask,
     FOOD_DELIVERY_SLDS,
     DIET_SLDS,
     SMART_SCALE_SLDS,
@@ -1583,9 +1584,10 @@ def _show_metric_dialog():
                         pass
             elif dist_col == "C2_F6_ProductivityHits":
                 with st.popover("Productivity domains today", use_container_width=True):
-                    slds = d_today.get("SLD", pd.Series(dtype=str)).dropna().astype(str)
-                    hits = sorted(set([s for s in slds if s in PRODUCTIVITY_SLDS]))
-                    st.dataframe(pd.DataFrame(hits, columns=["Productivity SLD"]), use_container_width=True, hide_index=True)
+                    counted = d_today.loc[productivity_mask(d_today)] if not d_today.empty else d_today
+                    col = "ResolvedHost" if "ResolvedHost" in counted.columns else "SLD"
+                    hits = counted[col].dropna().astype(str).value_counts().rename_axis("Productivity host").reset_index(name="Hits")
+                    st.dataframe(hits, use_container_width=True, hide_index=True)
             elif dist_col == "C2_F7_SocialOutgoingShareUp":
                 with st.popover("Social up/down bytes", use_container_width=True):
                     soc = d_today.loc[d_today.get("SLD", pd.Series(dtype=str)).isin(SOCIAL_SLDS)].copy()

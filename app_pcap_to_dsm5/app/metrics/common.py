@@ -39,6 +39,45 @@ PRODUCTIVITY_SLDS = {
     "gmx.net","web.de","posteo.de","proton.me","tutanota.com"
 }
 
+# Correction of the PRODUCTIVITY list (26.10.2026, process/process.md week 7): google.com,
+# microsoft.com and live.com host far more than productivity tools (search, logins, ads,
+# analytics, WebRTC STUN). Within these shared domains only the hosts below count; the label
+# directly left of the domain decides (docs.google.com -> "docs"). The entries
+# calendar.google.com / docs.google.com in PRODUCTIVITY_SLDS could never match before, because
+# every host is reduced to its last two labels. Measured: a scripted day with no work or study
+# block at all had 11 932 "productivity" hits, all from google.com hosts such as www., accounts.,
+# news., analytics. and stun.l.google.com.
+PRODUCTIVITY_SHARED_HOSTS = {
+    "google.com": {"docs", "drive", "mail", "calendar", "meet", "keep", "tasks", "sheets", "slides",
+                   "forms", "classroom", "sites", "script", "scholar"},
+    # www: the runner's study mix opens www.microsoft.com/.../microsoft-365 as its no-login
+    # stand-in for Office (traffic-runner/config/mixes.yaml)
+    "microsoft.com": {"teams", "to-do", "www"},
+    "live.com": {"outlook", "mail"},
+}
+
+
+def productivity_mask(df: pd.DataFrame) -> pd.Series:
+    """Rows that count as a productivity-site hit (C2_F6): SLD in PRODUCTIVITY_SLDS, and for the
+    shared domains in PRODUCTIVITY_SHARED_HOSTS only their productivity hosts."""
+    if df is None or df.empty or "SLD" not in df.columns:
+        return pd.Series(False, index=getattr(df, "index", None), dtype=bool)
+    sld = df["SLD"]
+    plain = sld.isin(PRODUCTIVITY_SLDS - set(PRODUCTIVITY_SHARED_HOSTS))
+    shared = sld.isin(set(PRODUCTIVITY_SHARED_HOSTS))
+    if not shared.any() or "ResolvedHost" not in df.columns:
+        return plain
+    hosts = df.loc[shared, "ResolvedHost"].astype(str).str.lower().str.rstrip(".")
+    slds = sld[shared]
+    allowed = [
+        (h[: -len(s) - 1].rsplit(".", 1)[-1] in PRODUCTIVITY_SHARED_HOSTS[s]) if h.endswith("." + s) else False
+        for h, s in zip(hosts, slds)
+    ]
+    out = plain.copy()
+    out.loc[shared] = allowed
+    return out
+
+
 FOOD_DELIVERY_SLDS = {
     "ubereats.com","deliveroo.com","just-eat.co.uk","justeat.com",
     "doordash.com","grubhub.com","lieferando.de","takeaway.com",

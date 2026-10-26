@@ -10,6 +10,7 @@ from .base import make_metric, thresholds_text
 from .common import (
     SOCIAL_SLDS,
     PRODUCTIVITY_SLDS,
+    productivity_mask,
     chat_mask,
     sessions_from_timestamps,
     streaming_inbound_mask,
@@ -185,7 +186,7 @@ def _passive_active_byte_ratio(df: pd.DataFrame) -> Tuple[float, Dict[str, Any]]
 def _productivity_hits(df: pd.DataFrame) -> float:
     if df is None or df.empty or "SLD" not in df.columns:
         return np.nan
-    return float(df["SLD"].isin(PRODUCTIVITY_SLDS).sum())
+    return float(productivity_mask(df).sum())
 
 def _social_outgoing_share_up(df: pd.DataFrame) -> Tuple[float, Dict[str, Any]]:
     if df is None or df.empty or "SLD" not in df.columns:

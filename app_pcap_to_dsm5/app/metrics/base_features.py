@@ -9,6 +9,7 @@ import pandas as pd
 from .common import (
     SOCIAL_SLDS,
     PRODUCTIVITY_SLDS,
+    productivity_mask,
     FOOD_DELIVERY_SLDS,
     DIET_SLDS,
     SMART_SCALE_SLDS,
@@ -204,7 +205,7 @@ def compute_daily_base_record(df_d: pd.DataFrame) -> dict:
 
     rec["C2_F1_UniqueSLD"] = float(d["SLD"].dropna().nunique()) if "SLD" in d.columns else float("nan")
     rec["C2_F3_ChatSessionCount"] = float(len(sess_social)) if sess_social else float("nan")
-    rec["C2_F6_ProductivityHits"] = float(d[d["SLD"].isin(PRODUCTIVITY_SLDS)].shape[0]) if "SLD" in d.columns else float("nan")
+    rec["C2_F6_ProductivityHits"] = float(productivity_mask(d).sum()) if "SLD" in d.columns else float("nan")
 
     # ── C3: Appetite / Weight --------------------------------------------------
     if "SLD" in d.columns:
