@@ -148,6 +148,7 @@ Pages 01 and 02 now compute a cheap signature of the selected datasets (number o
 | SNI in hostnames (§5) | Patch `enrich_with_hostnames` + SNI column | Inbound lookup implemented (Section 7.7); SNI not added (not needed while DNS is visible, feed lacks the server IP) | Inbound: done. SNI: open, low priority |
 | CDN hosts (not in the plan) | – | Broadcaster VOD hosts attributed to their service, e.g. `srf-vod-*.akamaized.net` → `srf.ch` (Section 7.9) | Done 25.10, extension of the thesis lists |
 | Productivity list (not in the plan) | – | Shared domains count only tool hosts, e.g. `docs.google.com` but not `accounts.google.com` (Section 7.10) | Done 26.10, correction of the thesis list; changes thesis values, C2_F6 needs recalibration |
+| Machine background (not in the plan) | – | Runner containers send OS/browser background around the clock; the app drops background hosts before all features (Section 7.11) | Done 26.10; changes UniqueSLD in 32 thesis datasets by 1–5 |
 | Output location | `/var/lib/tapcap/parquet`, mounted read-only | `app/processed_parquet` in the repo, mounted read-write | Done. Read-write so the upload page keeps working |
 | Hosting | Option A: app on the gateway via SSH tunnel | Option A, Docker, Streamlit bound to 127.0.0.1 | Done |
 | Feature cache | Press "Refresh cached day metrics" | Detected automatically | Done |
@@ -460,6 +461,22 @@ Unlike Sections 7.7 and 7.9, this **changes thesis values**. The thesis bands fo
 
 **Deployment.** `git pull`, app image rebuilt, container recreated; the feature cache was empty. Check in the container: `docs.google.com` counts, `accounts.google.com` not, `github.com` unchanged.
 
+### 7.11 Background traffic in the runners, background filter in the app (26.10.2026)
+
+**Why.** On 25.10 the six planned runner containers sent 0 packets outside their blocks; every night 00–07 was empty. Real devices are never silent: in the thesis ONU captures 35 of 41 contain background (Windows Update, telemetry, Safe Browsing, Chrome updates, OCSP, NTP, cloud sync), on average ~28 packets per minute. The sleep and timing features (30-minute quiet period, active minutes, sessions, first activity) count every packet, so on a real device this background makes every night look awake, and the simulated data never tested it.
+
+**Runner** (`e3fd6dd`, `43407f5`, `traffic-runner/README.md` §8b): every container's main process now sends low-rate background traffic around the clock, from the background hosts of the thesis captures (`config/background.yaml`). Laptop ~20 requests/h by day and ~5 at night, phone ~13 and ~4; a request is ~20–30 packets. 16 new tests (rates, trust roots, night factor, reproducibility, local HTTP server, failures never raise, the container survives a broken config). A smoke test from the gateway reached all 17 endpoints; the three Windows hosts needed Microsoft's root CAs (`config/microsoft-roots.pem`).
+
+**App** (`e3fd6dd`, `app/metrics/common.py`): `BACKGROUND_HOST_PATTERNS` and `drop_background()`, applied right after `enrich_with_hostnames` in pages 01 and 02, so **no** feature counts machine background (packets and their DNS rows). Only housekeeping hosts: Windows update/telemetry/settings/NCSI/WNS, Chrome/Android time, updates, Safe Browsing, connectivity checks and FCM, Apple push and captive check, OCSP/CRL, NTP. Logins (`accounts.google.com`, `login.live.com`) and cloud sync stay. Packets without a known hostname cannot be classified and stay. Page 03 (network overview) still shows all traffic. 32 new cases in `tests/test_background.py`, among them: every runner background host is filtered; a night with background every 10 min gives a longest quiet period of 0.2 h and 64 active night minutes without the filter, and 7 h and 31 minutes (the real user activity) with it. 72 app tests pass.
+
+The request named the sleep and timing features. The filter applies to all features, because a request the device sends on its own is not user behaviour for any of them (the same reasoning as the ingest filter, Section 3.1).
+
+**Effect on the thesis datasets** (all 64, with/without the filter): background in 35 datasets, 0.02 % of all packets. No sleep or timing value changes (5-minute captures). `C2_F1_UniqueSLD` drops by 1–5 in 32 datasets (e.g. `ONU_capture_game_4` 22 → 18, `video_3` 24 → 19), `F1_DistinctSocial` changes in 12, the byte totals in 3. **This changes thesis values** (thesis-alignment B11).
+
+**Effect on the gateway data:** before, 25.10: 0 packets outside the blocks. After: measured on the first full night (open point below).
+
+**Deployment.** App image rebuilt and recreated, feature cache moved to `/var/tmp/feature_cache-before-e3fd6dd`. Runner image built from `git archive` (249 tests pass in the image), then the rolling switch `tr-roll-runner2` recreates each container only while it is idle. The containers must be **recreated** (not only the image changed), because their command changed.
+
 ## 8. Operating the system
 
 ### Open the app
@@ -561,6 +578,8 @@ sudo systemctl restart tapingest                               # if ingest/ chan
 cd /opt/can-my-network/app_pcap_to_dsm5/app && sudo docker compose -f docker-compose.yml -f docker-compose.gateway.yml up -d --build   # if app/ changed
 sudo /opt/can-my-network/traffic-runner/scripts/deploy.sh                                   # if traffic-runner/ changed
 ```
+
+While blocks are running, use the rolling switch instead of `deploy.sh`: build the image from `git archive HEAD traffic-runner`, then `/var/tmp/roll-runner.sh` (as a `systemd-run` unit) recreates each container only while it is idle (Section 7.11).
 
 The runner bakes code and config into its image, so a pull alone does not change it. `deploy.sh` rebuilds it, recreates the containers and runs its tests. It refuses while an activity is running (`FORCE=1` overrides). The ingest reads `traffic-runner/config/devices.csv` straight from the clone, so a changed device list applies to the ingest at the pull. Run `deploy.sh` right after such a pull.
 

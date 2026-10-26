@@ -334,6 +334,15 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
 - **Next / open:**
   - **Recalibrate C2_F6** on the baseline days: under the current band (below 3 500 → μ = 0) a no-work day now contributes nothing (thesis-alignment B10)
 
+**Background traffic:** Mon 26.10
+- **Done:**
+  - Measured: on 25.10 the runner containers sent 0 packets outside their blocks, and all nights were empty. In the thesis ONU captures, 35 of 41 contain OS/browser background, ~28 packets/min.
+  - Runner (`e3fd6dd`, `43407f5`): every container's main process now sends low-rate background traffic around the clock, from the measured hosts (Windows update/telemetry, Chrome time/updates, Safe Browsing, OCSP, NTP; on phones the connectivity check and the FCM push channel). Laptop ~20 requests/h by day, ~5 at night; phone ~13 and ~4. Logged per container in `logs/background-<device>.jsonl`. 16 tests.
+  - App (`e3fd6dd`): background hosts are dropped right after the hostname lookup, so no feature counts them. A test checks that every runner background host is in the list. On a test night the filter turns "0.2 h quiet, 64 active night minutes" back into "7 h quiet, 31 minutes". Thesis datasets: no sleep or timing value changes, UniqueSLD −1 to −5 in 32 of 64.
+  - Deployed: app rebuilt, feature cache cleared; runner containers switched by `tr-roll-runner2` while idle. Details: [Deployment.md](Deployment.md) §7.11, [traffic-runner/README.md](../traffic-runner/README.md) §8b.
+- **Next / open:**
+  - Tomorrow: measure the first full night (background packets per hour per device, sleep features with and without the filter)
+
 </details>
 
 <details>

@@ -20,7 +20,7 @@ This is only the runner. It does not cover the scheduler (profile → 14-day pla
 | Device identity | Fixed `ipv4_address` and `mac_address` per container, taken from `config/devices.csv` |
 | Firewall and NAT | Docker runs with `"iptables": false`. All rules stay in `/etc/nftables.conf`. br-sim may reach DNS, ping and the internet, nothing else, and it is never forwarded to eno1. |
 | DNS | `config/resolv.conf` (`nameserver 10.42.1.1`) is mounted over `/etc/resolv.conf`. Every lookup goes from the container IP straight to dnsmasq, so `log-queries` and tapfeed attribute it to the device. |
-| Container lifecycle | Containers idle with `sleep infinity`. A run is `scripts/run-activity.sh <device> ...` (a `docker compose exec` with stdin detached, see section 3). Each run starts a **new browser process with a fresh context**, so no DNS, HTTP or cookie state carries over between blocks (catalog §5.2). Code **and config** are baked into the image (`COPY config`); only `logs/` and `/etc/resolv.conf` are mounted. A `git pull` alone therefore never changes the running runner. Deploy with `scripts/deploy.sh` (section 7). |
+| Container lifecycle | The container's main process sends the device's background traffic (`python3 -m runner background`, section 8b). A run is `scripts/run-activity.sh <device> ...` (a `docker compose exec` with stdin detached, see section 3). Each run starts a **new browser process with a fresh context**, so no DNS, HTTP or cookie state carries over between blocks (catalog §5.2). Code **and config** are baked into the image (`COPY config`); only `logs/` and `/etc/resolv.conf` are mounted. A `git pull` alone therefore never changes the running runner. Deploy with `scripts/deploy.sh` (section 7). |
 | Randomness | All randomness comes from `random.Random(f"{seed}/{block_id}")`. The same seed and block ID give the same sequence of choices. |
 
 ```
@@ -33,8 +33,11 @@ traffic-runner/
     mixes.yaml             domain sets from catalog §3 + start URLs, video/audio sources, consent buttons
     roles.yaml             role -> Playwright device emulation
     resolv.conf            container DNS -> 10.42.1.1
+    background.yaml        OS/browser background traffic per role (section 8b)
+    microsoft-roots.pem    Microsoft root CAs for the Windows background hosts
   runner/
-    cli.py                 python -m runner {run,validate,list}
+    cli.py                 python -m runner {run,validate,list,background}
+    background.py          background traffic loop (container main process)
     config.py              loading + validation
     context.py             RunContext: deadline, visited hosts, driver interface
     browser.py             Playwright driver (real network)
@@ -428,7 +431,7 @@ Checks after step 5:
 ## 8. Known limitations
 
 - **No WiFi layer.** Containers sit on a Linux bridge with static IPs. There is no 802.11, no DHCP and no association, so the feed has no `hostname` events for them. MACs are only visible on br-sim (as on eno1 for real devices).
-- **No OS background traffic.** A container that is not running an activity is silent. `idle_connected` is therefore cleaner than a real idle phone, and the ingest filter for background traffic is not exercised by simulated devices.
+- **OS background traffic is scripted, not real** (since 26.10, section 8b). A low-rate stream of single requests to the background hosts of the thesis captures, not a real Windows or Android system. Push channels are short TLS connections instead of one long-lived connection with heartbeats.
 - **Browser background traffic is switched off** (since 23.10). Even on a blank page, Playwright's Chromium (a "Chrome for Testing" build with Google API keys) contacts six Google hosts on its own. Five of them count as `google.com` = PRODUCTIVITY (C2_F6). Measured in the net-log, per 90 s:
 
   | Host | Source | Now |
@@ -545,6 +548,33 @@ sudo scripts/run-activity.sh mdd_suicidality_a_phone --activity social_post --du
 The test post must appear in `#uploads`, and the last line of `logs/ground_truth.csv` must read `…,social_post,discord.com;cdn.discordapp.com,test,1,discord-test1,ok`.
 
 **Done 25.10:** server, channel and webhook created, IDs checked against Discord (GET on the webhook), URL stored from the clipboard with `pbpaste | ssh … 'sudo sh -c "umask 077; cat > …/sessions/discord.webhook"'` (on macOS zsh, `read -p` is not a prompt, and `sudo install /dev/stdin` writes an empty file under sudo-rs). Test post at 20:58 `ok`, 1.43 MB upstream to `discord.com` in the capture.
+
+## 8b. Background traffic (since 26.10)
+
+Until 26.10 a container between two blocks was perfectly silent: on 25.10 all six containers with a plan sent **0 packets outside their blocks**, and every night 00–07 was empty. A real device is never silent. In the thesis ONU captures (Windows laptop, Android phone) about 28 packets per minute went to background hosts. So the sleep and timing features only ever saw clean nights, and the app's background handling was never tested by simulated data.
+
+Now every container's main process (`python3 -m runner background`, see `docker-compose.yml`) sends background requests around the clock, also during blocks:
+
+| Role | Sources (`config/background.yaml`) | Requests/h day / night (00–06) |
+|---|---|---|
+| laptop (Windows + Chrome) | NCSI connectivity check, Windows telemetry, settings and update, Chrome network time, Safe Browsing, Chrome updates, OCSP, NTP | ~20 / ~5 |
+| phone (Android + Chrome) | Android connectivity check, FCM push channel (`mtalk.google.com:5228`, TLS handshake), Play services, Chrome network time, Safe Browsing, OCSP, NTP | ~13 / ~4 |
+
+- Each request is a new DNS lookup and connection; GETs read at most 64 KiB. One request is ~20–30 packets, so a device sends a few hundred background packets per hour.
+- Intervals are random (Poisson, mean `every`); at night the mean is multiplied by `night_factor` (phone 3, laptop 4). The random generator is seeded with the device name and the day.
+- Left out on purpose: `*.gvt1.com` (component downloads of several MB), `accounts.google.com`/`login.live.com` (also user logins), Xiaomi cloud sync (counted by the cloud-upload features).
+- Windows hosts use Microsoft's own root CAs, which the container's CA store lacks; `config/microsoft-roots.pem` adds them to the default store (verification stays on).
+- NTP (UDP 123) is dropped by the ingest filter; only its DNS lookup reaches the data.
+- Every request is logged in `logs/background-<device>.jsonl` (`ts`, `source`, `host`, `ok`, `status`, `bytes`, `ms`, `error`).
+- Robustness: a failed request is logged and the loop goes on. If the loop itself fails (e.g. broken config), the process logs it and sleeps, so the container never restarts and a running block is not killed. With `RUNNER_STRICT_IP=1` it sends nothing if the container IP does not match `devices.csv`.
+- The app drops these hosts before computing features (`BACKGROUND_HOST_PATTERNS` in `app_pcap_to_dsm5/app/metrics/common.py`). A test in the app (`tests/test_background.py`) checks that every host in `background.yaml` is in that list.
+
+Check on the gateway:
+
+```bash
+sudo docker logs --tail 2 mdd_suicidality_a_phone      # "background traffic for … ~13 requests/h by day"
+sudo tail -3 /opt/can-my-network/traffic-runner/logs/background-mdd_suicidality_a_phone.jsonl
+```
 
 ## 9. Open points
 
