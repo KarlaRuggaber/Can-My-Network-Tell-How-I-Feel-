@@ -312,6 +312,17 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
 - **Next / open:**
 - **Blockers / notes:**
 
+**Daily report 26.10 and a hung run:** Mon 26.10
+- **Done:**
+  - Daily report 08:00: 4 problems, 3 of them already fixed on 25.10 (two YouTube streams, the Reddit post), listed again because the daily summary covers 24 h.
+  - New: `social_passive` on Maria's phone at 22:50, "no log row (exit 137)". The run opened Reddit, which answered with its JS challenge and hung the page; the watchdog aborted the block at 23:06:45 as intended, but the runner then waited for the browser to close without a limit, and the log row was only written after the close. The run stayed alive until the 01:00 job recreated the container at 01:03 (exit 137). Not caused by the container switch, which only ended it.
+  - Fixed in the runner (`976edf7`): the log row is written first, closing the browser gets 60 s, and a hung close ends the run's own process group (runner, Playwright, Chromium). Checked in a container: the run is its own group leader (session leader under `docker exec`), its child is ended, the container keeps running. New test; 227 runner tests pass.
+  - Deployed with a rolling switch (systemd unit `tr-roll-runner`, log `/var/tmp/roll-runner-20261026.log`): each container gets the new image only while it is idle (no runner process on the host, no planned block within 15 min). 6 of 8 switched at 08:44; Carl's phone and Ben's laptop follow when their blocks end. The busy check now uses the host's process list (`docker top` does not work on this Docker version, so last night's switches relied on the plan only).
+  - The 01:00 job: all eight containers were on the then-current image; its dry run picks SRF.
+- **Next / open:**
+  - Reddit's JS challenge also hits `social_passive` (reading without login). Watch whether it keeps happening; if so, drop Reddit from the reading mix like YouTube from `video_stream`
+  - Check `/var/tmp/roll-runner-20261026.log` (all eight containers on `7575dad…`)
+
 </details>
 
 <details>

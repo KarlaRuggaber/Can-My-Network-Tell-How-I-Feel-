@@ -159,7 +159,7 @@ start,end,device,activity_id,domains,profile,seed,block_id,status
 |---|---|
 | `start`, `end` | ISO-8601 with offset, Europe/Zurich. `end` is the real end, which can be earlier than start + duration (e.g. `phone_check` done, video over). |
 | `domains` | Hosts of the main documents actually loaded, after redirects, in first-visit order, separated by `;`. For `music_background` it is the stream host. Third-party hosts (CDN, ads) are not listed. |
-| `status` | `ok` = at least one page or stream loaded; `error` = exception, nothing loaded, SIGTERM/Ctrl-C or watchdog (duration + 90 s); `not_implemented` = stub or no usable site in the mix |
+| `status` | `ok` = at least one page or stream loaded; `error` = exception, nothing loaded, SIGTERM/Ctrl-C or watchdog (duration + 90 s; the row is written before the browser closes, and a close that hangs for 60 s ends the run's process group, since 26.10); `not_implemented` = stub or no usable site in the mix |
 
 Every run that gets past argument checking writes a row, including on error or interrupt. The exception is a container stopped mid-run (`docker compose down`), which kills the exec'd process with SIGKILL.
 
