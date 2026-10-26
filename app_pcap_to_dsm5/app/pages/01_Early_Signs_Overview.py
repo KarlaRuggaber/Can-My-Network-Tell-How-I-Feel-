@@ -15,7 +15,7 @@ from utils.acronyms import render_acronyms_helper_in_sidebar
 from utils.partitions import dataset_signature, newest_partition_mtime
 
 from metrics.base_features import compute_daily_base_record
-from metrics.common import enrich_with_hostnames
+from metrics.common import drop_background, enrich_with_hostnames
 from md_explanations import MD_EXPLANATIONS
 from utils.auto_tune import auto_tune_for_criterion, AutoTuneResult
 from metrics.criterion1 import C1_DEFS, Criterion1
@@ -390,7 +390,7 @@ def _load_day_dataframe_cached(
     out = out[(out["Timestamp"] >= day) & (out["Timestamp"] < next_day)].copy()
     out["Date"] = out["Timestamp"].dt.date
     out["Hour"] = out["Timestamp"].dt.hour
-    out = enrich_with_hostnames(out)
+    out = drop_background(enrich_with_hostnames(out))
     return out
 
 

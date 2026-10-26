@@ -30,3 +30,5 @@ def test_render_contains_every_device(tmp_path):
     assert text.count("build:") == 1
     assert "hostname: a-phone" in text
     assert "/app/config" not in text  # config is baked into the image, not mounted
+    # the main process sends the background traffic; activities run via docker compose exec
+    assert text.count('command: ["python3", "-m", "runner", "background"]') == 2

@@ -38,6 +38,7 @@ from metrics.criterion9 import Criterion9, C9_DEFS
 
 from metrics.common import (
     enrich_with_hostnames,
+    drop_background,
     is_private_ip,
     is_outbound,
     is_inbound,
@@ -793,7 +794,7 @@ def compute_or_load_all_days_features(
                 continue
             df_day_full = pd.concat(day_frames, ignore_index=True)
             df_day_full["Timestamp"] = pd.to_datetime(df_day_full["Timestamp"], errors="coerce")
-            df_day_full = enrich_with_hostnames(df_day_full)
+            df_day_full = drop_background(enrich_with_hostnames(df_day_full))
 
             rec = compute_daily_base_record(df_day_full)
             rec["Date"] = pd.to_datetime(d)
@@ -996,7 +997,7 @@ else:
                 st.stop()
             df_day = pd.concat(frames, ignore_index=True)
             df_day["Timestamp"] = pd.to_datetime(df_day["Timestamp"], errors="coerce")
-            df_day = enrich_with_hostnames(df_day)
+            df_day = drop_background(enrich_with_hostnames(df_day))
             status.update(label="Selected day ready.", state="complete")
 
         with st.status("Computing per-minute activity, auxiliary features, and today's base record…", expanded=False):
@@ -1479,7 +1480,7 @@ def _show_metric_dialog():
                 return pd.DataFrame()
             d = pd.concat(frames, ignore_index=True)
             d["Timestamp"] = pd.to_datetime(d["Timestamp"], errors="coerce")
-            d = enrich_with_hostnames(d)
+            d = drop_background(enrich_with_hostnames(d))
             return d
         except Exception:
             return pd.DataFrame()

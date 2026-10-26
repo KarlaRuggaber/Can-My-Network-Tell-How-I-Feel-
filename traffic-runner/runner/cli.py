@@ -1,4 +1,4 @@
-"""Command line: python -m runner {run,validate,list}."""
+"""Command line: python -m runner {run,validate,list,background}."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import socket
 import sys
 import time
 
-from . import config, discord, gtlog, sessions, steps
+from . import background, config, discord, gtlog, sessions, steps
 from .activities import ACTIVITIES, CATALOG_ONLY
 from .context import NotImplementedActivity, PageError, RealClock, RunContext
 from .steps import Aborted  # noqa: F401 - part of the CLI's interface
@@ -314,6 +314,8 @@ def cmd_validate(args) -> int:
         devices = config.load_devices()
         config.load_roles()
         mixes = config.load_mixes()
+        for role in config.ROLES:
+            background.load_profile(role)
     except config.ConfigError as e:
         print(f"INVALID:\n{e}", file=sys.stderr)
         return EXIT_ERROR
@@ -355,6 +357,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("validate", help="validate config files").set_defaults(func=cmd_validate)
     sub.add_parser("list", help="list activities").set_defaults(func=cmd_list)
+    sub.add_parser("background", help="send the device's OS/browser background traffic until stopped "
+                   "(the container's main process)").set_defaults(func=lambda args: background.main())
     return p
 
 

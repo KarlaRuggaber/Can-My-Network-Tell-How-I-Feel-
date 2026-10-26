@@ -1,0 +1,45 @@
+# OS and browser background traffic of the simulated devices (runner/background.py, since 26.10).
+#
+# A real device is never silent: updates, telemetry, certificate checks, push channels and
+# connectivity checks run around the clock. Without them a container between two blocks is
+# perfectly quiet, so the sleep and timing features of the app only ever see clean nights.
+#
+# The hosts are the background hosts measured in the thesis ONU captures (Stephan's laptop
+# and Android phone, 41 captures of 5 min): clients2.google.com, *.events.data.microsoft.com,
+# safebrowsing.googleapis.com, *.update.microsoft.com / windowsupdate.com, ocsp.digicert.com,
+# pool.ntp.org. Left out on purpose: *.gvt1.com (component downloads of several MB),
+# accounts.google.com and login.live.com (also user logins), and the Xiaomi cloud hosts
+# (photo sync, which the cloud-upload features C7_F8/C9_F8 are meant to count).
+#
+# Every source is one request (new DNS lookup, new connection) at random intervals
+# (exponential, mean `every`). Between `night.start` and `night.end` the mean interval is
+# multiplied by the role's `night_factor` (phone in Doze, laptop in standby).
+# kinds: get (HTTP/HTTPS GET, body read up to 64 KiB), tls (TLS handshake, then close),
+# ntp (one NTP query; the ingest filter drops UDP 123, only the DNS lookup reaches the data).
+
+night: {start: 0, end: 6}
+
+roles:
+  laptop:  # Windows laptop with Chrome
+    night_factor: 4
+    sources:
+      - {name: ncsi, kind: get, url: "http://www.msftconnecttest.com/connecttest.txt", every: 30m}
+      - {name: windows_telemetry, kind: get, url: "https://v10.events.data.microsoft.com/", every: 10m}
+      - {name: windows_settings, kind: get, url: "https://settings-win.data.microsoft.com/", every: 60m}
+      - {name: windows_update, kind: get, url: "https://fe2cr.update.microsoft.com/", every: 60m}
+      - {name: windows_update_dl, kind: get, url: "http://download.windowsupdate.com/", every: 3h}
+      - {name: chrome_time, kind: get, url: "https://clients2.google.com/time/1/current", every: 30m}
+      - {name: safe_browsing, kind: get, url: "https://safebrowsing.googleapis.com/", every: 30m}
+      - {name: chrome_update, kind: get, url: "https://update.googleapis.com/service/update2/json", every: 5h}
+      - {name: ocsp, kind: get, url: "http://ocsp.digicert.com/", every: 15m}
+      - {name: ntp, kind: ntp, host: time.windows.com, every: 60m}
+  phone:  # Android phone with Chrome
+    night_factor: 3
+    sources:
+      - {name: connectivity_check, kind: get, url: "http://connectivitycheck.gstatic.com/generate_204", every: 30m}
+      - {name: push_channel, kind: tls, host: mtalk.google.com, port: 5228, every: 15m}
+      - {name: play_services, kind: get, url: "https://android.clients.google.com/", every: 60m}
+      - {name: chrome_time, kind: get, url: "https://clients2.google.com/time/1/current", every: 60m}
+      - {name: safe_browsing, kind: get, url: "https://safebrowsing.googleapis.com/", every: 30m}
+      - {name: ocsp, kind: get, url: "http://ocsp.pki.goog/", every: 30m}
+      - {name: ntp, kind: ntp, host: time.android.com, every: 60m}

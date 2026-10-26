@@ -55,7 +55,8 @@ def service(device, build: bool) -> str:
         f"    container_name: {device.name}",
         f"    hostname: {device.name.replace('_', '-')}",
         "    init: true",
-        '    command: ["sleep", "infinity"]',
+        # main process: background traffic (config/background.yaml); activities run via exec
+        '    command: ["python3", "-m", "runner", "background"]',
         "    restart: unless-stopped",
         "    environment:",
         f"      RUNNER_DEVICE: {device.name}",

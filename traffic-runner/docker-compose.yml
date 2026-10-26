@@ -16,7 +16,7 @@ services:
     container_name: student_a_phone
     hostname: student-a-phone
     init: true
-    command: ["sleep", "infinity"]
+    command: ["python3", "-m", "runner", "background"]
     restart: unless-stopped
     environment:
       RUNNER_DEVICE: student_a_phone
@@ -46,7 +46,7 @@ services:
     container_name: student_a_laptop
     hostname: student-a-laptop
     init: true
-    command: ["sleep", "infinity"]
+    command: ["python3", "-m", "runner", "background"]
     restart: unless-stopped
     environment:
       RUNNER_DEVICE: student_a_laptop
@@ -76,7 +76,7 @@ services:
     container_name: insomnia_a_phone
     hostname: insomnia-a-phone
     init: true
-    command: ["sleep", "infinity"]
+    command: ["python3", "-m", "runner", "background"]
     restart: unless-stopped
     environment:
       RUNNER_DEVICE: insomnia_a_phone
@@ -106,7 +106,7 @@ services:
     container_name: insomnia_a_laptop
     hostname: insomnia-a-laptop
     init: true
-    command: ["sleep", "infinity"]
+    command: ["python3", "-m", "runner", "background"]
     restart: unless-stopped
     environment:
       RUNNER_DEVICE: insomnia_a_laptop
@@ -136,7 +136,7 @@ services:
     container_name: mdd_suicidality_a_phone
     hostname: mdd-suicidality-a-phone
     init: true
-    command: ["sleep", "infinity"]
+    command: ["python3", "-m", "runner", "background"]
     restart: unless-stopped
     environment:
       RUNNER_DEVICE: mdd_suicidality_a_phone
@@ -166,7 +166,7 @@ services:
     container_name: mdd_suicidality_a_laptop
     hostname: mdd-suicidality-a-laptop
     init: true
-    command: ["sleep", "infinity"]
+    command: ["python3", "-m", "runner", "background"]
     restart: unless-stopped
     environment:
       RUNNER_DEVICE: mdd_suicidality_a_laptop
@@ -196,7 +196,7 @@ services:
     container_name: social_anxiety_a_phone
     hostname: social-anxiety-a-phone
     init: true
-    command: ["sleep", "infinity"]
+    command: ["python3", "-m", "runner", "background"]
     restart: unless-stopped
     environment:
       RUNNER_DEVICE: social_anxiety_a_phone
@@ -226,7 +226,7 @@ services:
     container_name: social_anxiety_a_laptop
     hostname: social-anxiety-a-laptop
     init: true
-    command: ["sleep", "infinity"]
+    command: ["python3", "-m", "runner", "background"]
     restart: unless-stopped
     environment:
       RUNNER_DEVICE: social_anxiety_a_laptop

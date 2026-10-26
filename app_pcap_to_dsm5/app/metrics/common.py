@@ -78,6 +78,48 @@ def productivity_mask(df: pd.DataFrame) -> pd.Series:
     return out
 
 
+# Machine background (26.10): requests a device sends by itself, without the user. They run
+# around the clock (also at night) and would otherwise count as activity in the sleep and
+# timing features: a 30-minute quiet period, active minutes, sessions, first activity of the
+# day. Measured in the thesis ONU captures (Windows laptop, Android phone) and sent by the
+# runner containers as their background traffic (traffic-runner/config/background.yaml).
+# Only pure housekeeping hosts: user logins (accounts.google.com, login.live.com) and cloud
+# sync (counted on purpose by C7_F8/C9_F8) stay in the data.
+BACKGROUND_HOST_PATTERNS = [
+    # Windows: update, telemetry, settings, connectivity check (NCSI), time, push (WNS)
+    r"(^|\.)update\.microsoft\.com$", r"(^|\.)windowsupdate\.com$",
+    r"\.events\.data\.microsoft\.com$", r"^settings-win\.data\.microsoft\.com$",
+    r"(^|\.)msftconnecttest\.com$", r"(^|\.)msftncsi\.com$", r"^time\.windows\.com$",
+    r"\.notify\.windows\.com$", r"(^|\.)wns\.windows\.com$",
+    # Chrome and Android: network time, component updates, Safe Browsing, connectivity check, push (FCM)
+    r"^clients\d*\.google\.com$", r"^update\.googleapis\.com$", r"^safebrowsing\.googleapis\.com$",
+    r"^sb-ssl\.google\.com$", r"(^|\.)gvt[12]\.com$", r"^connectivitycheck\.(gstatic|android)\.com$",
+    r"^mtalk\.google\.com$", r"^android\.clients\.google\.com$", r"^time\.android\.com$",
+    # Apple: push, captive-portal check, time
+    r"\.push\.apple\.com$", r"^captive\.apple\.com$", r"^time\.apple\.com$",
+    # certificate revocation (OCSP/CRL) and time servers
+    r"(^|\.)ocsp\.", r"^ocsp\d*\.", r"^crl\d*\.", r"\.o\.lencr\.org$", r"(^|\.)pool\.ntp\.org$",
+]
+_BACKGROUND_RE = re.compile("|".join(f"(?:{p})" for p in BACKGROUND_HOST_PATTERNS))
+
+
+def background_mask(df: pd.DataFrame) -> pd.Series:
+    """Rows to or from a machine-background host (BACKGROUND_HOST_PATTERNS), DNS rows included.
+    Packets whose host is unknown (no DNS answer in the data) cannot be classified and stay."""
+    if df is None or df.empty or "ResolvedHost" not in df.columns:
+        return pd.Series(False, index=getattr(df, "index", None), dtype=bool)
+    hosts = df["ResolvedHost"].dropna().astype(str).str.lower().str.rstrip(".")
+    verdict = {h: bool(_BACKGROUND_RE.search(h)) for h in pd.unique(hosts)}
+    return hosts.map(verdict).reindex(df.index, fill_value=False).astype(bool)
+
+
+def drop_background(df: pd.DataFrame) -> pd.DataFrame:
+    """The data without machine background, for every feature (after enrich_with_hostnames)."""
+    if df is None or df.empty:
+        return df
+    return df.loc[~background_mask(df)]
+
+
 FOOD_DELIVERY_SLDS = {
     "ubereats.com","deliveroo.com","just-eat.co.uk","justeat.com",
     "doordash.com","grubhub.com","lieferando.de","takeaway.com",
