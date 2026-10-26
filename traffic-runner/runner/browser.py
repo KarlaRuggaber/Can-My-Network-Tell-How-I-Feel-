@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, urlsplit
 
-from . import discord
+from . import discord, steps
 from .context import PageError
 
 log = logging.getLogger("runner")
@@ -247,6 +247,21 @@ class BrowserDriver:
             except Exception:  # noqa: BLE001 - closing a broken browser must not fail the run
                 pass
         self._context = self._browser = self.page = None
+
+    def recover(self) -> None:
+        """After a hung step (runner/steps.py): every further call of this Playwright instance
+        would hang too, so stop Playwright and kill what is left below this process. The next
+        call starts a new Playwright and browser (same device profile and login session)."""
+        pw, self._pw = self._pw, None
+        self._browser = self._context = self.page = None
+        if pw is not None:
+            try:
+                pw.stop()
+            except Exception:  # noqa: BLE001 - includes a StepTimeout of the recovery limit
+                pass
+        n = steps.kill_descendants()
+        if n:
+            log.warning("killed %d leftover browser process(es)", n)
 
     def close(self) -> None:
         self.restart()

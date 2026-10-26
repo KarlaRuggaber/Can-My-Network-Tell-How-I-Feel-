@@ -17,6 +17,9 @@ log = logging.getLogger("runner")
 NAV_TIMEOUT = 45.0  # seconds, capped by the remaining time
 DISCORD_HOST = "discord.com"  # social_post upload target (runner/discord.py)
 MIN_NAV_TIME = 10.0  # do not start a navigation with less time left than this (mobile pages need ~5-10 s)
+STEP_SLACK = 30.0    # a step may take this much longer than planned before it counts as hung
+QUICK_STEP = 30.0    # limit for short steps (media state, mic, browser start)
+RECOVER_LIMIT = 20.0  # limit for restarting Playwright after a hung step
 
 
 class PageError(RuntimeError):
@@ -25,6 +28,20 @@ class PageError(RuntimeError):
 
 class MediaStalled(PageError):
     """Media stopped playing for three checks in a row (watch_media)."""
+
+
+class StepTimeout(PageError):
+    """A single browser step took longer than its limit: the page or browser hangs (runner/steps.py)."""
+
+
+def site_of(host: str | None) -> str:
+    """Last two labels of a host, the same reduction the thesis pipeline uses."""
+    return ".".join((host or "").split(".")[-2:])
+
+
+def host_of(url: str) -> str:
+    from urllib.parse import urlsplit
+    return urlsplit(url).hostname or ""
 
 
 class NotImplementedActivity(RuntimeError):
@@ -109,6 +126,9 @@ class Driver(Protocol):
     def resume_media(self) -> None:
         """Try to continue playback after a pause prompt."""
 
+    def recover(self) -> None:
+        """After a hung step: drop the browser (stop Playwright, kill leftovers); the next call starts fresh."""
+
     def close(self) -> None: ...
 
 
@@ -127,6 +147,42 @@ class RunContext:
         self.accounts: dict = {}  # config/accounts.yaml
         self.webhook_url = ""  # social_post: Discord webhook (runner/discord.py), set by the CLI
         self._bad_checks = 0
+        # Step limits (runner/steps.py Guard, set by the CLI; None in tests and --dry-run).
+        self.guard = None
+        self.hung_sites: set[str] = set()  # sites (last two labels) that hung in this run
+        self._hung = False  # a step hung since the activity last asked (take_hung)
+        self._host = ""  # host of the current page, for marking hung sites
+
+    # --- step limits ---
+    def _limit(self, expected: float) -> float:
+        return expected + STEP_SLACK
+
+    def _call(self, limit: float, what: str, fn, *args):
+        """Run one driver call under a time limit. A call that hangs restarts Playwright, marks
+        the current site as hung and raises StepTimeout (a PageError)."""
+        if self.guard is None:
+            return fn(*args)
+        try:
+            with self.guard.limit(limit, what):
+                return fn(*args)
+        except StepTimeout:
+            site = site_of(self._host)
+            if site:
+                self.hung_sites.add(site)
+            self._hung = True
+            self.page_errors += 1
+            log.warning("%s hung for %.0f s on %s, restarting the browser", what, limit, self._host or "?")
+            try:
+                with self.guard.limit(RECOVER_LIMIT, "browser restart"):
+                    self.driver.recover()
+            except StepTimeout:
+                log.error("browser restart hung too")
+            raise
+
+    def take_hung(self) -> bool:
+        """True once after a step hung: the activity should leave the current site."""
+        hung, self._hung = self._hung, False
+        return hung
 
     # --- time ---
     def elapsed(self) -> float:
@@ -136,7 +192,11 @@ class RunContext:
         return max(0.0, self.deadline - self.clock.now())
 
     def idle(self, seconds: float) -> None:
-        self.driver.idle(min(seconds, self.remaining()))
+        left = min(seconds, self.remaining())
+        try:
+            self._call(self._limit(left), "idle", self.driver.idle, left)
+        except StepTimeout:
+            pass
 
     def sleep_without_browser(self, seconds: float) -> None:
         self.clock.sleep(min(seconds, self.remaining()))
@@ -147,6 +207,8 @@ class RunContext:
 
     # --- page actions ---
     def _record(self, host: str | None) -> str | None:
+        if host:
+            self._host = host
         if host and host not in self.visited:
             self.visited.append(host)
         return host
@@ -159,8 +221,9 @@ class RunContext:
         timeout = self._nav_timeout()
         if timeout is None:
             return None
+        self._host = host_of(url)  # a hang during the load belongs to this site
         try:
-            return self._record(self.driver.open(url, timeout))
+            return self._record(self._call(self._limit(timeout), "page load", self.driver.open, url, timeout))
         except PageError as e:
             self.page_errors += 1
             log.warning("could not load %s: %s", url, e)
@@ -169,19 +232,26 @@ class RunContext:
     def dwell(self, seconds: float, seed: float) -> None:
         left = min(seconds, self.remaining())
         if left > 0:
-            self.driver.dwell(left, random.Random(seed))
+            try:
+                self._call(self._limit(left), "dwell", self.driver.dwell, left, random.Random(seed))
+            except StepTimeout:
+                pass
 
     def scroll_feed(self, seconds: float, seed) -> None:
         left = min(seconds, self.remaining())
         if left > 0:
-            self.driver.scroll_feed(left, random.Random(seed))
+            try:
+                self._call(self._limit(left), "feed scroll", self.driver.scroll_feed, left, random.Random(seed))
+            except StepTimeout:
+                pass
 
     def download(self, page_url: str, file_url: str) -> str | None:
         timeout = self._nav_timeout()
         if timeout is None:
             return None
         try:
-            return self._record(self.driver.download(page_url, file_url, timeout))
+            self._host = host_of(page_url)
+            return self._record(self._call(self._limit(2 * timeout), "download", self.driver.download, page_url, file_url, timeout))
         except PageError as e:
             self.page_errors += 1
             log.warning("%s", e)
@@ -197,53 +267,65 @@ class RunContext:
         if timeout is None:
             return None
         try:
-            return self._record(self.driver.follow_link(random.Random(seed), timeout))
+            return self._record(self._call(self._limit(timeout), "link", self.driver.follow_link, random.Random(seed), timeout))
         except PageError as e:
             self.page_errors += 1
             log.warning("could not follow link: %s", e)
             return None
 
     def fresh_browser(self) -> None:
-        self.driver.restart()
+        try:
+            self._call(QUICK_STEP, "browser restart", self.driver.restart)
+        except StepTimeout:
+            pass
 
     def fresh_context(self) -> None:
-        self.driver.new_context()
+        try:
+            self._call(QUICK_STEP, "new context", self.driver.new_context)
+        except StepTimeout:
+            pass
 
     def play_youtube(self, search_term: str, result_index: int) -> str | None:
         timeout = self._nav_timeout()
         if timeout is None:
             return None
-        return self._record(self.driver.play_youtube(search_term, result_index, timeout))
+        self._host = "www.youtube.com"
+        return self._record(self._call(self._limit(2 * timeout), "play_youtube", self.driver.play_youtube, search_term, result_index, timeout))
 
     def play_srf(self, start_url: str, result_index: int) -> str | None:
         timeout = self._nav_timeout()
         if timeout is None:
             return None
-        return self._record(self.driver.play_srf(start_url, result_index, timeout))
+        self._host = host_of(start_url)
+        return self._record(self._call(self._limit(2 * timeout), "play_srf", self.driver.play_srf, start_url, result_index, timeout))
 
     def play_audio(self, url: str) -> str | None:
         timeout = self._nav_timeout()
         if timeout is None:
             return None
-        return self._record(self.driver.play_audio(url, timeout))
+        self._host = host_of(url)
+        return self._record(self._call(self._limit(2 * timeout), "play_audio", self.driver.play_audio, url, timeout))
 
     def play_audio_page(self, url: str) -> str | None:
         timeout = self._nav_timeout()
         if timeout is None:
             return None
-        return self._record(self.driver.play_audio_page(url, timeout))
+        self._host = host_of(url)
+        return self._record(self._call(self._limit(2 * timeout), "play_audio_page", self.driver.play_audio_page, url, timeout))
 
     def join_call(self, url: str) -> str | None:
         timeout = self._nav_timeout()
         if timeout is None:
             return None
-        return self._record(self.driver.join_call(url, timeout))
+        self._host = host_of(url)
+        return self._record(self._call(self._limit(2 * timeout), "join_call", self.driver.join_call, url, timeout))
 
     def play_game(self, url: str) -> str | None:
         timeout = self._nav_timeout()
         if timeout is None:
             return None
-        return self._record(self.driver.play_game(url, timeout))
+        self._host = host_of(url)
+        return self._record(self._call(self._limit(2 * timeout), "play_game", self.driver.play_game, url, timeout))
 
     def watch_media(self, check_every: float = 15.0, max_seconds: float | None = None) -> str:
         """Keep media playing until it ends, the deadline, or `max_seconds`; return the last state.
@@ -262,12 +344,18 @@ class RunContext:
             self.idle(min(check_every, left))
             if self.remaining() <= 0:
                 break
-            state = self.driver.media_state()
+            try:
+                state = self._call(QUICK_STEP, "media check", self.driver.media_state)
+            except StepTimeout:
+                state = "none"  # Playwright was restarted, the player is gone
             if state == "ended":
                 log.info("media ended after %.0f s", self.elapsed())
                 break
             if state == "paused":
-                self.driver.resume_media()
+                try:
+                    self._call(QUICK_STEP, "resume", self.driver.resume_media)
+                except StepTimeout:
+                    pass
             if state in ("error", "none", "stalled", "paused"):
                 self._bad_checks += 1
                 if self._bad_checks >= 3:
@@ -278,10 +366,10 @@ class RunContext:
         return state
 
     def set_mic(self, on: bool) -> None:
-        self.driver.set_mic(on)
+        self._call(QUICK_STEP, "mic", self.driver.set_mic, on)
 
     def send_message(self, text: str) -> None:
-        self.driver.send_message(text)
+        self._call(QUICK_STEP + len(text), "message", self.driver.send_message, text)
 
     def webhook_post(self, image, content: str) -> dict | None:
         """Post through the Discord webhook and check that the message landed in exactly the
@@ -290,7 +378,8 @@ class RunContext:
         if timeout is None:
             return None
         cfg = self.accounts.get("discord") or {}
-        msg = self.driver.webhook_post(self.webhook_url, str(image), content, timeout)
+        self._host = DISCORD_HOST
+        msg = self._call(self._limit(timeout), "upload", self.driver.webhook_post, self.webhook_url, str(image), content, timeout)
         if (str(msg.get("channel_id")) != str(cfg.get("channel_id"))
                 or str(msg.get("webhook_id")) != str(cfg.get("webhook_id"))):
             raise PageError(f"Discord message {msg.get('id')} landed in channel {msg.get('channel_id')} "

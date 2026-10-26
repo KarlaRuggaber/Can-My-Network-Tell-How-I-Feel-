@@ -6,7 +6,7 @@ of the mix (e.g. a GitHub or Scholar page); writing in a document is not possibl
 
 
 def run_desk(ctx, rng, duration, mix, refresh, pages_per_hour, page_dwell, pdfs_per_hour=None, pdfs=()):
-    home = mix.pick(rng).resolve_url(rng)
+    home = mix.pick(rng, ctx.hung_sites).resolve_url(rng)
     page_rate = rng.uniform(*pages_per_hour) / 3600
     pdf_rate = rng.uniform(*pdfs_per_hour) / 3600 if pdfs and pdfs_per_hour else 0.0
     ctx.open(home)
@@ -14,7 +14,7 @@ def run_desk(ctx, rng, duration, mix, refresh, pages_per_hour, page_dwell, pdfs_
         # Everything this interval needs is drawn before any network access.
         interval = rng.uniform(*refresh)
         open_page = rng.random() < page_rate * interval
-        page_url = mix.pick(rng).resolve_url(rng)
+        page_url = mix.pick(rng, ctx.hung_sites).resolve_url(rng)
         page_seconds = rng.uniform(*page_dwell)
         page_seed = rng.random()
         get_pdf = rng.random() < pdf_rate * interval

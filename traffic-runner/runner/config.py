@@ -220,6 +220,10 @@ def load_mixes(path: Path | None = None) -> Mixes:
                  data.get("documents") or {})
 
 
+def _site(host: str) -> str:
+    return ".".join(host.split(".")[-2:])
+
+
 @dataclass(frozen=True)
 class Mix:
     """Weighted choice of sites from one or more categories, e.g. news:.2,social_passive:.4."""
@@ -232,11 +236,21 @@ class Mix:
     def categories(self) -> list[str]:
         return [c for c, _ in self.weights]
 
-    def pick(self, rng: random.Random) -> Site:
-        """Category by weight, then a site uniformly. Depends only on the RNG state."""
+    def pick(self, rng: random.Random, avoid: set[str] | frozenset[str] = frozenset()) -> Site:
+        """Category by weight, then a site uniformly. Depends only on the RNG state.
+
+        `avoid`: sites (last two labels, e.g. "reddit.com") that hung earlier in this run. If the
+        draw hits one and the mix has others, one more draw picks among the others; without
+        hung sites the draws are exactly the same as before.
+        """
         cats = [c for c, _ in self.weights]
         cat = rng.choices(cats, weights=[w for _, w in self.weights])[0]
-        return rng.choice(self.sites[cat])
+        site = rng.choice(self.sites[cat])
+        if avoid and _site(site.host) in avoid:
+            others = [s for s in self.all_sites() if _site(s.host) not in avoid]
+            if others:
+                site = rng.choice(others)
+        return site
 
     def all_sites(self) -> list[Site]:
         return [s for c in self.categories for s in self.sites[c]]

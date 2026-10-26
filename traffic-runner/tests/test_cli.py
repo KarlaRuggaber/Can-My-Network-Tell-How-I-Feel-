@@ -130,9 +130,9 @@ def test_hung_browser_close_keeps_the_row_and_ends_the_run(logdir, monkeypatch):
 
     def fake_kill():
         killed.append(True)
-        raise SystemExit(137)  # stands in for SIGKILL of the process group
+        raise SystemExit(137)  # stands in for SIGKILL of the run's process tree
 
-    monkeypatch.setattr(cli, "_kill_own_group", fake_kill)
+    monkeypatch.setattr(cli, "_kill_run", fake_kill)
     with pytest.raises(SystemExit):
         cli.main(BASE + ["--activity", "idle_connected", "--duration", "1"])
     assert killed == [True]

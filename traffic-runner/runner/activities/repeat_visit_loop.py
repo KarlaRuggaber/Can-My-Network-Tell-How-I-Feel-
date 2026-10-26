@@ -27,7 +27,7 @@ def run(ctx, rng, duration, mix):
     for _ in range(20 * wanted):  # distinct sites, as far as the mix allows
         if len(sites) == wanted:
             break
-        site = mix.pick(rng)
+        site = mix.pick(rng, ctx.hung_sites)
         if site not in sites:
             sites.append(site)
     urls = [s.resolve_url(rng) for s in sites]

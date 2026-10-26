@@ -25,7 +25,7 @@ def run(ctx, rng, duration, mix):
     limit = rng.randint(int(pages[0]), int(pages[1])) if pages else None
     opened = 0
     while ctx.remaining() > 0 and (limit is None or opened < limit):
-        url = mix.pick(rng).resolve_url(rng)
+        url = mix.pick(rng, ctx.hung_sites).resolve_url(rng)
         dwell = rng.uniform(dwell_lo, dwell_hi)
         scroll_seed = rng.random()
         opened += 1

@@ -19,7 +19,7 @@ RETRY_PAUSE = 5.0  # after a page failed to load
 def run(ctx, rng, duration, mix):
     dwell_lo, dwell_hi = ctx.range("dwell", DWELL)
     while ctx.remaining() > 0:
-        url = mix.pick(rng).resolve_url(rng)
+        url = mix.pick(rng, ctx.hung_sites).resolve_url(rng)
         dwell = rng.uniform(dwell_lo, dwell_hi)
         scroll_seed = rng.random()
         links = [(rng.random(), rng.uniform(dwell_lo, dwell_hi), rng.random())

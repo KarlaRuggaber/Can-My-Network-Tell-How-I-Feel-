@@ -28,7 +28,7 @@ def run(ctx, rng, duration, mix):
     tick = rng.randint(*TICK)
     game_seed = rng.randint(1, 2**31 - 1)
     while ctx.remaining() > 0 and ctx.elapsed() < store_end:
-        url = mix.pick(rng).resolve_url(rng)
+        url = mix.pick(rng, ctx.hung_sites).resolve_url(rng)
         dwell = rng.uniform(*STORE_DWELL)
         scroll_seed = rng.random()
         if ctx.open(url):

@@ -33,7 +33,7 @@ RETRY_PAUSE = 10.0  # seconds between a stall and the restart
 
 
 def run(ctx, rng, duration, mix):
-    site = mix.pick(rng)
+    site = mix.pick(rng, ctx.hung_sites)
     terms = ctx.mixes.video.get("youtube_search_terms") or []
     pool = int(ctx.mixes.video.get("result_pool", 5))
 

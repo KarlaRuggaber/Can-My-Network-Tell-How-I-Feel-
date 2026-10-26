@@ -10,10 +10,12 @@ import re
 import signal
 import socket
 import sys
+import time
 
-from . import config, discord, gtlog, sessions
+from . import config, discord, gtlog, sessions, steps
 from .activities import ACTIVITIES, CATALOG_ONLY
 from .context import NotImplementedActivity, PageError, RealClock, RunContext
+from .steps import Aborted  # noqa: F401 - part of the CLI's interface
 
 log = logging.getLogger("runner")
 
@@ -24,10 +26,6 @@ CLOSE_TIMEOUT = 60   # seconds for closing the browser after the log row is writ
 GATEWAY = "10.42.1.1"
 
 _DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)(s|m|h)?$")
-
-
-class Aborted(BaseException):
-    """SIGTERM or watchdog. BaseException so no `except Exception` inside a driver eats it."""
 
 
 class UsageError(Exception):
@@ -226,7 +224,9 @@ def cmd_run(args) -> int:
     log.info("start %s on %s (%s, %s), %.0f s, mix=%s, seed=%s, block=%s",
              activity_id, device.name, device.role, device.ip, duration,
              ",".join(mix.categories) if mix else "-", args.seed, args.block_id)
-    _install_signal_handlers(duration if implemented and not args.dry_run else None)
+    guard = _install_signal_handlers(duration if implemented and not args.dry_run else None)
+    if not args.dry_run:
+        ctx.guard = guard  # time limit per browser step, shared alarm with the watchdog
     try:
         if status is None:
             if module is None:
@@ -271,18 +271,18 @@ def cmd_run(args) -> int:
     return STATUS_EXIT[row["status"]]
 
 
-def _kill_own_group() -> None:
-    """End this run and everything it started (Playwright driver, Chromium): same process group."""
+def _kill_run() -> None:
+    """End this run and everything below it (Playwright driver, Chromium). Chromium runs in its
+    own process group, so the process tree is used, not the group (runner/steps.py)."""
     logging.shutdown()
-    if os.getpgrp() == os.getpid():
-        os.killpg(os.getpgrp(), signal.SIGKILL)
-    os.kill(os.getpid(), signal.SIGKILL)  # not the group leader: only this process
+    steps.kill_descendants()
+    os.kill(os.getpid(), signal.SIGKILL)
 
 
 def _close_with_timeout(driver) -> None:
     def hung(signum, frame):
         log.error("browser did not close within %d s, ending the run's processes", CLOSE_TIMEOUT)
-        _kill_own_group()
+        _kill_run()
 
     previous = signal.signal(signal.SIGALRM, hung)
     signal.alarm(CLOSE_TIMEOUT)
@@ -295,14 +295,16 @@ def _close_with_timeout(driver) -> None:
         signal.signal(signal.SIGALRM, previous)
 
 
-def _install_signal_handlers(duration: float | None) -> None:
+def _install_signal_handlers(duration: float | None) -> "steps.Guard":
+    """SIGTERM aborts the run. SIGALRM belongs to the Guard: the watchdog (duration + grace)
+    and the limit of the current browser step share it, the watchdog wins."""
     def abort(signum, frame):
-        raise Aborted("watchdog: deadline exceeded" if signum == signal.SIGALRM else f"signal {signum}")
+        raise Aborted(f"signal {signum}")
 
     signal.signal(signal.SIGTERM, abort)
-    signal.signal(signal.SIGALRM, abort)
-    if duration:
-        signal.alarm(int(duration) + WATCHDOG_GRACE)
+    guard = steps.Guard(time.monotonic() + duration + WATCHDOG_GRACE if duration else None)
+    guard.install()
+    return guard
 
 
 # --- validate / list -----------------------------------------------------------------------

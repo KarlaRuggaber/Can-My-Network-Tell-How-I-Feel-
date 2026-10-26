@@ -121,6 +121,10 @@ class FakeDriver:
         self.calls.append(("message", text))
         self.clock.sleep(len(text) * 0.06)
 
+    def recover(self):
+        self.calls.append(("recover",))
+        self.url = None
+
     webhook_channel_id = ""  # channel the fake Discord reports; tests and --dry-run set it
 
     def webhook_post(self, url, image, content, timeout):

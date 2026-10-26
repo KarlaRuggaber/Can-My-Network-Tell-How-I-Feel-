@@ -20,7 +20,7 @@ def run(ctx, rng, duration, mix):
     pages_lo, pages_hi = ctx.range("pages", PAGES)
     dwell_lo, dwell_hi = ctx.range("dwell", DWELL)
     for _ in range(rng.randint(int(pages_lo), int(pages_hi))):
-        url = mix.pick(rng).resolve_url(rng)
+        url = mix.pick(rng, ctx.hung_sites).resolve_url(rng)
         dwell = rng.uniform(dwell_lo, dwell_hi)
         scroll_seed = rng.random()
         if ctx.remaining() <= 0:
