@@ -156,3 +156,11 @@ def test_main_keeps_the_container_alive_when_the_config_is_broken(monkeypatch):
     monkeypatch.setattr(background.signal, "signal", lambda *a: None)
     with pytest.raises(Stop):
         background.main()
+
+
+def test_extra_roots_are_added_to_the_default_store(monkeypatch):
+    monkeypatch.setattr(background, "_tls", None)
+    ctx = background.tls_context()
+    names = {dict(x[0] for x in c["subject"]).get("commonName") for c in ctx.get_ca_certs()}
+    assert {"Microsoft Root Certificate Authority 2011", "Microsoft ECC Product Root Certificate Authority 2018"} <= names
+    assert ctx.verify_mode == background.ssl.CERT_REQUIRED and ctx.check_hostname

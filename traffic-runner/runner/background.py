@@ -36,6 +36,20 @@ REQUEST_TIMEOUT = 15   # seconds per request
 READ_LIMIT = 64 * 1024  # bytes read from a response body
 KINDS = ("get", "tls", "ntp")
 LOG_NAME = "background-{device}.jsonl"
+# Windows trusts Microsoft's own roots, the container's CA store does not (*.data.microsoft.com,
+# *.update.microsoft.com). Added to the default store, never replacing it.
+EXTRA_ROOTS = "microsoft-roots.pem"
+_tls: ssl.SSLContext | None = None
+
+
+def tls_context() -> ssl.SSLContext:
+    global _tls
+    if _tls is None:
+        _tls = ssl.create_default_context()
+        extra = config.CONFIG_DIR / EXTRA_ROOTS
+        if extra.exists():
+            _tls.load_verify_locations(cafile=str(extra))
+    return _tls
 
 
 @dataclass(frozen=True)
@@ -154,15 +168,14 @@ def perform(s: Source) -> dict:
             out["host"] = urllib.parse.urlsplit(s.url).hostname
             req = urllib.request.Request(s.url, headers={"Cache-Control": "no-cache"})
             try:
-                with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as r:
+                with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT, context=tls_context()) as r:
                     out["status"], out["bytes"] = r.status, len(r.read(READ_LIMIT))
             except urllib.error.HTTPError as e:  # 4xx/5xx is still a normal exchange
                 out["status"], out["bytes"] = e.code, len(e.read(READ_LIMIT) or b"")
         elif s.kind == "tls":
             out["host"] = s.host
-            ctx = ssl.create_default_context()
             with socket.create_connection((s.host, s.port), timeout=REQUEST_TIMEOUT) as raw:
-                with ctx.wrap_socket(raw, server_hostname=s.host) as tls:
+                with tls_context().wrap_socket(raw, server_hostname=s.host) as tls:
                     out["status"] = tls.version()
         elif s.kind == "ntp":
             out["host"] = s.host
