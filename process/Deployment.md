@@ -473,7 +473,37 @@ The request named the sleep and timing features. The filter applies to all featu
 
 **Effect on the thesis datasets** (all 64, with/without the filter): background in 35 datasets, 0.02 % of all packets. No sleep or timing value changes (5-minute captures). `C2_F1_UniqueSLD` drops by 1–5 in 32 datasets (e.g. `ONU_capture_game_4` 22 → 18, `video_3` 24 → 19), `F1_DistinctSocial` changes in 12, the byte totals in 3. **This changes thesis values** (thesis-alignment B11).
 
-**Effect on the gateway data:** before, 25.10: 0 packets outside the blocks. After: measured on the first full night (open point below).
+**Effect on the gateway data.** Before, 25.10: 0 packets outside the blocks. First full night with background, 26.10 22:00 – 27.10 07:00 (all 8 containers on the new image since 26.10 ~12:15; measured 27.10 with `/var/tmp/night_measure.py` in the app image):
+
+| Device | Packets/h (all) | Background packets/h | Background packets/h 00–06 | Hours with background (of 9) |
+| --- | --- | --- | --- | --- |
+| student_a_laptop | 239 | 239 | 143 | 9 |
+| student_a_phone | 150 | 150 | 66 | 9 |
+| insomnia_a_laptop | 228 | 180 | 98 | 9 |
+| insomnia_a_phone | 7 334 | 84 | 59 | 9 |
+| mdd_suicidality_a_laptop | 25 445 | 175 | 82 | 9 |
+| mdd_suicidality_a_phone | 300 284 | 247 | 245 | 9 |
+| social_anxiety_a_laptop | 92 285 | 181 | 77 | 9 |
+| social_anxiety_a_phone | 233 870 | 137 | 36 | 9 |
+
+Every device now has background in every hour of the night, as a real device would. Sleep features of the same window, with background and with the app's filter:
+
+| Dataset | Night blocks in the window | Data | Active minutes 00–06 | Longest quiet period (h) | Sleep onset / wake (first 30-min gap 22–04) |
+| --- | --- | --- | --- | --- | --- |
+| gw_student_a | none (no plan) | with background | 57 | 0.37 | none |
+| | | filtered | 0 | 9.0 | – (no data left) |
+| gw_insomnia_a | phone 06:06–06:16 | with background | 59 | 0.66 | 03:22 / 04:02 |
+| | | filtered | 15 | 1.39 | 00:26 / 01:49 |
+| gw_mdd_suicidality_a | until 01:53 (phone), 23:16 (laptop) | with background | 79 | 0.48 | none |
+| | | filtered | 42 | 1.28 | 00:38 / 01:12 |
+| gw_social_anxiety_a | until 00:37 | with background | 73 | 0.64 | 02:18 / 02:56 |
+| | | filtered | 48 | 1.05 | 01:01 / 02:02 |
+
+With background, no dataset has a quiet half hour before 02:18, and Maria's night has none at all. This is the effect the filter is for. The student pair, which has no blocks, shows that the filter removes the generator's traffic completely (0 packets left, 9 h quiet).
+
+**Limit found: shared IPs get the wrong hostname.** In the other datasets the filtered night is still not quiet: e.g. `insomnia_a_laptop` has no block after 17:30 but keeps ~48 packets/h. These are background requests the app labels with another name. `build_dns_map` maps each IP to the **first** name it was resolved for that day, for the whole day. Measured in gw_insomnia_a: `74.125.29.100` was first `google.com` (26.10 10:27); at night the generator reached it as `clients2.google.com` and `android.clients.google.com`. `74.125.29.94` (first `www.gstatic.com`) and `172.217.208.94` (first `www.google.ch`) served `ocsp.pki.goog`, and `2.16.168.46` (first a TikTok host, SOCIAL) served `www.msftconnecttest.com`. So these packets are neither filtered nor counted for the right service, on real devices as well. The fix would be a per-client, time-aware lookup (the latest answer the client received for that IP before the packet), open point below.
+
+**Incident during the measurement.** The first run (timer 27.10 07:30) loaded two full days per dataset and was ended by the kernel's OOM killer at 4.9 GB (host-wide, reported as "OOM killer ended python3" in the 08:00 report). No runner or service was hit; all 84 blocks of the 24 h window were ok. The script now reads only DNS rows plus the window's files, reduces each 5-minute file at once, and runs with `docker run --memory 1500m` (later kills stayed inside the container, `CONSTRAINT_MEMCG`).
 
 **Deployment.** App image rebuilt and recreated, feature cache moved to `/var/tmp/feature_cache-before-e3fd6dd`. Runner image built from `git archive` (249 tests pass in the image), then the rolling switch `tr-roll-runner2` recreates each container only while it is idle. The containers must be **recreated** (not only the image changed), because their command changed.
 
@@ -635,6 +665,7 @@ sudo systemctl start tapingest
 | 26 | Access | `Host key verification failed` for `kathy@10.42.0.1` | `known_hosts` has the gateway under 172.20.10.10 | Same keys (compared); use 172.20.10.10, which works from the hotspot and from the AP network |
 | 27 | Executor | `--status` refused while the executor ran ("state file is locked") | The status view opened the state file like an executor, with the lock | `--status` reads without the lock (fixed 23.10) |
 | 28 | Report | The daily report would have arrived at 10:00 instead of 08:00 | `OnCalendar=08:00` is read in the system time zone, which is UTC on the gateway | `OnCalendar=*-*-* 08:00:00 Europe/Zurich` (also correct after the switch to winter time) |
+| 29 | Gateway | "OOM killer ended python3" in the report of 27.10 08:00 | One-off night measurement loaded ~6 M packets with all columns (4.9 GB) | Measurement reads file by file, container capped at 1.5 GB (Section 7.11); no runner affected |
 
 ## 10. Security notes
 

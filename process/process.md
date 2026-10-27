@@ -341,7 +341,9 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - App (`e3fd6dd`): background hosts are dropped right after the hostname lookup, so no feature counts them. A test checks that every runner background host is in the list. On a test night the filter turns "0.2 h quiet, 64 active night minutes" back into "7 h quiet, 31 minutes". Thesis datasets: no sleep or timing value changes, UniqueSLD −1 to −5 in 32 of 64.
   - Deployed: app rebuilt, feature cache cleared; runner containers switched by `tr-roll-runner2` while idle. Details: [Deployment.md](Deployment.md) §7.11, [traffic-runner/README.md](../traffic-runner/README.md) §8b.
 - **Next / open:**
-  - Tomorrow: measure the first full night (background packets per hour per device, sleep features with and without the filter)
+  - Done 27.10: first night measured. Every device has background in all 9 night hours (36–245 packets/h at 00–06). With background no dataset has a quiet half hour before 02:18; filtered, the student pair is 100 % quiet. Details: [Deployment.md](Deployment.md) §7.11
+  - **App: hostnames for shared IPs.** The DNS map keeps the first name per IP for the whole day, so generator requests at night to Google/Akamai IPs carry day-time names (`google.com`, a TikTok host) and pass the filter. Needs a per-client, time-aware lookup
+  - The first measurement run was OOM-killed (4.9 GB, my one-off script, no runner affected); now file by file with a 1.5 GB cap
 
 </details>
 
