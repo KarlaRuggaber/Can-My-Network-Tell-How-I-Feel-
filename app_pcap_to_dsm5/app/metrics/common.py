@@ -253,6 +253,91 @@ def build_dns_map(df: pd.DataFrame) -> dict[str, str]:
 
     return mapping
 
+
+_IP_TOKEN = re.compile(r"^[0-9A-Fa-f:.]+$")
+
+
+def dns_answers(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per (answer time, client, answered IP, name) from the DNS answer rows. The client
+    is the answer's destination (resolver -> client); CNAME tokens in DNS_ANS_IPS are dropped."""
+    cols = ["Timestamp", "client", "ip", "name"]
+    need = {"IsDNS", "Timestamp", "Destination IP", "DNS_ANS_IPS"}
+    if df is None or df.empty or not need.issubset(df.columns):
+        return pd.DataFrame(columns=cols)
+    d = df.loc[(df["IsDNS"] == True) & df["DNS_ANS_IPS"].notna()]
+    if d.empty:
+        return pd.DataFrame(columns=cols)
+    name = d["DNS_ANS_NAME"] if "DNS_ANS_NAME" in d.columns else pd.Series(None, index=d.index)
+    if "DNS_QNAME" in d.columns:
+        name = name.where(name.notna(), d["DNS_QNAME"])
+    a = pd.DataFrame({"Timestamp": pd.to_datetime(d["Timestamp"], errors="coerce"),
+                      "client": d["Destination IP"], "name": name,
+                      "ip": d["DNS_ANS_IPS"].astype(str).str.split(",")})
+    a = a.explode("ip")
+    a["ip"] = a["ip"].str.strip()
+    a["name"] = a["name"].astype(str).str.strip()
+    a = a[a["ip"].str.match(_IP_TOKEN) & a["Timestamp"].notna() & (a["name"] != "") & (a["name"] != "None")]
+    return a[cols]
+
+
+TIMED_CHUNK = 500_000  # packets per merge in _timed_hosts
+
+
+def _timed_hosts(out: pd.DataFrame, remote: pd.Series, inbound: np.ndarray | None) -> tuple[np.ndarray, np.ndarray]:
+    """(row positions, names): per packet the name of the latest DNS answer its client (the
+    private side; `inbound` marks server -> client packets) received for the remote IP before
+    the packet, only for packets that have one. Shared CDN/Google IPs serve many names, so a
+    day-wide IP -> name map labels later traffic with the wrong host (gateway night 27.10:
+    clients2.google.com requests counted as google.com, the Windows connectivity check as a
+    TikTok host), see process/Deployment.md section 7.12."""
+    result = (np.array([], dtype=np.int64), np.array([], dtype=object))
+    if "Timestamp" not in out.columns:
+        return result
+    ans = dns_answers(out)
+    if ans.empty:
+        return result
+    # Only IPs answered with more than one name need the join: for all others it gives the same
+    # name as the day-wide map, and skipping them keeps the memory of a 9 M-packet day low.
+    names_per_ip = ans.groupby("ip")["name"].nunique()
+    ans = ans[ans["ip"].isin(names_per_ip.index[names_per_ip > 1])]
+    if ans.empty:
+        return result
+    is_dns = out["IsDNS"].fillna(False).astype(bool) if "IsDNS" in out.columns else False
+    sel = remote.isin(set(ans["ip"])) & ~is_dns
+    if not sel.any():
+        return result
+    # One integer key per (client, IP) pair instead of two string columns: a busy day has
+    # ~9 M packets, and string keys per packet would cost GBs in the app container.
+    clients = pd.Index(pd.unique(ans["client"].astype(str)))
+    ips = pd.Index(pd.unique(ans["ip"]))
+
+    def key(c: pd.Series, i: pd.Series) -> np.ndarray:
+        ci, ii = clients.get_indexer(c.astype(str)), ips.get_indexer(i.astype(str))
+        return np.where((ci >= 0) & (ii >= 0), ci.astype(np.int64) * len(ips) + ii, -1)
+
+    ans = pd.DataFrame({"Timestamp": ans["Timestamp"].astype("datetime64[ns]").to_numpy(),
+                        "key": key(ans["client"], ans["ip"]),
+                        "name": ans["name"].to_numpy()}).sort_values("Timestamp", kind="stable")
+    # In chunks: the extra memory stays at one chunk (the app container already holds the day).
+    rows = np.flatnonzero(sel.to_numpy())
+    got_rows, got_names = [], []
+    for chunk in np.array_split(rows, max(1, -(-len(rows) // TIMED_CHUNK))):
+        src = out["Source IP"].iloc[chunk].to_numpy() if "Source IP" in out.columns else out["Destination IP"].iloc[chunk].to_numpy()
+        client = src if inbound is None else np.where(inbound[chunk], out["Destination IP"].iloc[chunk].to_numpy(), src)
+        pk = pd.DataFrame({"Timestamp": pd.to_datetime(out["Timestamp"].iloc[chunk], errors="coerce").astype("datetime64[ns]").to_numpy(),
+                           "key": key(pd.Series(client), remote.iloc[chunk]), "row": chunk})
+        pk = pk[pk["Timestamp"].notna() & (pk["key"] >= 0)].sort_values("Timestamp", kind="stable")
+        if pk.empty:
+            continue
+        m = pd.merge_asof(pk, ans, on="Timestamp", by="key", direction="backward")
+        m = m[m["name"].notna()]
+        got_rows.append(m["row"].to_numpy())
+        got_names.append(m["name"].to_numpy())
+    if not got_rows:
+        return result
+    return np.concatenate(got_rows), np.concatenate(got_names)
+
+
 def enrich_with_hostnames(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return df
@@ -271,15 +356,32 @@ def enrich_with_hostnames(df: pd.DataFrame) -> pd.DataFrame:
     # packet: the destination for outgoing packets, the source for incoming ones
     # (server -> client). Looking up the destination only left every inbound packet
     # without a hostname, so e.g. streaming_inbound_mask never matched.
+    # Per client and time first (the latest answer the client got for that IP before the packet,
+    # since 27.10); the day-wide first-answer map only where there is none, e.g. for connections
+    # opened before the capture or answers seen in another dataset's file.
     if ip2host:
         remote = out["Destination IP"]
+        inbound = None
         if "Source IP" in out.columns:
             ips = pd.unique(pd.concat([out["Source IP"], out["Destination IP"]]).dropna())
             private = {ip: is_private_ip(ip) for ip in ips}
             src_priv = out["Source IP"].map(private).fillna(False).astype(bool)
             dst_priv = out["Destination IP"].map(private).fillna(False).astype(bool)
-            remote = remote.where(~(dst_priv & ~src_priv), out["Source IP"])
-        out["ResolvedHost"] = remote.map(ip2host)
+            inbound = (dst_priv & ~src_priv).to_numpy()
+            remote = remote.where(~inbound, out["Source IP"])
+            del src_priv, dst_priv
+        rows, names = _timed_hosts(out, remote, inbound)
+        if len(rows):
+            # Built from codes into one array whose rows point to the few distinct name
+            # strings: converting a 5 M-row string column to Python objects cost ~0.5 GB.
+            hosts = pd.Index(pd.unique(np.concatenate([np.array(list(ip2host.values()), dtype=object), names])))
+            day_code = np.append(hosts.get_indexer(list(ip2host.values())), -1)  # index -1 -> -1
+            code = day_code[pd.Index(list(ip2host.keys())).get_indexer(remote)]  # one 8-byte array
+            code[rows] = hosts.get_indexer(names)
+            table = np.append(hosts.to_numpy(dtype=object), np.nan)  # code -1 -> NaN
+            out["ResolvedHost"] = table[code]
+        else:
+            out["ResolvedHost"] = remote.map(ip2host)
     else:
         out["ResolvedHost"] = None
 
@@ -301,7 +403,8 @@ def enrich_with_hostnames(df: pd.DataFrame) -> pd.DataFrame:
 
     # Compute SLD from the resolved host (if any); known CDN hosts count for their service
     if "ResolvedHost" in out.columns:
-        out["SLD"] = out["ResolvedHost"].apply(_sld)
+        # once per distinct host (a day has 5 M+ packets but a few thousand hosts)
+        out["SLD"] = out["ResolvedHost"].map({h: _sld(h) for h in pd.unique(out["ResolvedHost"].dropna())})
         services = {h: s for h in pd.unique(out["ResolvedHost"].dropna()) if (s := _service_sld(h))}
         if services:
             mapped = out["ResolvedHost"].map(services)
