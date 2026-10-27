@@ -342,8 +342,15 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - Deployed: app rebuilt, feature cache cleared; runner containers switched by `tr-roll-runner2` while idle. Details: [Deployment.md](Deployment.md) §7.11, [traffic-runner/README.md](../traffic-runner/README.md) §8b.
 - **Next / open:**
   - Done 27.10: first night measured. Every device has background in all 9 night hours (36–245 packets/h at 00–06). With background no dataset has a quiet half hour before 02:18; filtered, the student pair is 100 % quiet. Details: [Deployment.md](Deployment.md) §7.11
-  - **App: hostnames for shared IPs.** The DNS map keeps the first name per IP for the whole day, so generator requests at night to Google/Akamai IPs carry day-time names (`google.com`, a TikTok host) and pass the filter. Needs a per-client, time-aware lookup
+  - App: hostnames for shared IPs (the DNS map kept the first name per IP for the whole day) — done 27.10, see below
   - The first measurement run was OOM-killed (4.9 GB, my one-off script, no runner affected); now file by file with a 1.5 GB cap
+
+**Hostnames per client and time:** Tue 27.10
+- **Done:**
+  - `enrich_with_hostnames` now gives each packet the latest DNS answer its own client received for that IP before the packet; the day-wide first-answer map stays as the fallback (`4cc8e49`). 7 tests, 79 app tests pass.
+  - Last night, filtered: the nights now end where the last block ends (insomnia 1.4 → 8.1 h quiet, Maria 1.3 → 5.1 h, Kim 1.1 → 6.4 h; micro-sessions 13 → 0–1).
+  - Thesis datasets: hostnames change for 0.21 % of packets in 38 of 64; only F1_DistinctSocial changes (16 datasets).
+  - Memory kept close to the old version (+170–220 MB on a 5–6 M-packet day, first version was +600 MB): chunked join, integer codes, SLD per distinct host. Deployed, feature cache cleared. Details: [Deployment.md](Deployment.md) §7.12.
 
 </details>
 

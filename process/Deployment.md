@@ -149,6 +149,7 @@ Pages 01 and 02 now compute a cheap signature of the selected datasets (number o
 | CDN hosts (not in the plan) | – | Broadcaster VOD hosts attributed to their service, e.g. `srf-vod-*.akamaized.net` → `srf.ch` (Section 7.9) | Done 25.10, extension of the thesis lists |
 | Productivity list (not in the plan) | – | Shared domains count only tool hosts, e.g. `docs.google.com` but not `accounts.google.com` (Section 7.10) | Done 26.10, correction of the thesis list; changes thesis values, C2_F6 needs recalibration |
 | Machine background (not in the plan) | – | Runner containers send OS/browser background around the clock; the app drops background hosts before all features (Section 7.11) | Done 26.10; changes UniqueSLD in 32 thesis datasets by 1–5 |
+| Hostname lookup (not in the plan) | – | Each packet gets the latest DNS answer its client received for the IP, instead of the day's first answer (Section 7.12) | Done 27.10; changes F1_DistinctSocial in 16 thesis datasets |
 | Output location | `/var/lib/tapcap/parquet`, mounted read-only | `app/processed_parquet` in the repo, mounted read-write | Done. Read-write so the upload page keeps working |
 | Hosting | Option A: app on the gateway via SSH tunnel | Option A, Docker, Streamlit bound to 127.0.0.1 | Done |
 | Feature cache | Press "Refresh cached day metrics" | Detected automatically | Done |
@@ -501,11 +502,43 @@ Every device now has background in every hour of the night, as a real device wou
 
 With background, no dataset has a quiet half hour before 02:18, and Maria's night has none at all. This is the effect the filter is for. The student pair, which has no blocks, shows that the filter removes the generator's traffic completely (0 packets left, 9 h quiet).
 
-**Limit found: shared IPs get the wrong hostname.** In the other datasets the filtered night is still not quiet: e.g. `insomnia_a_laptop` has no block after 17:30 but keeps ~48 packets/h. These are background requests the app labels with another name. `build_dns_map` maps each IP to the **first** name it was resolved for that day, for the whole day. Measured in gw_insomnia_a: `74.125.29.100` was first `google.com` (26.10 10:27); at night the generator reached it as `clients2.google.com` and `android.clients.google.com`. `74.125.29.94` (first `www.gstatic.com`) and `172.217.208.94` (first `www.google.ch`) served `ocsp.pki.goog`, and `2.16.168.46` (first a TikTok host, SOCIAL) served `www.msftconnecttest.com`. So these packets are neither filtered nor counted for the right service, on real devices as well. The fix would be a per-client, time-aware lookup (the latest answer the client received for that IP before the packet), open point below.
+**Limit found: shared IPs get the wrong hostname.** In the other datasets the filtered night is still not quiet: e.g. `insomnia_a_laptop` has no block after 17:30 but keeps ~48 packets/h. These are background requests the app labels with another name. `build_dns_map` maps each IP to the **first** name it was resolved for that day, for the whole day. Measured in gw_insomnia_a: `74.125.29.100` was first `google.com` (26.10 10:27); at night the generator reached it as `clients2.google.com` and `android.clients.google.com`. `74.125.29.94` (first `www.gstatic.com`) and `172.217.208.94` (first `www.google.ch`) served `ocsp.pki.goog`, and `2.16.168.46` (first a TikTok host, SOCIAL) served `www.msftconnecttest.com`. So these packets are neither filtered nor counted for the right service, on real devices as well. Fixed on 27.10 with a per-client, time-aware lookup (Section 7.12).
 
 **Incident during the measurement.** The first run (timer 27.10 07:30) loaded two full days per dataset and was ended by the kernel's OOM killer at 4.9 GB (host-wide, reported as "OOM killer ended python3" in the 08:00 report). No runner or service was hit; all 84 blocks of the 24 h window were ok. The script now reads only DNS rows plus the window's files, reduces each 5-minute file at once, and runs with `docker run --memory 1500m` (later kills stayed inside the container, `CONSTRAINT_MEMCG`).
 
 **Deployment.** App image rebuilt and recreated, feature cache moved to `/var/tmp/feature_cache-before-e3fd6dd`. Runner image built from `git archive` (249 tests pass in the image), then the rolling switch `tr-roll-runner2` recreates each container only while it is idle. The containers must be **recreated** (not only the image changed), because their command changed.
+
+### 7.12 Hostnames per client and time (27.10.2026)
+
+**Why.** `enrich_with_hostnames` gave every packet the name its IP was **first** answered with that day (`build_dns_map`, first answer wins). Google, Akamai and other CDNs serve many names from the same IPs, so later traffic to such an IP kept a day-time name. Found on the first night with background (Section 7.11): the generator's requests to `clients2.google.com`, `android.clients.google.com`, `ocsp.pki.goog` and `www.msftconnecttest.com` were counted as `google.com`, `www.gstatic.com`, `www.google.ch` and a TikTok host (SOCIAL). They passed the background filter and counted for the wrong service.
+
+**Change** (`4cc8e49`, `app/metrics/common.py`): each packet gets the name of the **latest DNS answer its own client received for that IP before the packet** (`dns_answers()`, `_timed_hosts()`, a `merge_asof` per client and IP). The client is the private side of the packet, so inbound packets get the same name as outbound ones. The old day-wide map remains as the fallback where no earlier answer exists, e.g. for connections opened before the capture started. Only IPs answered with more than one name need the join; for all others the result is unchanged by construction. `build_dns_map` itself (also used by page 03) is unchanged.
+
+**Memory.** The pages load a whole day (Maria 26.10: 6.3 M packets). Measured in the app image with a 3.5 GB cap, peak while enriching one day:
+
+| Day | Old | First version | Final |
+| --- | --- | --- | --- |
+| Kim, 26.10 (5.0 M packets) | 2 770 MB | 3 365 MB | 2 990 MB |
+| Maria, 26.10 (6.3 M packets) | 3 302 MB | killed at 3 500 MB | 3 470 MB |
+
+The first version turned the 5 M hostnames into separate Python strings. The final version joins in chunks of 500 000 packets, builds the column from integer codes over the few thousand distinct names, and computes the SLD once per distinct host instead of per packet. It needs about +170–220 MB (+5–8 %) and takes 11–16 s per day, like before. The same number of packets gets a hostname as with the old map.
+
+**Tests.** `tests/test_timed_hostnames.py`, 7 cases: a shared IP changes its name (the 27.10 case, now recognised as background); each client uses its own answers; fallback to the day map; row order and index are kept; CNAME tokens and IPv6 in the answers; data without timestamps keeps the old behaviour; the chunked join gives the same names as one join. 79 app tests pass.
+
+**Effect, last night** (26.10 22:00 – 27.10 07:00, filtered data, old → new lookup):
+
+| Dataset | Night blocks end | Active minutes 00–06 | Longest quiet period (h) | Night micro-sessions (01–06) |
+| --- | --- | --- | --- | --- |
+| gw_insomnia_a | none (06:06 phone check) | 15 → 0 | 1.39 → 8.11 | 13 → 0 |
+| gw_mdd_suicidality_a | 01:53 | 42 → 36 | 1.28 → 5.11 | 13 → 1 |
+| gw_social_anxiety_a | 00:37 | 48 → 38 | 1.05 → 6.37 | 13 → 0 |
+| gw_student_a | no plan | 0 → 0 | 9.0 → 9.0 | – |
+
+The filtered nights now end exactly where the plan's last block ends: 01:53 → 07:00 is 5.1 h, 00:37 → 07:00 is 6.4 h. The background found per device rose accordingly, e.g. `insomnia_a_laptop` 180 → 228 packets/h (now 100 % of its night traffic, as it had no block).
+
+**Effect, thesis datasets** (all 64, old → new): the hostname changes for 0.21 % of all packets in 38 datasets, the SLD in 32. These are mostly IPs shared within one provider, e.g. `sinaimg.cn` ↔ `sinajs.cn`, `qqmail.com` ↔ `qq.com`, `xiaomi.com` ↔ `mi.com`, `douyu.com` ↔ `douyucdn.cn`. Of the features, only `F1_DistinctSocial` changes (16 datasets, e.g. `ONU_capture_game_8` 5 → 7, `network-storage_2` 6 → 9), plus the packet totals after the background filter in 2 datasets (50 and 72 packets now carry a user host instead of a background host). UniqueSLD, ProductivityHits and all sleep and timing values are unchanged.
+
+**Deployment.** `git pull`, app image rebuilt, container recreated; feature cache moved to `/var/tmp/feature_cache-before-4cc8e49`. Check in the container: the 27.10 case resolves to `clients2.google.com`.
 
 ## 8. Operating the system
 
