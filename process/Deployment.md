@@ -699,6 +699,7 @@ sudo systemctl start tapingest
 | 27 | Executor | `--status` refused while the executor ran ("state file is locked") | The status view opened the state file like an executor, with the lock | `--status` reads without the lock (fixed 23.10) |
 | 28 | Report | The daily report would have arrived at 10:00 instead of 08:00 | `OnCalendar=08:00` is read in the system time zone, which is UTC on the gateway | `OnCalendar=*-*-* 08:00:00 Europe/Zurich` (also correct after the switch to winter time) |
 | 29 | Gateway | "OOM killer ended python3" in the report of 27.10 08:00 | One-off night measurement loaded ~6 M packets with all columns (4.9 GB) | Measurement reads file by file, container capped at 1.5 GB (Section 7.11); no runner affected |
+| 30 | Report | "OOM kills: 9 (python3)" as a problem in the report of 28.10 08:00 | All nine were my test containers (`docker run --rm --memory 1500m/3500m`, 27.10 08:42–09:20) hitting the cap set for them (`CONSTRAINT_MEMCG`); the report counted every "Killed process" line | The report reads the constraint and cgroup of each kill (`9794eb6`): host-wide kills and kills in containers that still exist stay problems; kills in removed containers at their own cap are an info line. Checked on the gateway: 24 h window "all good, 9 in removed one-off containers"; 26 h window still flags the host-wide kill of 27.10 07:31 |
 
 ## 10. Security notes
 

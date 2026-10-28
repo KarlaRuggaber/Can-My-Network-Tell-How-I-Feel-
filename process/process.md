@@ -352,6 +352,11 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
   - Thesis datasets: hostnames change for 0.21 % of packets in 38 of 64; only F1_DistinctSocial changes (16 datasets).
   - Memory kept close to the old version (+170–220 MB on a 5–6 M-packet day, first version was +600 MB): chunked join, integer codes, SLD per distinct host. Deployed, feature cache cleared. Details: [Deployment.md](Deployment.md) §7.12.
 
+**Report: OOM kills split:** Wed 28.10
+- **Done:**
+  - The 28.10 report flagged "OOM kills: 9 (python3)". All nine were my memory tests on 27.10 in throwaway containers with a hard `--memory` cap; nothing on the host or in a live container was short of memory.
+  - The report now reads the kernel's constraint and cgroup per kill (`9794eb6`): host-wide kills and kills in existing containers (runners, app, peer stack) stay problems, kills in removed one-off containers at their own cap are an info line. 3 tests; checked against the real kernel log on the gateway. Deployment.md problem 30, scheduler README §5.2.
+
 </details>
 
 <details>

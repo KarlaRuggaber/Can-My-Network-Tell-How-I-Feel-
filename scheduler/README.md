@@ -288,7 +288,7 @@ Runner state 23.10 (after Karla's `04d776d`): calls and `gaming_session` run aga
 | Blocks due in the window | `error`; `not_implemented` (e.g. calls when the peer stack is down, or `messaging`/`social_post` without the device's login session in `traffic-runner/sessions/`; the runner has no stubs left in `catalog.RUNNER_STUBS`); no log row: `missed`, `interrupted` (started, reboot), `not started`; logged twice. Starts more than 2 min late are counted, not flagged |
 | Executor | `traffic-executor@<dataset>` not active while blocks are still to come |
 | Data path | no new Parquet partition for 35 min although blocks ran (capture or ingest down) |
-| Gateway | memory below 300 MB available (minimum of the per-minute samples), any OOM kill (from the kernel log, with the process names), less than 5 GB free disk, `tapcap@eno1`, `tapcap@br-sim`, `tapingest` or `docker` not active |
+| Gateway | memory below 300 MB available (minimum of the per-minute samples), any OOM kill of the host or of a container that still exists (from the kernel log, with the process names; kills of removed one-off containers at their own `--memory` cap are listed as info only, since 28.10), less than 5 GB free disk, `tapcap@eno1`, `tapcap@br-sim`, `tapingest` or `docker` not active |
 
 Two timers use it:
 - **Daily summary** at 08:00 for the last 24 h (always sent). Title "Gateway: all good" or "Gateway: N problem(s)". The body has one block per dataset (run day, phase, blocks ok/stub/problems/late, newest partition, next block), the gateway lines and the list of problems.
