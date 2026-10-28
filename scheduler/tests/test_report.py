@@ -21,8 +21,10 @@ ROLES = {"phone": "x_a_phone", "laptop": "x_a_laptop"}
 
 
 class FakeProbe(report.Probe):
-    def __init__(self, mem=4000, active=None, kills=(), free=50.0):
-        self._mem, self._active, self._kills, self._free = mem, active or {}, list(kills), free
+    def __init__(self, mem=4000, active=None, kills=(), free=50.0, containers=()):
+        # a plain name stands for a host-wide kill
+        self._kills = [k if isinstance(k, report.OomKill) else report.OomKill(k, "CONSTRAINT_NONE") for k in kills]
+        self._mem, self._active, self._free, self._containers = mem, active or {}, free, set(containers)
 
     def mem(self):
         return {"MemAvailable": self._mem, "MemTotal": 7100, "SwapTotal": 0, "SwapFree": 0}
@@ -35,6 +37,9 @@ class FakeProbe(report.Probe):
 
     def oom_kills(self, since):
         return self._kills
+
+    def containers(self):
+        return self._containers
 
     def free_gb(self, path):
         return self._free
@@ -263,3 +268,45 @@ def test_running_block_without_new_partitions_still_flags_the_data_path(tmp_path
     d = _report(tmp_path, plans, now)
     assert d.running == ["video_stream (x_a_laptop)"]
     assert any("although blocks ran: video_stream (x_a_laptop) (capture or ingest?)" in p for p in d.problems)
+
+
+# --- OOM kills: host-wide / service containers vs. removed one-off containers (28.10) ---------------
+
+GONE = "78ecaf695c342ce72dd2db1ce7c67819aa622d530fd16a9543483ea564952bff"
+RUNNER = "a5e7a901ce04" + "0" * 52
+KERNEL = f"""docker-compose invoked oom-killer: gfp_mask=0x140cca(GFP_HIGHUSER_MOVABLE|__GFP_COMP), order=0, oom_score_adj=0
+oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=system-traffic\\x2dexecutor.slice,mems_allowed=0,global_oom,task_memcg=/system.slice/docker-07981f5dfd69a3ee307eb9304d2a53cd9a73aae64909edcfd6e3b4dda29ac12a.scope,task=python3,pid=1514703,uid=0
+Out of memory: Killed process 1514703 (python3) total-vm:8851796kB, anon-rss:4880276kB, file-rss:600kB, shmem-rss:0kB, UID:0 pgtables:13416kB oom_score_adj:0
+oom-kill:constraint=CONSTRAINT_MEMCG,nodemask=(null),cpuset=docker-{GONE}.scope,mems_allowed=0,oom_memcg=/system.slice/docker-{GONE}.scope,task_memcg=/system.slice/docker-{GONE}.scope,task=python3,pid=1543309,uid=0
+Memory cgroup out of memory: Killed process 1543309 (python3) total-vm:3557160kB, anon-rss:1531376kB, file-rss:3536kB, shmem-rss:0kB, UID:0 pgtables:3568kB oom_score_adj:0
+oom-kill:constraint=CONSTRAINT_MEMCG,nodemask=(null),cpuset=docker-{RUNNER}.scope,mems_allowed=0,oom_memcg=/system.slice/docker-{RUNNER}.scope,task_memcg=/system.slice/docker-{RUNNER}.scope,task=chrome,pid=42,uid=0
+Memory cgroup out of memory: Killed process 42 (chrome) total-vm:1kB, anon-rss:1kB, file-rss:0kB, shmem-rss:0kB, UID:0 pgtables:1kB oom_score_adj:0
+Killed process 7 (java) total-vm:1kB
+"""
+
+
+def test_parse_oom_reads_constraint_and_cgroup_of_each_kill():
+    kills = report.parse_oom(KERNEL)
+    assert [(k.name, k.constraint) for k in kills] == [
+        ("python3", "CONSTRAINT_NONE"), ("python3", "CONSTRAINT_MEMCG"), ("chrome", "CONSTRAINT_MEMCG"), ("java", "")]
+    assert kills[1].cgroup == f"/system.slice/docker-{GONE}.scope"
+
+
+def test_split_oom_only_removed_capped_containers_are_one_off():
+    kills = report.parse_oom(KERNEL)
+    problems, oneoff = report.split_oom(kills, {RUNNER})
+    assert [k.name for k in oneoff] == ["python3"] and oneoff[0].constraint == "CONSTRAINT_MEMCG"
+    # host-wide (27.10 07:31), a runner that still exists, and a kill without details stay problems
+    assert [k.name for k in problems] == ["python3", "chrome", "java"]
+    # container list unknown: nothing is waved through
+    assert len(report.split_oom(kills, None)[0]) == 4
+
+
+def test_one_off_container_kills_are_listed_but_no_problem(gateway, tmp_path):
+    plans, rows, due, now = gateway
+    write_gt(tmp_path / "gt.csv", [r | {"status": "ok"} for r in due])
+    oneoff = [k for k in report.parse_oom(KERNEL) if GONE in k.cgroup] * 9
+    rep = report.build(plans, tmp_path / "gt.csv", tmp_path / "pq", tmp_path / "s.csv", 24,
+                       FakeProbe(kills=oneoff, containers={RUNNER}), now)
+    assert not any("OOM" in p for p in rep.problems)
+    assert "OOM kills: 0; 9 in removed one-off containers at their own memory cap (python3), no problem" in rep.text

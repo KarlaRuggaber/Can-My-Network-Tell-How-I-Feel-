@@ -9,7 +9,8 @@ ground-truth end, so a block that fails early is reported when it fails; blocks 
 they should have ended):
 a ground-truth row with status ok, or a stub (RUNNER_STUBS), or else a problem: error, not_implemented,
 missed / interrupted / not started (from the executor's state file), logged twice. It also reports whether the
-executor runs and whether new Parquet partitions arrive, plus memory (minimum from the samples), OOM kills,
+executor runs and whether new Parquet partitions arrive, plus memory (minimum from the samples), OOM kills
+(kills of removed one-off containers at their own memory cap are only listed),
 disk and the capture/ingest services. Stdlib only, like the executor.
 """
 
@@ -71,8 +72,8 @@ class Probe:
         r = subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True)
         return r.stdout.strip() or "unknown"
 
-    def oom_kills(self, since: datetime) -> list[str] | None:
-        """Names of processes the kernel's OOM killer ended since `since` (None: journal not readable)."""
+    def oom_kills(self, since: datetime) -> list[OomKill] | None:
+        """Processes the kernel's OOM killer ended since `since` (None: journal not readable)."""
         try:
             r = subprocess.run(["journalctl", "-k", "--no-pager", "-o", "cat", "--since",
                                 since.astimezone().strftime("%Y-%m-%d %H:%M:%S")], capture_output=True, text=True)
@@ -80,13 +81,67 @@ class Probe:
             return None
         if r.returncode != 0:
             return None
-        return re.findall(r"Killed process \d+ \(([^)]+)\)", r.stdout)
+        return parse_oom(r.stdout)
+
+    def containers(self) -> set[str] | None:
+        """Full IDs of all Docker containers that exist now, running or stopped (None: unknown)."""
+        try:
+            r = subprocess.run(["docker", "ps", "-a", "-q", "--no-trunc"], capture_output=True, text=True, timeout=30)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return None
+        return set(r.stdout.split()) if r.returncode == 0 else None
 
     def free_gb(self, path: str | Path) -> float | None:
         try:
             return shutil.disk_usage(path).free / 1e9
         except OSError:
             return None
+
+
+# --- OOM kills ---------------------------------------------------------------------------------------
+# 27.10: nine kills made the daily report raise "OOM killer ended python3". All nine were one-off
+# measurement containers (`docker run --rm --memory ...`) that hit the cap set for them; the host,
+# the services and the runners were never short of memory. Such kills are now an info line only.
+
+@dataclass(frozen=True)
+class OomKill:
+    name: str
+    constraint: str = ""  # CONSTRAINT_NONE: the whole host ran out; CONSTRAINT_MEMCG: one cgroup hit its limit
+    cgroup: str = ""      # task_memcg, e.g. /system.slice/docker-<id>.scope
+
+
+_OOM_LINE = re.compile(r"oom-kill:(\S+)")
+_KILLED = re.compile(r"Killed process \d+ \(([^)]+)\)")
+_DOCKER_SCOPE = re.compile(r"/docker-([0-9a-f]{64})\.scope$")
+
+
+def parse_oom(text: str) -> list[OomKill]:
+    """One OomKill per "Killed process" line, with the constraint and cgroup of the "oom-kill:" line
+    the kernel prints just before it (older kernels print no such line: constraint stays empty)."""
+    kills, info = [], {}
+    for line in text.splitlines():
+        m = _OOM_LINE.search(line)
+        if m:
+            info = dict(kv.split("=", 1) for kv in m.group(1).split(",") if "=" in kv)
+            continue
+        m = _KILLED.search(line)
+        if m:
+            kills.append(OomKill(m.group(1), info.get("constraint", ""), info.get("task_memcg", "")))
+            info = {}
+    return kills
+
+
+def split_oom(kills: list[OomKill], containers: set[str] | None) -> tuple[list[OomKill], list[OomKill]]:
+    """(problems, one-off): a kill is one-off only if a single container hit its own memory limit
+    and that container no longer exists (removed with --rm). Host-wide kills and kills in containers
+    that still exist (runners, app, peer stack) stay problems; so does everything if the container
+    list is unknown. A runner recreated after its kill gets a new ID, so its old kill counts as one-off."""
+    problems, oneoff = [], []
+    for k in kills:
+        m = _DOCKER_SCOPE.search(k.cgroup)
+        gone = containers is not None and m is not None and m.group(1) not in containers
+        (oneoff if k.constraint == "CONSTRAINT_MEMCG" and gone else problems).append(k)
+    return problems, oneoff
 
 
 # --- data --------------------------------------------------------------------------------------------
@@ -312,9 +367,13 @@ def build(plans_dir: Path, gt_path: Path, parquet_dir: Path, samples: Path, hour
     if kills is None:
         lines.append("OOM kills: journal not readable")
     else:
-        lines.append(f"OOM kills: {len(kills)}" + (f" ({', '.join(sorted(set(kills)))})" if kills else ""))
-        if kills:
-            problems.append(f"gateway: OOM killer ended {', '.join(sorted(set(kills)))}")
+        serious, oneoff = split_oom(kills, probe.containers() if kills else set())
+        names = lambda ks: ", ".join(sorted({k.name for k in ks}))  # noqa: E731
+        lines.append(f"OOM kills: {len(serious)}" + (f" ({names(serious)})" if serious else "")
+                     + (f"; {len(oneoff)} in removed one-off containers at their own memory cap ({names(oneoff)}), no problem"
+                        if oneoff else ""))
+        if serious:
+            problems.append(f"gateway: OOM killer ended {names(serious)}")
     for path in (parquet_dir, Path("/var/lib/tapcap")):
         gb = probe.free_gb(path)
         if gb is not None:
