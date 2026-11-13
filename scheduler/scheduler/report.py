@@ -37,6 +37,7 @@ LATE = timedelta(minutes=2)          # a block counts as late if its ground-trut
 SETTLE = timedelta(minutes=3)        # a block is checked once it should have ended this long ago
 STALE = timedelta(minutes=30)        # no new partition for this long while blocks ran = data path problem
 LOW_MEMORY_MB = 300
+HIGH_SWAP_SHARE = 0.9            # swap use above this share of the swap file is a problem
 LOW_DISK_GB = 5
 SERVICES = ["tapcap@eno1", "tapcap@br-sim", "tapingest", "docker"]
 _PARTITION_RE = re.compile(r"__(\d{8})_(\d{4})\.parquet$")
@@ -360,9 +361,15 @@ def build(plans_dir: Path, gt_path: Path, parquet_dir: Path, samples: Path, hour
           + (f", min {sampled} MB in window" if sampled is not None else ", no memory samples")
           + f", swap used {swap_used} MB, load {probe.load():.1f}")
     lines.append(gw)
-    low = sampled if sampled is not None else mem.get("MemAvailable", 0)
-    if low < LOW_MEMORY_MB:
+    # the current value counts too: on 13.11 it was 188 MB while the minute samples' minimum was 362 MB
+    values = [x for x in (sampled, mem.get("MemAvailable")) if x is not None]
+    low = min(values) if values else None
+    if low is not None and low < LOW_MEMORY_MB:
         problems.append(f"gateway: memory went down to {low} MB available")
+    swap_total = mem.get("SwapTotal", 0)
+    swap_peak = max(swap_used, _sample_max_swap(samples, since) or 0)
+    if swap_total and swap_peak > HIGH_SWAP_SHARE * swap_total:
+        problems.append(f"gateway: swap {swap_peak} of {swap_total} MB used (above {HIGH_SWAP_SHARE:.0%})")
     kills = probe.oom_kills(since)
     if kills is None:
         lines.append("OOM kills: journal not readable")
@@ -420,6 +427,24 @@ def _sample_min(path: Path, since: datetime) -> int | None:
         if t >= since:
             low = avail if low is None else min(low, avail)
     return low
+
+
+def _sample_max_swap(path: Path, since: datetime) -> int | None:
+    """Largest swap use (3rd column) among the samples since `since`."""
+    if not path.exists():
+        return None
+    high = None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        parts = line.split(",")
+        if len(parts) < 3:
+            continue
+        try:
+            t, swap = _t(parts[0]), int(parts[2])
+        except ValueError:
+            continue
+        if t >= since:
+            high = swap if high is None else max(high, swap)
+    return high
 
 
 # --- sending -----------------------------------------------------------------------------------------

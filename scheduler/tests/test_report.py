@@ -21,13 +21,15 @@ ROLES = {"phone": "x_a_phone", "laptop": "x_a_laptop"}
 
 
 class FakeProbe(report.Probe):
-    def __init__(self, mem=4000, active=None, kills=(), free=50.0, containers=()):
+    def __init__(self, mem=4000, active=None, kills=(), free=50.0, containers=(), swap_total=0, swap_used=0):
+        self._swap = (swap_total, swap_used)
         # a plain name stands for a host-wide kill
         self._kills = [k if isinstance(k, report.OomKill) else report.OomKill(k, "CONSTRAINT_NONE") for k in kills]
         self._mem, self._active, self._free, self._containers = mem, active or {}, free, set(containers)
 
     def mem(self):
-        return {"MemAvailable": self._mem, "MemTotal": 7100, "SwapTotal": 0, "SwapFree": 0}
+        total, used = self._swap
+        return {"MemAvailable": self._mem, "MemTotal": 7100, "SwapTotal": total, "SwapFree": total - used}
 
     def load(self):
         return 1.5
@@ -310,3 +312,35 @@ def test_one_off_container_kills_are_listed_but_no_problem(gateway, tmp_path):
                        FakeProbe(kills=oneoff, containers={RUNNER}), now)
     assert not any("OOM" in p for p in rep.problems)
     assert "OOM kills: 0; 9 in removed one-off containers at their own memory cap (python3), no problem" in rep.text
+
+
+def test_current_memory_counts_even_if_the_samples_look_fine(gateway, tmp_path):
+    """13.11: 188 MB available at report time, while the minute samples' minimum was 362 MB."""
+    plans, rows, due, now = gateway
+    samples = tmp_path / "s.csv"
+    report.sample(samples, FakeProbe(mem=2000), now - timedelta(minutes=5))
+    write_gt(tmp_path / "gt.csv", [])
+    rep = report.build(plans, tmp_path / "gt.csv", tmp_path / "pq", samples, 24, FakeProbe(mem=188), now)
+    assert any("memory went down to 188 MB" in p for p in rep.problems)
+
+
+def test_nearly_full_swap_is_a_problem(gateway, tmp_path):
+    plans, rows, due, now = gateway
+    write_gt(tmp_path / "gt.csv", [])
+    probe = FakeProbe(mem=3000, swap_total=4095, swap_used=3800)
+    rep = report.build(plans, tmp_path / "gt.csv", tmp_path / "pq", tmp_path / "s.csv", 24, probe, now)
+    assert any("swap 3800 of 4095 MB used" in p for p in rep.problems)
+    ok = FakeProbe(mem=3000, swap_total=4095, swap_used=2000)
+    rep = report.build(plans, tmp_path / "gt.csv", tmp_path / "pq", tmp_path / "s.csv", 24, ok, now)
+    assert not any("swap" in p for p in rep.problems)
+
+
+def test_swap_peak_from_the_samples(gateway, tmp_path):
+    """A full swap earlier in the window is reported, even if it has been freed by report time."""
+    plans, rows, due, now = gateway
+    samples = tmp_path / "s.csv"
+    report.sample(samples, FakeProbe(mem=900, swap_total=4095, swap_used=4077), now - timedelta(hours=2))
+    write_gt(tmp_path / "gt.csv", [])
+    rep = report.build(plans, tmp_path / "gt.csv", tmp_path / "pq", samples, 24,
+                       FakeProbe(mem=3000, swap_total=4095, swap_used=1000), now)
+    assert any("swap 4077 of 4095 MB used" in p for p in rep.problems)
