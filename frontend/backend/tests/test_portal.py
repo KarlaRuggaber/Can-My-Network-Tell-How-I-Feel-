@@ -203,6 +203,7 @@ def test_assistant_explains_from_derived_results_only(portal, scripted, monkeypa
     for secret in (PHONE_IP, RESOLVER_IP, "test_a_phone", "151.101", "nzz", "expected", "Insomnia"):
         assert secret not in data, secret
     assert "Sleep" in data and "C4" not in data
+    assert "time of the first activity in the morning" in data and "WakeAfter0400" not in data
 
     # a clinician gets criterion names and the script's expectations, marked as such
     c = TestClient(app)

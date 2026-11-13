@@ -58,6 +58,27 @@ AREA_NAMES = {
 }
 
 
+# Everyday descriptions of the scored metrics, used instead of the technical labels for the person.
+PLAIN_METRICS = {
+    "F1_DistinctSocial": "number of different social and messaging sites used",
+    "F4_DownUpRatio": "how much was received compared with sent (watching/reading vs. writing)",
+    "F6_Fano": "how bursty the activity was over the day",
+    "F7_HourlyCV": "how uneven the activity was across the hours of the day",
+    "F8_NightDayRatioPkts": "activity at night compared with the day",
+    "C2_F1_UniqueSLD": "number of different websites and services used",
+    "C2_F3_ChatSessionCount": "number of chat sessions",
+    "C2_F4_MeanUpstreamRateBps": "how much was sent (posting, calls, uploads)",
+    "C2_F6_ProductivityHits": "use of work and study tools",
+    "C4_F2_WakeAfter0400Min": "time of the first activity in the morning (minutes after 04:00)",
+    "C4_F4_SleepDurationZAbs30d": "how far the quiet night-time stretch differed from the last weeks",
+    "C4_F7_DaytimeIdleRatio0818": "share of quiet time during the day (08:00-18:00)",
+    "C4_F8_NightDayTrafficRatioBytes": "data used at night compared with the day",
+    "C8_F2_DNSBurstRatePerHour": "how often many websites were opened in quick succession",
+    "C8_F4_RepeatedQueryRatio60m": "how often the same sites were opened again within an hour",
+    "C8_F8_MedianIKSsec": "typical pause between two actions",
+}
+
+
 class AssistantConfig:
     """Assistant settings: <home>/assistant.json over environment defaults. Keys per provider."""
 
@@ -141,7 +162,8 @@ day, how a period compares with the baseline, and how the scoring works. Rules:
 - This is not a diagnosis and not a medical device. Do not diagnose, do not predict a condition, and do
   not recommend treatment. Network patterns can change for many ordinary reasons (travel, holidays,
   a new device, guests); say so where it matters.
-- Keep answers short: a few sentences or a short list. No tables unless asked.
+- Keep answers short: a few sentences or a short list. No tables or headings unless asked. Basic
+  Markdown (bold, bullet lists) is rendered.
 - The data covers scripted test personas or consenting participants; still treat it as personal.
 """
 
@@ -152,7 +174,11 @@ You are talking with the person whose data this is. Write in plain, warm, everyd
   what a pattern could mean medically.
 - Do not tell the person which changes were expected or planned; you do not know that, and it must not
   influence them.
-- Avoid technical notation (θ, μ, L) unless the person asks how the scoring works.
+- Do not quote the 0–1 area scores, thresholds, weights or rules like "N of M days", and avoid notation
+  (θ, μ, L), unless the person explicitly asks how the scoring works. Say in words how different a day
+  was ("a little", "clearly"), and describe what happened in everyday terms ("you were online later than
+  usual", "fewer different websites than usual"), with a value only when it helps.
+- Formatting: short paragraphs; at most a simple bullet list; **bold** sparingly.
 - If the person says they feel unwell, are worried, or mentions self-harm, respond with care, encourage
   them to talk to someone they trust or a professional, and, for urgent danger, mention emergency help
   (in Switzerland: 144, or Die Dargebotene Hand at 143).
@@ -170,6 +196,8 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
                   metric_labels: dict[str, str]) -> dict[str, Any]:
     """The data Claude may use, derived from a timeline (no IPs, hostnames or device names)."""
     configured = [c for c in fasl.CRIT_KEYS if cfg.configured(c)]
+    if person_view:   # everyday descriptions instead of the metric code's technical labels
+        metric_labels = {**metric_labels, **PLAIN_METRICS}
     name_of = (lambda c: AREA_NAMES[c]) if person_view else (lambda c: f"{c} {fasl.CRIT_NAMES[c]}")
     labels = tl["profile"]["phase_labels"]
     gate = tl["gate"]
@@ -216,7 +244,9 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
     }
     if not person_view and tl["persona"].get("expected"):
         ctx["scripted_expectations"] = {
-            "note": "expected outcomes of the test script (profile §9), not observations",
+            "note": ("expected outcomes of the test script (profile §9) for the CLINICAL phase only, not "
+                     "observations. In the baseline phase every criterion is expected to be absent, so a "
+                     "criterion present in the baseline is a false positive, never a match."),
             "criteria": {f"{c} {fasl.CRIT_NAMES[c]}": v for c, v in tl["persona"]["expected"].items()},
             "episode": tl["persona"].get("episode"),
         }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type AssistantStatus, type ChatTurn } from "../api";
+import { Markdown } from "./Markdown";
 
 type Props = {
   profileId: string;
@@ -87,7 +88,9 @@ export function Assistant({ profileId, person, focus }: Props) {
             <div className="chat" aria-live="polite">
               {turns.map((t, i) => (
                 <div key={i} className={`bubble bubble-${t.role}`}>
-                  {t.content || (busy && i === turns.length - 1 ? <span className="muted">Thinking…</span> : null)}
+                  {t.content
+                    ? (t.role === "assistant" ? <Markdown text={t.content} /> : t.content)
+                    : (busy && i === turns.length - 1 ? <span className="muted">Thinking… (this can take up to half a minute)</span> : null)}
                 </div>
               ))}
               <div ref={endRef} />
