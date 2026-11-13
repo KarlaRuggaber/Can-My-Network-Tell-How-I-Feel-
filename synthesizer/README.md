@@ -137,8 +137,8 @@ Everything is absolute time: integer µs since the epoch.
 DNS packets stay at their recorded offset from the block start, so a lookup and the flows it labels move together. Whether a flow's DNS answer falls in the same 5-min partition depends on where the block starts relative to the 5-min grid, as it does live.
 - Chained/looped bodies replay the lookups that happened in the body. `repeat_visit_loop` keeps its fresh lookup per visit.
 - A looped stream whose body has no DNS keeps its label only where live would too.
-- **Finding:** the app's pages 01 and 02 call `enrich_with_hostnames` on the whole **day** (all partitions concatenated), not per partition. In the app, the first lookup of a server IP therefore labels the whole day.
-- On the synthetic day below, rows without an SLD were 0.1 % (map per day) vs. 9.6 % (map per 5-min partition).
+- **App lookup (since 27.10, `4cc8e49`):** the app names a packet after the latest DNS answer that the **same client** received for the remote IP **before** the packet (IPs answered with only one name: day-wide map). Synthetic data fits this: answers are moved to the target IP together with the client side of the flows, and they keep their offset before the packets they label. A looped body without DNS keeps the name of the last answer before it, like a live stream without re-resolution.
+- On the synthetic day below (23.10, before that change), rows without an SLD were 0.1 % with the day-wide map vs. 9.6 % with a map per 5-min partition.
 
 ## 7. Output
 
@@ -187,6 +187,7 @@ So today the synthesizer is shown to work end to end, but a full synthetic insta
 - **Bounded activities** end when their snippet ended, not after the new block's own page draws.
 - **Fallbacks** (role, mix, `mic_share`) change what the profile scripted. They are flagged per row, and `--strict` turns them off.
 - **ICMP errors** keep the client IP in their embedded original header (the ingest reads only the outer one; about 0.07 % of br-sim packets).
+- **Runner background traffic (since 26.10, `e3fd6dd`).** Live, the containers send OS/browser background requests all the time, also while idle. In synthetic data idle stays empty, and background appears only inside blocks, as far as it was recorded there (snippets before 26.10 have none). The app drops this traffic before computing features (`drop_background`), so the metrics should not change, but raw packet counts, ingest totals and quiet minutes differ from live.
 - **No new randomness inside a snippet.** Dwell times, scroll patterns and page choices are the recorded ones. Day-to-day variation comes from the plan (seed, noise) and from which snippets are drawn.
 - **Same as live, not lost.**
   - Peer traffic 10.43.0.x is private, so the app does not count calls as outbound/upstream.
@@ -195,6 +196,6 @@ So today the synthesizer is shown to work end to end, but a full synthetic insta
 
 ## 10. Next steps
 
-- After the live run: copy the run's br-sim captures over the AP LAN, not the hotspot. Copying the pilot over Tailscale went through the phone hotspot at about 1 MB/s. Then `cut` with the three plans (`--plan`) so mixes and `mic_share` are known.
+- Copy the live run's br-sim captures (25.10–22.11) over the AP LAN, not the hotspot. Copying the pilot over Tailscale went through the phone hotspot at about 1 MB/s. Then `cut` with the three plans (`--plan`) so mixes and `mic_share` are known.
 - Validation: for a live day of seed 1, build it from the *other* days' snippets (leave one day out) and compare the app's daily metrics with the live day.
 - `scheduler/README.md` §5 still says "Not done: the synthesizer"; update it when this is merged.
