@@ -35,8 +35,18 @@ export default function App() {
   return <Portal me={me} onLogout={() => { api.logout().finally(() => setMe(null)); }} />;
 }
 
+const ASSISTANT_KEY = "cmn.assistantOpen";
+function readOpen(): boolean {
+  try { return window.localStorage.getItem(ASSISTANT_KEY) === "1"; } catch { return false; }
+}
+
 function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const multi = me.role === "multi";
+  const [assistantOpen, setAssistantOpenState] = useState(readOpen);
+  const setAssistantOpen = useCallback((v: boolean) => {
+    setAssistantOpenState(v);
+    try { window.localStorage.setItem(ASSISTANT_KEY, v ? "1" : "0"); } catch { /* per-browser convenience only */ }
+  }, []);
   const [cfg, setCfg] = useState<Config | null>(null);
   const [profiles, setProfiles] = useState<ProfileListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -140,15 +150,22 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const isDefault = gate.theta === cfg.theta && gate.N === cfg.N && gate.M === cfg.M;
   const labels = tl?.profile.phase_labels ?? { baseline: "Baseline", current: "Recent" };
 
+  const drawer = assistantOpen && !settings && tl?.status === "ready";
   return (
-    <div className="page">
+    <div className={`page ${drawer ? "page-with-drawer" : ""}`}>
       <header className="top">
         <span className="brand-squares" aria-hidden="true" />
         <div>
           <h1>Can My Network Tell How I Feel?</h1>
-          <p className="tagline">Explainable Depression Indicators from Network Traffic Metadata</p>
-          <p className="disclaimer">Router-level network metrics → DSM-5 criterion likelihoods.
-            Research prototype, not a diagnostic tool.</p>
+          {multi ? <>
+            <p className="tagline">Explainable Depression Indicators from Network Traffic Metadata</p>
+            <p className="disclaimer">Router-level network metrics → DSM-5 criterion likelihoods.
+              Research prototype, not a diagnostic tool.</p>
+          </> : <>
+            {/* the person's view names no condition (no expectation effect) */}
+            <p className="tagline">Patterns in your home network use</p>
+            <p className="disclaimer">Research prototype, not a diagnostic tool.</p>
+          </>}
         </div>
         <div className="top-right">
           <div className="usermenu">
@@ -243,7 +260,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
               {tl.status === "ready" && phases && !multi && (
                 <>
                   <PersonView tl={tl} cfg={cfg} recent={phases.current} gate={gate} />
-                  <Assistant profileId={tl.profile.id} person focus={null} />
+                  <Assistant open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person focus={null} />
                 </>
               )}
 
@@ -262,7 +279,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                     <DayDetail profileId={tl.profile.id} day={tl.days[dayIndex]} cfg={cfg} present={present}
                       dayIndex={dayIndex} phaseLabels={labels} />
                   )}
-                  <Assistant profileId={tl.profile.id} person={false}
+                  <Assistant open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false}
                     focus={[day && `day ${day}`, activeCrit && `${activeCrit} ${cfg.criterion_names[activeCrit]}`].filter(Boolean).join(", ") || null} />
                 </>
               )}

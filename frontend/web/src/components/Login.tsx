@@ -25,7 +25,7 @@ export function Login({ onLogin }: { onLogin: (me: Me) => void }) {
       <form className="login-card card" onSubmit={submit}>
         <span className="brand-squares" aria-hidden="true" />
         <h1>Can My Network Tell How I Feel?</h1>
-        <p className="tagline">Explainable Depression Indicators from Network Traffic Metadata</p>
+        <p className="tagline">Research prototype on home network use</p>
         <h2 className="login-title">Welcome – please log in</h2>
         <label className="field">Username
           <input autoFocus autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} />
