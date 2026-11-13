@@ -60,21 +60,20 @@ function phaseView(ph: "baseline" | "clinical") {
 }
 
 describe("CriteriaSummary", () => {
-  it("shows the gate per phase, each on its own days, and marks the clinical phase preliminary", () => {
+  it("shows each phase's gate on its own days, the verdict, and only scored criteria in the table", () => {
     render(<CriteriaSummary tl={tl} cfg={cfg} gate={gate}
       phases={{ baseline: phaseView("baseline"), clinical: phaseView("clinical") }}
       selected={null} onSelect={() => undefined} />);
-    const c4 = screen.getByText("Sleep").closest("tr")!;
+    const c4 = screen.getByRole("cell", { name: /C4 Sleep/ }).closest("tr")!;
     expect(within(c4).getByText("0 of 2")).toBeTruthy();          // baseline: 0 of its 2 days >= theta
     expect(within(c4).getByText("2 of 2")).toBeTruthy();          // clinical: 2 of its 2 days
-    expect(within(c4).getByText("○ absent")).toBeTruthy();        // baseline gate
-    expect(within(c4).getByText("● present")).toBeTruthy();       // clinical gate (N = 2)
-    expect(within(c4).getByText("✓ as expected so far")).toBeTruthy();
-    const c3 = screen.getByText("Appetite").closest("tr")!;
-    expect(within(c3).getByText("not configured")).toBeTruthy();
-    expect(screen.getByText(/26\/10–08\/11/)).toBeTruthy();
-    expect(screen.getByText(/2 of 14 days so far/)).toBeTruthy();
-    expect(screen.getByText("preliminary")).toBeTruthy();
-    expect(screen.getByText(/\(11\/11\) are not counted/)).toBeTruthy();
+    expect(within(c4).getByText("absent")).toBeTruthy();          // baseline gate
+    expect(within(c4).getAllByText("present")).toHaveLength(2);   // expected + clinical gate (N = 2)
+    expect(within(c4).getByText("✓ yes")).toBeTruthy();
+    expect(screen.queryByRole("cell", { name: /Appetite/ })).toBeNull();   // not scored: footnote only
+    expect(screen.getByText(/Not scored by the current configuration: C3 Appetite/)).toBeTruthy();
+    expect(screen.getByText("preliminary · day 2 of 14")).toBeTruthy();
+    expect(screen.getByText("26/10–08/11")).toBeTruthy();
+    expect(screen.getByText(/expectations met so far/)).toBeTruthy();    // C4 met; C1 elevated met (absent)
   });
 });

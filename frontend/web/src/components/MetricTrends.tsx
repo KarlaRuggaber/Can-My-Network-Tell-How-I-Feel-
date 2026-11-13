@@ -88,12 +88,16 @@ export function MetricTrends({ tl, cfg, crit, theta, present, presentLabel, sele
   return (
     <section className="card">
       <div className="card-head">
-        <h2>{crit} · {cfg.criterion_names[crit]}: likelihood and metrics</h2>
-        <p className="sub">
-          L<sub>{crit}</sub> = Σ w · μ(metric). Each metric chart shows the daily value, the
-          baseline mean ± 1 SD (tan band) and the membership function's active range
-          (lo–hi, dotted). Shaded = clinical phase.
-        </p>
+        <h2><span className="step">3</span>Why: {crit} {cfg.criterion_names[crit]}</h2>
+        <p className="sub">The likelihood over time, and the network metrics it is built from. Pick another criterion in the overview.</p>
+        <details className="howto">
+          <summary>How to read these charts</summary>
+          <p>
+            L<sub>{crit}</sub> = Σ w · μ(metric): each metric is turned into a score μ between 0 and 1 and weighted
+            with w. The metric charts show the daily value, the baseline mean ± 1 SD (tan band) and the range where
+            the metric starts to count (lo–hi, dotted). Dot colour = μ of that day. The shaded part is the clinical phase.
+          </p>
+        </details>
       </div>
       <Chart option={lOption} height={180} ariaLabel={`Daily likelihood of ${crit}`}
         onClick={(p) => tl.days[p.dataIndex] && onSelectDay(tl.days[p.dataIndex].date)} />

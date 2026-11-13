@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import type { Block, Config, CritKey, Day, DayDetail as DD } from "../api";
 import { api, CRIT_KEYS } from "../api";
-import { fmtNum, fmtTime, minutesInDay } from "../lib/format";
+import { fmtDay, fmtNum, fmtTime, minutesInDay } from "../lib/format";
 import { C, deviceColor, deviceRole } from "../theme";
 import { Chart } from "./Chart";
 
@@ -61,19 +61,23 @@ export function DayDetail({ dataset, day, cfg, present, dayIndex }: Props) {
   return (
     <section className="card">
       <div className="card-head">
-        <h2>{day.date} ({day.weekday}) · {day.phase}{!day.complete && <span className="tag tag-warn">incomplete: still being ingested</span>}</h2>
-        <p className="sub">
-          What was scripted on this day and what the gateway saw. Traffic is shown after the app's
-          background filter, the same packets the metrics use. Night blocks belong to the
-          calendar day they run on (a block planned for the evening of day d can show up on day d+1).
-        </p>
+        <h2><span className="step">4</span>{day.weekday} {fmtDay(day.date)} <span className={`pill ${day.phase === "clinical" ? "pill-red" : "pill-beige"}`}>{day.phase}</span>
+          {!day.complete && <span className="pill pill-outline">still being recorded</span>}</h2>
+        <p className="sub">What the persona was scripted to do, and the traffic the gateway saw.</p>
+        <details className="howto">
+          <summary>Notes</summary>
+          <p>
+            Traffic is shown after the app's background filter, the same packets the metrics use. Days are calendar
+            days, so a block planned for the evening of one day can show up on the next. {fmtNum(day.n_partitions)} capture
+            files on this day.
+          </p>
+        </details>
       </div>
 
       <div className="kpis">
-        <Kpi label="Partitions" value={fmtNum(day.n_partitions)} />
-        <Kpi label="Packets (kept)" value={fmtNum(day.packets_kept)} />
+        <Kpi label="Packets" value={fmtNum(day.packets_kept)} />
         <Kpi label="Scripted blocks" value={fmtNum(day.ground_truth.n_blocks)} />
-        <Kpi label="Clinical-profile blocks" value={fmtNum(day.ground_truth.n_profile_blocks)} />
+        <Kpi label="of them clinical" value={fmtNum(day.ground_truth.n_profile_blocks)} />
         {day.ground_truth.n_sensitive > 0 && <Kpi label="Sensitive blocks" value={fmtNum(day.ground_truth.n_sensitive)} warn />}
         {day.ground_truth.n_failed > 0 && <Kpi label="Failed blocks" value={fmtNum(day.ground_truth.n_failed)} warn />}
       </div>
@@ -88,21 +92,20 @@ export function DayDetail({ dataset, day, cfg, present, dayIndex }: Props) {
         </>
       )}
 
-      <div className="split">
-        <div>
-          <h3>Criterion breakdown</h3>
-          <CriterionBreakdown day={day} cfg={cfg} present={present} dayIndex={dayIndex} />
+      <details className="fold">
+        <summary>Score of this day per criterion (L = Σ w · μ)</summary>
+        <CriterionBreakdown day={day} cfg={cfg} present={present} dayIndex={dayIndex} />
+      </details>
+      <details className="fold">
+        <summary>All scripted blocks of this day ({blocks.length})</summary>
+        <div className="row-between">
+          <span />
+          <label className="toggle">
+            <input type="checkbox" checked={onlyClinical} onChange={(e) => setOnlyClinical(e.target.checked)} /> clinical only
+          </label>
         </div>
-        <div>
-          <div className="row-between">
-            <h3>Scripted blocks ({blocks.length})</h3>
-            <label className="toggle">
-              <input type="checkbox" checked={onlyClinical} onChange={(e) => setOnlyClinical(e.target.checked)} /> clinical-profile only
-            </label>
-          </div>
-          <BlockTable blocks={blocks} />
-        </div>
-      </div>
+        <BlockTable blocks={blocks} />
+      </details>
     </section>
   );
 }
@@ -137,9 +140,9 @@ function Gantt({ blocks, devices, day }: { blocks: Block[]; devices: string[]; d
         </div>
       ))}
       <div className="gantt-legend">
-        <span><i style={{ background: C.phone }} /> baseline block (phone)</span>
-        <span><i style={{ background: C.laptop }} /> baseline block (laptop)</span>
-        <span><i className="clin-swatch" /> clinical-profile block</span>
+        <span><i style={{ background: C.phone }} /> everyday block (phone)</span>
+        <span><i style={{ background: C.laptop }} /> everyday block (laptop)</span>
+        <span><i className="clin-swatch" /> clinical block</span>
         <span><i className="sens-swatch" /> sensitive</span>
         <span><i className="away-swatch" /> away (no traffic expected)</span>
       </div>

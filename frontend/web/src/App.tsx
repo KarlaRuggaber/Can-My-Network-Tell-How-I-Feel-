@@ -130,22 +130,31 @@ export default function App() {
         </nav>
       </header>
 
-      <div className="gatebar card">
-        <span className="gate-title">DSM gate</span>
-        <label>θ <input type="range" min={0} max={1} step={0.01} value={gate.theta}
-          onChange={(e) => setGate({ ...gate, theta: Number(e.target.value) })} /> <b>{gate.theta.toFixed(2)}</b></label>
-        <label>N <input type="number" min={1} max={60} value={gate.N}
-          onChange={(e) => setGate({ ...gate, N: Math.max(1, Number(e.target.value)) })} /> days ≥ θ</label>
-        <label>within M <input type="number" min={1} max={60} value={gate.M}
-          onChange={(e) => setGate({ ...gate, M: Math.max(1, Number(e.target.value)) })} /> days</label>
-        <button className="link" disabled={isDefault}
-          onClick={() => setGate({ ...gate, theta: cfg.theta, N: cfg.N, M: cfg.M })}>reset to fasl_config.json</button>
-        <span className="muted small">{isDefault ? "as configured" : "changed: not saved"} · weights and membership functions from <code>fasl_config.json</code></span>
-        <label className="rolling-toggle" title="Day marks in the grid and trends from a rolling window over the last M days instead of per phase. Right after the switch the window is mostly baseline days.">
-          <input type="checkbox" checked={rolling} onChange={(e) => setRolling(e.target.checked)} />
-          day marks: rolling {gate.M}-day window <span className="tag tag-warn">mixes phases</span>
-        </label>
-      </div>
+      <details className="gatebar card">
+        <summary>
+          <span className="gate-title">Gate</span>
+          <span>a criterion counts as <b>present</b> when L ≥ <b>{gate.theta.toFixed(2)}</b> on <b>{gate.N}</b> of a phase's
+            last <b>{gate.M}</b> days</span>
+          {!isDefault && <span className="pill pill-beige">changed</span>}
+          {rolling && <span className="pill pill-beige">day marks: rolling window</span>}
+          <span className="gate-adjust">Adjust</span>
+        </summary>
+        <div className="gate-controls">
+          <label>θ <input type="range" min={0} max={1} step={0.01} value={gate.theta}
+            onChange={(e) => setGate({ ...gate, theta: Number(e.target.value) })} /> <b>{gate.theta.toFixed(2)}</b></label>
+          <label>N <input type="number" min={1} max={60} value={gate.N}
+            onChange={(e) => setGate({ ...gate, N: Math.max(1, Number(e.target.value)) })} /> days ≥ θ</label>
+          <label>within M <input type="number" min={1} max={60} value={gate.M}
+            onChange={(e) => setGate({ ...gate, M: Math.max(1, Number(e.target.value)) })} /> days</label>
+          <button className="btn" disabled={isDefault}
+            onClick={() => setGate({ ...gate, theta: cfg.theta, N: cfg.N, M: cfg.M })}>Reset</button>
+          <label className="rolling-toggle" title="Right after the switch to the clinical phase, a rolling window is mostly baseline days.">
+            <input type="checkbox" checked={rolling} onChange={(e) => setRolling(e.target.checked)} />
+            mark days with a rolling {gate.M}-day window instead (mixes phases)
+          </label>
+          <p className="muted small gate-note">Changes apply in this browser only. Weights and membership functions come from <code>fasl_config.json</code>.</p>
+        </div>
+      </details>
 
       {!tl && <p className="muted">Loading persona…</p>}
       {tl && (
@@ -155,11 +164,9 @@ export default function App() {
               <h2>{tl.persona.name} · {tl.persona.condition}</h2>
               <p>{tl.persona.summary}</p>
             </div>
-            <dl className="facts">
-              <div><dt>Dataset</dt><dd><code>{tl.dataset}</code></dd></div>
-              <div><dt>Baseline profile</dt><dd>{tl.persona.baseline_profile ?? "–"}</dd></div>
-              <div><dt>Data</dt><dd>{tl.days[0]?.date} – {tl.days[tl.days.length - 1]?.date}</dd></div>
-              <div><dt>Days</dt><dd>{tl.days.filter((d) => d.phase === "baseline").length} baseline · {tl.days.filter((d) => d.phase === "clinical").length} clinical</dd></div>
+            <dl className="facts" title={tl.dataset}>
+              <div><dt>Everyday profile</dt><dd>{tl.persona.baseline_profile ?? "–"}</dd></div>
+              <div><dt>Recorded days</dt><dd>{tl.days.filter((d) => d.phase === "baseline").length} baseline · {tl.days.filter((d) => d.phase === "clinical").length} clinical</dd></div>
             </dl>
           </section>
 

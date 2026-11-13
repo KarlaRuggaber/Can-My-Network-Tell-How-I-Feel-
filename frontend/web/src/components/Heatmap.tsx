@@ -104,12 +104,12 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
           const [w, h] = api.size([1, 1]);
           const sel = cell.x === selIdx;
           const children: object[] = [
-            { type: "rect", shape: { x: cx - w / 2 + 1, y: cy - h / 2 + 1, width: w - 2, height: h - 2, r: 3 },
+            { type: "rect", shape: { x: cx - w / 2 + 1.5, y: cy - h / 2 + 1.5, width: w - 3, height: h - 3, r: 6 },
               style: { fill: cell.fill, stroke: sel ? C.text : null, lineWidth: sel ? 1.5 : 0 } },
             { type: "text", style: { text: cell.text, x: cx, y: cy, align: "center", verticalAlign: "middle", fill: cell.textFill, fontSize: 9 } },
           ];
           if (cell.above) children.push({ type: "circle", shape: { cx: cx + w / 2 - 6, cy: cy - h / 2 + 6, r: 2.5 }, style: { fill: C.ink, stroke: "#fff", lineWidth: 1 } });
-          if (cell.present) children.push({ type: "rect", shape: { x: cx - w / 2 + 4, y: cy + h / 2 - 5, width: w - 8, height: 2.5 }, style: { fill: C.ink } });
+          if (cell.present) children.push({ type: "rect", shape: { x: cx - w / 2 + 6, y: cy + h / 2 - 6, width: w - 12, height: 2.5, r: 1.25 }, style: { fill: C.ink } });
           return { type: "group", children };
         },
       }],
@@ -120,14 +120,13 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
   return (
     <section className="card">
       <div className="card-head">
-        <h2>Daily criterion likelihoods</h2>
+        <h2><span className="step">2</span>Day by day</h2>
         <p className="sub">
-          Cell = likelihood L<sub>k</sub> of the day (darker = higher).{" "}
-          <span className="key"><i className="dot" style={{ background: C.ink }} /> L ≥ θ</span>{" "}
-          <span className="key"><i className="bar" style={{ background: C.ink }} /> {rolling
-            ? <>criterion present in a rolling window of the last {M} days <span className="tag tag-warn">mixes phases</span></>
-            : <>criterion present in the day's phase (gate on that phase's days; marked on the counted days)</>}</span>.
-          Click a day for its ground truth.
+          Each cell is a day's likelihood L (darker = stronger signal).{" "}
+          <span className="key"><i className="dot" style={{ background: C.ink }} /> reaches θ</span>{" "}
+          <span className="key"><i className="bar" style={{ background: C.ink }} /> present{rolling
+            ? <> (rolling {M}-day window, mixes phases)</> : <> in this phase</>}</span>.
+          Click a day to open it below.
         </p>
       </div>
       <Chart option={option} height={height}
