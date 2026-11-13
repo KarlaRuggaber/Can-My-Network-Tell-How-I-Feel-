@@ -1,0 +1,9 @@
+# Backend of the results frontend. The metric code of app_pcap_to_dsm5/app is
+# imported read-only and needs pandas, numpy and pyarrow (see that app's requirements).
+fastapi>=0.110
+uvicorn>=0.29
+pandas>=2.0,<3   # the thesis metric code was written for pandas 2 (copy-on-write changes in 3)
+numpy>=1.26
+pyarrow>=14
+pytest>=8
+httpx>=0.27

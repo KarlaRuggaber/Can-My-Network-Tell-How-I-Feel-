@@ -1,0 +1,11 @@
+{
+  "_comment": "Rolling DSM gate cases shared by backend/tests/test_fasl.py and web/src/lib/gate.test.ts, so the Python and TypeScript gates stay identical. present[i]: at least N of the last M days with data have L >= theta.",
+  "cases": [
+    {"L": [0.1, 0.7, 0.7, 0.2, 0.9], "theta": 0.6, "N": 2, "M": 3, "present": [false, false, true, true, true]},
+    {"L": [0.7, 0.7, 0.1, 0.1, 0.1], "theta": 0.6, "N": 2, "M": 3, "present": [false, true, true, false, false]},
+    {"L": [0.6, null, 0.6, 0.6], "theta": 0.6, "N": 3, "M": 3, "present": [false, false, false, true]},
+    {"L": [null, null], "theta": 0.6, "N": 1, "M": 14, "present": [false, false]},
+    {"L": [0.59, 0.6, 0.61], "theta": 0.6, "N": 2, "M": 14, "present": [false, false, true]},
+    {"L": [0.9, 0.9, 0.9], "theta": 0.6, "N": 1, "M": 0, "present": [false, false, false]}
+  ]
+}
