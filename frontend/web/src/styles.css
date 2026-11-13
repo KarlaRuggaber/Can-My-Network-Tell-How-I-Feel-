@@ -250,8 +250,12 @@ details.fold[open] { padding-bottom: 12px; }
 
 /* assistant: side panel, opened and closed with a tab on the right edge */
 :root { --drawer-w: var(--drawer-user-w, 420px); --drawer-ease: cubic-bezier(0.22, 1, 0.36, 1); --drawer-dur: 380ms; }
-.page { transition: margin var(--drawer-dur) var(--drawer-ease); }
-.chart { overflow: hidden; }   /* clipped while the page slides; the chart then morphs to its new width */
+.chart { overflow: hidden; }
+/* The page takes its new width at once; the content glides and fades into place while the panel slides. */
+@keyframes reflow-from-right { from { opacity: 0.25; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+@keyframes reflow-from-left { from { opacity: 0.25; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+.page.reflow-from-right { animation: reflow-from-right var(--drawer-dur) var(--drawer-ease) both; }
+.page.reflow-from-left { animation: reflow-from-left var(--drawer-dur) var(--drawer-ease) both; }
 .page-with-drawer { margin-right: calc(var(--drawer-w) + 8px);
   margin-left: max(0px, calc((100vw - var(--drawer-w) - 1320px) / 2)); }
 .assistant-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: var(--drawer-w); z-index: 20; background: #fff;
@@ -267,7 +271,7 @@ details.fold[open] { padding-bottom: 12px; }
 .drawer-resize:hover::after, .drawer-resize:focus-visible::after, .drawer-resizing .drawer-resize::after { background: var(--red); height: 72px; margin-top: -36px; }
 .drawer-resize:focus-visible { outline: none; }
 .drawer-resizing, .drawer-resizing * { cursor: col-resize !important; user-select: none !important; }
-.drawer-resizing .page, .drawer-resizing .assistant-drawer { transition: none !important; }
+.drawer-resizing .assistant-drawer { transition: none !important; }
 .drawer-head { display: flex; gap: 10px; justify-content: space-between; align-items: flex-start; padding: 18px 18px 12px; border-bottom: 1px solid var(--line); }
 .drawer-head h2 { font-size: 20px; }
 .drawer-head .sub { margin-left: 0; font-size: 12.5px; }
@@ -301,7 +305,8 @@ details.fold[open] { padding-bottom: 12px; }
 button.suggestion { cursor: pointer; background: #fff; font: inherit; font-size: 12.5px; white-space: normal; text-align: left; border-radius: 12px; padding: 6px 12px; }
 button.suggestion:hover { border-color: var(--ink); color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
-  .page, .assistant-drawer, .assistant-drawer > *, .assistant-tab { transition: none !important; }
+  .assistant-drawer, .assistant-drawer > *, .assistant-tab { transition: none !important; }
+  .page.reflow-from-right, .page.reflow-from-left { animation: none; }
 }
 @media (max-width: 860px) {
   :root { --drawer-w: 100vw; }

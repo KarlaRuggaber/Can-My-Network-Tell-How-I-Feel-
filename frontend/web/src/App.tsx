@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Config, CritKey, Me, PhaseKey, ProfileListItem, Timeline } from "./api";
 import { api, CRIT_KEYS, setUnauthorizedHandler } from "./api";
 import { CriteriaSummary, type PhaseView } from "./components/CriteriaSummary";
@@ -43,6 +43,20 @@ function readOpen(): boolean {
 function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const multi = me.role === "multi";
   const [assistantOpen, setAssistantOpenState] = useState(readOpen);
+  // Opening/closing the panel changes the page width. Animating that reflow frame by frame stutters
+  // (text and tables re-wrap every frame), so the new layout applies at once and the content glides
+  // and fades into it while the panel slides.
+  const [reflow, setReflow] = useState<"" | "from-right" | "from-left">("");
+  const prevOpen = useRef(assistantOpen);
+  useLayoutEffect(() => {
+    if (prevOpen.current === assistantOpen) return;
+    prevOpen.current = assistantOpen;
+    const root = document.documentElement;
+    setReflow(assistantOpen ? "from-right" : "from-left");
+    root.classList.add("page-reflowing");
+    const t = window.setTimeout(() => { setReflow(""); root.classList.remove("page-reflowing"); }, 460);
+    return () => { window.clearTimeout(t); root.classList.remove("page-reflowing"); };
+  }, [assistantOpen]);
   const setAssistantOpen = useCallback((v: boolean) => {
     setAssistantOpenState(v);
     try { window.localStorage.setItem(ASSISTANT_KEY, v ? "1" : "0"); } catch { /* per-browser convenience only */ }
@@ -152,7 +166,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
   const drawer = assistantOpen && !settings && tl?.status === "ready";
   return (
-    <div className={`page ${drawer ? "page-with-drawer" : ""}`}>
+    <div className={`page ${drawer ? "page-with-drawer" : ""} ${reflow ? `reflow-${reflow}` : ""}`}>
       <header className="top">
         <span className="brand-squares" aria-hidden="true" />
         <div>
