@@ -19,6 +19,7 @@ synthesizer/
     select.py     plan rows -> snippet choices -> segments
     build.py      segments -> time-merged packets -> capture files, manifest, segments, devices file
     trace.py      ingested Parquet rows -> block_id (pandas)
+  compare_day.py  the app's daily metrics of one day, live vs. synthetic (validation, §8)
   tests/          pytest (test_ingest.py runs the real ingest)
 ```
 
@@ -157,25 +158,110 @@ DNS packets stay at their recorded offset from the block start, so a lookup and 
 - **Dataset names**: `syn_<profile>_<letter>` (`syn_insomnia_b`). The rules are checked: `[a-z0-9_]`, starting with a letter, not ending in a digit (the app's `group_prefix()` would merge them), no `onu`/`bras`, and never a live dataset from `devices.csv`.
 - **Traceability**: packet (client IP, time) → `segments.csv` → `block_id` → plan row (`profile_block`, `profile`, `phase`). Segments on one device never overlap, except host + companion (group) and overlays. That is the granularity of the live ground truth. `trace` counts the Parquet rows per block and compares them with the manifest. Rows in the repeated DST hour are counted separately, because their naive local time is ambiguous.
 
-## 8. Status (23.10.2026)
+## 8. Status and validation (13.11.2026)
 
-Library from Karla's tests (16.10, 23.10), the pilot (23.10, 16–17 h, `--profile pilot`) and the first `messaging`/`social_post` tests: **25 snippets**, 2.2 M packets, 1.4 GB.
+### Library
 
-**Synthetic day** `gw_insomnia_a` seed 1 plan, Tue 27.10 (baseline 9-to-5), built with `--seed 7` as `syn_insomnia_b`:
-- 11 plan rows: 6 phone checks, 2 messaging, 1 stream, office as away.
-- 831 747 packets in 137 files, 855 MB, built in 5 s.
-- Real `tapingest.py --once` (unchanged): 831 389 rows, all in `syn_insomnia_b`, nothing in `gw_unassigned`, 322 packets dropped as background (mdns 129, gateway_service 167, broadcast 26), as live.
-- `trace`: 0 untraced rows; per block, parquet rows = manifest packets minus the dropped background.
+The library was cut on the gateway on 13.11 from three live-run days, into `/var/lib/synth/library`, with a copy on Karla's laptop in `~/cmnthif-synth/library`.
 
-Coverage of the three live plans with this library (rows exact / fallback / none):
+| | |
+|---|---|
+| Days | Tue 27.10 (lecture/office day), Fri 30.10 (self-study, home office, calls), Wed 11.11 (clinical phase) |
+| Snippets | 203 (69 + 82 + 52) |
+| Size | 31 M packets, 33 GB |
 
-| Plan | Missing (no snippet) | Fallbacks | Heavy looping |
+- **One `cut` per day.** `cut` reads every capture file between the earliest and the latest window it is given. The three days in one call would read all 16 days in between, about 180 GB instead of 33 GB.
+- **Light on the gateway.** Run with `nice`/`ionice`, the cut took about 4 minutes, and available memory stayed around 3.5 GB.
+- **Copy to the laptop.** Over Tailscale, rate-limited to 5 MB/s so that the live run keeps its uplink. The snippets that a build needs can be copied first: run `plan_all` on the index and pass the list to `rsync --files-from`.
+
+Coverage of the three live plans over all run days:
+
+| Plan | Missing (no snippet) | Fallbacks |
+|---|---|---|
+| `gw_insomnia_a` | `browse` 9 | `video_call` 8 (phone calls, only laptop call snippets) |
+| `gw_mdd_suicidality_a` | `browse` 4, `sh_adjacent_lookup` 1 | `video_call` 4 |
+| `gw_social_anxiety_a` | `browse` 5 | `video_call` 3, `voice_call` 2, `social_passive` 3 |
+
+- **Now exact:** `study_block` (with `music_background`) and the SAD `voice_call` with `mic_share 0.1`, which were missing on 23.10.
+- **Still missing:** `browse`, because none of the three days had a `browse` block.
+- **No heavy looping any more:** at most a few hundred copies of 70–100 snippets per activity, instead of thousands of copies of one snippet.
+
+### Validation: rebuilding the live day Wed 28.10 (leave one day out)
+
+**Question:** does a synthetic day give the same daily metrics as the live day it imitates? 28.10 is not in the library, so it is built only from other days' snippets.
+
+**How it was built**
+- **Day blocks:** the plan rows of day 28.10 of each live plan (seed 1), built from the library: `build --day 2026-10-28`.
+- **Blocks after midnight:** the calendar day 28.10 starts with the late blocks of plan day **27.10** that run past midnight (Maria 3 until 00:50, Carl 2 until 01:16, Ben none). They were built separately (`syn_*_bn`). Their snippets come from a copy of the index **without the 27.10 snippets** (134 left); otherwise these blocks could pick their own recording. A first run without them lacked the whole night, and every sleep metric was off.
+- **Ingest:** the unchanged `tapingest.py --once`, with the same pandas 3.0.6 and pyarrow 26.0.0 as the gateway.
+- **Traceability:** `trace` found 0 untraced rows (12.9 M rows).
+
+| Persona | Plan rows (28.10 + night) | Matches | Rows on 28.10 live / synthetic |
 |---|---|---|---|
-| `gw_insomnia_a` | – | `video_call` 8 (phone call, laptop snippet only) | `work_block` from one 2-min snippet (2 363 copies) |
-| `gw_mdd_suicidality_a` | `study_block` 21, `crisis_resource_visit` 4 | `browse` 4, `video_call` 4, `sh_adjacent_lookup` 1 | `music_background` from one 2-min MP3 snippet |
-| `gw_social_anxiety_a` | `study_block` 24 | `voice_call` 2 (`mic_share` 0.1 never recorded), `video_call` 3, `browse` 5 | `music_background` (1 683 copies) |
+| Ben (`gw_insomnia_a`) | 11 + 0 | 8 exact, 1 `role_fallback` (phone call), 2 away | 1.30 M / 1.38 M |
+| Maria (`gw_mdd_suicidality_a`) | 30 + 3 | all exact | 5.72 M / 5.47 M |
+| Carl (`gw_social_anxiety_a`) | 31 + 2 | all exact | 5.34 M / 4.17 M |
 
-So today the synthesizer is shown to work end to end, but a full synthetic instance would mostly be loops of a few snippets. After the live run (25.10–22.11) the library holds about 2 000 blocks of exactly the planned activities and mixes, including SRF radio, study blocks and SAD calls.
+**How the metrics were compared**
+- `compare_day.py` runs the app's own per-day pipeline without Streamlit: `enrich_with_hostnames`, `drop_background`, `compute_daily_base_record`, `Criterion1..9`. It is the same code as the "all days" table on the Network Metrics page, and it fits on an 8 GB laptop (peak 2.5 GB).
+- Both sides get the same empty history, so only same-day metrics are compared.
+- Not compared: metrics that need a baseline (14/30-day z-scores and variances) and the criterion likelihoods of Early Signs. They need several synthetic days.
+
+```bash
+python synthesizer/compare_day.py --day 2026-10-28 \
+    --pair ~/cmnthif-synth/processed_parquet/gw_mdd_suicidality_a ~/cmnthif-synth/merged/syn_mdd_suicidality_b+bn
+```
+
+Result (live / synthetic, relative difference). Metrics that are 0 or N/A on both sides are left out.
+
+| Metric | Ben | Maria | Carl |
+|---|---|---|---|
+| Longest inactivity (h) | 12.6 / 12.6 | 7.11 / 7.11 | 5.66 / 5.65 |
+| Sleep onset delay from 22:00 (min) | – | 171 / 171 | 197 / 197 |
+| Wake time after 04:00 (min) | – | 1080 / 1080 | 1080 / 1080 |
+| Active night minutes 00–05 | 1 / 1 | 25 / 25 | 25 / 26 |
+| First activity after 04:00 (min) | 360 / 360 | 478 / 478 | 416 / 416 |
+| Daytime idle ratio 08–18 | 1 / 1 | 0.648 / 0.648 | 0.652 / 0.653 |
+| Unique domains (eTLD+1) | 107 / 100 (−7 %) | 162 / 150 (−7 %) | 156 / 140 (−10 %) |
+| Distinct social domains | 107 / 100 (−7 %) | 162 / 150 (−7 %) | 156 / 137 (−12 %) |
+| Social outgoing share | 0.032 / 0.030 (−8 %) | 0.021 / 0.023 (+8 %) | 0.023 / 0.025 (+8 %) |
+| Down/up byte ratio | 36.5 / 33.7 (−8 %) | 47.8 / 43.5 (−9 %) | 45.1 / 38.5 (−15 %) |
+| Chat sessions (5-min gap) | 8 / 5 (−38 %) | 16 / 16 | 14 / 14 |
+| Median chat reply latency (s) | 2 / 2 | 2 / 2 | 2 / 2 |
+| Upstream chat rate (bps) | 9430 / 8720 (−8 %) | 14 900 / 13 900 (−7 %) | 9910 / 9250 (−7 %) |
+| Interdaily stability (IS) | 1.09 / 0.96 (−12 %) | 0.54 / 0.61 (+13 %) | 0.642 / 0.643 |
+| Intradaily variability (IV) | 0.155 / 0.062 (−60 %) | 0.131 / 0.122 (−7 %) | 0.127 / 0.127 |
+| Hourly CV | 2.19 / 2.05 (−6 %) | 1.63 / 1.42 (−13 %) | 1.40 / 1.32 (−6 %) |
+| Inter-request Fano factor | 34 900 / 34 900 | 10 900 / 10 800 (−1 %) | 9330 / 9200 (−1 %) |
+| DNS burst rate / h | 4.2 / 7.3 (+72 %) | 14.5 / 16.2 (+12 %) | 13.8 / 13.7 (−1 %) |
+| Late-night share (packets 00–05) | 0.002 / 0.003 (+90 %) | 0.224 / 0.151 (−33 %) | 0.118 / 0.066 (−44 %) |
+| Night/day traffic ratio (bytes) | 0.003 / 0.004 (+55 %) | 0.297 / 0.197 (−34 %) | 0.151 / 0.080 (−47 %) |
+| Passive/active byte ratio | 7.2 / 17.1 (+138 %) | 0.69 / 2.26 (+230 %) | 1.50 / 1.87 (+25 %) |
+| Productivity-site hits | 0 / 0 | 11 700 / 5940 (−49 %) | 3500 / 11 500 (+229 %) |
+| Mean social-session duration (s) | 676 / 1750 (+160 %) | 1150 / 1300 (+12 %) | 1450 / 1450 |
+| Self-harm forum metric (reddit.com packets, no URLs) | 63 600 / 12 600 (−80 %) | 1.09 M / 1.27 M (+16 %) | 757 k / 712 k (−6 %) |
+| POST + chat messages / day (proxy) | 107 k / 126 k (+19 %) | 691 k / 751 k (+9 %) | 562 k / 436 k (−22 %) |
+
+**What matches.** The metrics that the plan determines:
+- **Sleep and timing** are equal within one minute: longest inactivity, sleep onset, wake time, active night minutes, first activity, daytime idle ratio.
+- **Domain metrics** are within about 12 %: unique and social domains, social outgoing share, down/up ratio.
+- **Chat** behaviour is within 8 %: reply latency, upstream rate.
+- **Rhythm** is within 13 % for Maria and Carl: inter-request Fano, IS, IV, hourly CV.
+
+**What differs, and why.**
+- **Snippet content (§9 "frozen content").** These metrics depend on *which* recording was drawn, not on the plan:
+  - passive/active byte ratio: which videos and feeds
+  - productivity hits: which study snippet, with how many Office pages
+  - late-night share and night/day ratio: how heavy the night's social feeds were
+  - mean social-session duration and the reddit-based C9 proxy (Ben)
+
+  More snippets per activity (the full library after 22.11) spread these out, but they remain the main source of difference between a synthetic and a live day.
+- **Ben's sparse day.** Ben's 28.10 is mostly away (office day) with nine short blocks, so a single block moves his ratios: IV −60 %, DNS burst rate +72 %, chat sessions 8 vs. 5. The messaging blocks are `bounded`: they end when their snippet ended, not after the planned number of messages.
+- **Packet totals** are 4–22 % lower synthetically for Maria and Carl. Idle stays empty, without the runner's background traffic, and bounded activities end early (§9). The app drops that background before the features, so the metrics above are not affected.
+
+**Lessons for building instances**
+- **A calendar day needs two plan days.** Build plan day *d* together with the after-midnight blocks of *d−1*. A per-day build of only day *d* loses the night.
+- **Leave-one-out must also exclude the previous day.** When a validation day's night blocks belong to a library day, build them from an index without that day.
 
 ## 9. Limitations (what is lost compared with a live run)
 
@@ -196,6 +282,7 @@ So today the synthesizer is shown to work end to end, but a full synthetic insta
 
 ## 10. Next steps
 
-- Copy the live run's br-sim captures (25.10–22.11) over the AP LAN, not the hotspot. Copying the pilot over Tailscale went through the phone hotspot at about 1 MB/s. Then `cut` with the three plans (`--plan`) so mixes and `mic_share` are known.
-- Validation: for a live day of seed 1, build it from the *other* days' snippets (leave one day out) and compare the app's daily metrics with the live day.
-- `scheduler/README.md` §5 still says "Not done: the synthesizer"; update it when this is merged.
+- **`browse` snippets.** Add a run day with `browse` blocks to the library (`cut` is incremental; one `cut` per day).
+- **Full library after 22.11.** Cut all run days, on the gateway once the executors are stopped (no run to disturb), or from captures copied with a USB disk.
+- **Several synthetic days in a row** (e.g. a whole baseline week). Then the baseline metrics (14/30-day) and the Early Signs criterion likelihoods can be compared too.
+- **More validation days**, including a clinical-phase day.

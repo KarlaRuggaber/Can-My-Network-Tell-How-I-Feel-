@@ -374,7 +374,24 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
 
 **Supervisor meeting:** Fri 13.11
 - **Done:**
+  - **First real synthesizer library** (Karla, from Thierry's handover): cut on the gateway from the run days 27.10, 30.10 and 11.11.
+    - 203 snippets, 33 GB.
+    - One `cut` per day (otherwise it reads all 16 days in between). About 4 min, available memory stayed around 3.5 GB.
+    - Copied to the laptop over Tailscale at 5 MB/s.
+    - `study_block` and the SAD calls (`mic_share 0.1`) now have exact snippets. `browse` is still missing.
+  - **Validation: 28.10 rebuilt from other days** (leave one day out).
+    - All three personas, ingested with the unchanged ingest; `trace` found 0 untraced rows.
+    - **Sleep and timing metrics match within a minute:** longest inactivity, sleep onset, wake, night minutes, first activity.
+    - **Domain and chat metrics** within about 12 %.
+    - **Content-driven metrics differ** (passive/active ratio, productivity hits, night packet volume), because they depend on which recording was drawn.
+    - **Lesson:** a calendar day needs the previous plan day's after-midnight blocks, built from a library without that day.
+    - Table and explanation: [synthesizer/README.md](../synthesizer/README.md) §8.
+    - Compared headless with `synthesizer/compare_day.py` (the app's own per-day pipeline), because the Streamlit app needs more memory than the 8 GB laptop has.
+  - **Access:** Karla's laptop logs in to the gateway with its own SSH key (Tailscale addresses only); sudo stays manual.
 - **Next / open:**
+  - Add a day with `browse` blocks to the library
+  - After 22.11: full library; several synthetic days in a row, to compare baseline metrics and Early Signs likelihoods too
+  - Ask Thierry whether the temporary passwordless sudo rule for kathy on the gateway can be removed
 - **Blockers / notes:**
 
 </details>
