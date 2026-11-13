@@ -47,10 +47,6 @@ h3 { font-size: 12px; margin: 0 0 8px; color: var(--text2); text-transform: uppe
 .top h1 { max-width: 640px; }
 .tagline { font-size: 18px; line-height: 1.25; color: var(--red); margin: 8px 0 6px; }
 .disclaimer { font-size: 12px; color: var(--text2); margin: 0; }
-.brand-squares { position: absolute; top: -10px; right: 0; width: 120px; height: 70px; pointer-events: none; }
-.brand-squares::before, .brand-squares::after { content: ""; position: absolute; border: 1.5px solid var(--ink); }
-.brand-squares::before { top: 0; right: 64px; width: 44px; height: 44px; }
-.brand-squares::after { top: 12px; right: 0; width: 84px; height: 58px; }
 .personas { display: flex; gap: 6px; flex-wrap: wrap; }
 .personas button {
   display: flex; flex-direction: column; align-items: flex-start; gap: 1px; cursor: pointer;
@@ -156,7 +152,7 @@ footer { margin-top: 8px; }
 .rolling-toggle { margin-left: auto; font-size: 12px; }
 th.phase-head:nth-of-type(3) { box-shadow: inset 0 -3px 0 var(--beige); }
 th.phase-head:nth-of-type(4) { box-shadow: inset 0 -3px 0 var(--red); }
-@media (max-width: 860px) { .brand-squares { display: none; } h1 { font-size: 30px; } }
+@media (max-width: 860px) { h1 { font-size: 30px; } }
 
 /* simplified overview */
 .step { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-right: 10px;
@@ -197,9 +193,6 @@ details.fold[open] { padding-bottom: 12px; }
 .login-card { position: relative; width: min(460px, 100%); display: flex; flex-direction: column; gap: 12px; padding: 32px 30px 26px; }
 .login-card h1 { font-size: 30px; max-width: 300px; }
 .login-card .tagline { font-size: 15px; margin: 0 0 6px; }
-.login-card .brand-squares { top: 18px; right: 18px; width: 80px; height: 48px; }
-.login-card .brand-squares::before { width: 30px; height: 30px; right: 42px; }
-.login-card .brand-squares::after { width: 56px; height: 38px; top: 8px; }
 .login-title { font-size: 19px; margin-top: 4px; }
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--text2); }
 .field input, .field select { font: inherit; font-size: 14px; color: var(--text); padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
@@ -228,7 +221,6 @@ details.fold[open] { padding-bottom: 12px; }
 .inline-input { font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; width: 100%; min-width: 140px; }
 .row-between { gap: 12px; }
 @media (max-width: 860px) { .top-right { align-items: flex-start; } .usermenu { justify-content: flex-start; } }
-.top .brand-squares { display: none; }
 
 /* person view */
 .person-intro h2 { font-size: 28px; margin-bottom: 6px; }

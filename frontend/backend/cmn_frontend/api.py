@@ -10,6 +10,7 @@ choose between their profiles and edit them (name, source, devices, baseline per
 from __future__ import annotations
 
 import math
+import os
 import statistics
 from datetime import date, timedelta
 from functools import lru_cache
@@ -261,7 +262,8 @@ def create_app(settings: Settings | None = None, llm_client: Any = None, http_cl
         if user is None:
             raise HTTPException(401, "Invalid login data")
         response.set_cookie(auth.SESSION_COOKIE, auth.make_session(settings.home_dir, user.username),
-                            max_age=auth.SESSION_SECONDS, httponly=True, samesite="strict")
+                            max_age=auth.SESSION_SECONDS, httponly=True, samesite="strict",
+                            secure=os.environ.get("CMN_COOKIE_SECURE", "") in ("1", "true", "yes"))
         return user.public()
 
     @app.post("/api/logout")

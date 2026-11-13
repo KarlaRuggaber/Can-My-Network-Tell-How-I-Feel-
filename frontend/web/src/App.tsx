@@ -170,7 +170,6 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   return (
     <div className={`page ${drawer ? "page-with-drawer" : ""} ${reflow ? `reflow-${reflow}` : ""}`}>
       <header className="top">
-        <span className="brand-squares" aria-hidden="true" />
         <div>
           <h1>Can My Network Tell How I Feel?</h1>
           {multi ? <>

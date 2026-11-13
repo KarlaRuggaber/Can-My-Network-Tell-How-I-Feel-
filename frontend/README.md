@@ -185,6 +185,21 @@ For the video, build the UI once; the API then serves it at http://127.0.0.1:860
 cd frontend/web && npm run build
 ```
 
+### Deploy (one laptop, reachable by the team)
+
+1. Build the UI once (and after every UI change): `cd frontend/web && npm run build`. The API then
+   serves it, so one process is enough: `.venv/bin/uvicorn cmn_frontend.api:app --host 127.0.0.1 --port 8600`
+   → http://127.0.0.1:8600.
+2. Keep the data current in a second process: `.venv/bin/python -m cmn_frontend.export --jobs 3 --watch 900`.
+3. Create logins with `python -m cmn_frontend.users` (see above). The assistant is turned on in the portal.
+4. To let others in, keep the API on 127.0.0.1 and publish it inside the tailnet only (the gateway
+   already uses Tailscale): `tailscale serve --bg 8600` gives an HTTPS address that only members of
+   the tailnet can open. Start the API with `CMN_COOKIE_SECURE=1` then, so the login cookie is only
+   sent over HTTPS.
+
+Do not put it on the public internet: the data is personal (health-related inferences), and the
+login has no rate limiting or second factor.
+
 The URL keeps the view: `#/<profile>/<day>/<criterion>`, e.g. `#/maria/2026-11-12/C2`, or `#/settings`.
 
 ### Settings (environment variables)
@@ -202,6 +217,7 @@ The URL keeps the view: `#/<profile>/<day>/<criterion>`, e.g. `#/maria/2026-11-1
 | `CMN_DEVICES` | `traffic-runner/config/devices.csv` | IP → device |
 | `CMN_API` | `http://127.0.0.1:8600` | API address the Vite dev server proxies to |
 | `CMN_NO_IP_CACHE` | unset | `1` turns off the `is_private_ip` memoization |
+| `CMN_COOKIE_SECURE` | unset | `1` marks the login cookie HTTPS-only (set it behind `tailscale serve` or another HTTPS proxy) |
 
 ## Tests
 

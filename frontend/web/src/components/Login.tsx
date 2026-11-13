@@ -23,7 +23,6 @@ export function Login({ onLogin }: { onLogin: (me: Me) => void }) {
   return (
     <div className="login-page">
       <form className="login-card card" onSubmit={submit}>
-        <span className="brand-squares" aria-hidden="true" />
         <h1>Can My Network Tell How I Feel?</h1>
         <p className="tagline">Research prototype on home network use</p>
         <h2 className="login-title">Welcome – please log in</h2>
