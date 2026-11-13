@@ -27,6 +27,11 @@ functions come from `app_pcap_to_dsm5/app/fasl_config.json` (re-read on every re
 
 The Streamlit app in `app_pcap_to_dsm5/app/` is not changed and stays the reference.
 
+Look: as the midterm presentation: Book Antiqua for titles (falls back to Palatino), Arial for text,
+red #DC3A4F (subtitle, clinical phase, likelihood ramp) and beige #EBD6C1 (baseline phase, gate bar,
+highlights), thin black outlines. Colours live in `web/src/theme.ts` and `web/src/styles.css`; the
+device colours (phone blue, laptop tan) were checked for colour-vision separation and contrast.
+
 ## How it works
 
 ```

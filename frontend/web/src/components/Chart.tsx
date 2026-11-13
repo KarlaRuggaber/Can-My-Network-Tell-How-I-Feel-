@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as echarts from "echarts";
+import { FONT } from "../theme";
 
 type Props = {
   option: echarts.EChartsCoreOption;
@@ -25,7 +26,7 @@ export function Chart({ option, height, onClick, ariaLabel }: Props) {
     return () => { ro.disconnect(); c.dispose(); inst.current = null; };
   }, []);
 
-  useEffect(() => { inst.current?.setOption(option, { notMerge: true }); }, [option]);
+  useEffect(() => { inst.current?.setOption({ textStyle: { fontFamily: FONT.sans }, ...option }, { notMerge: true }); }, [option]);
 
   return <div ref={el} style={{ height, width: "100%" }} role="img" aria-label={ariaLabel} />;
 }

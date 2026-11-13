@@ -55,7 +55,7 @@ export default function App() {
     const onHash = () => {
       const h = readHash();
       if (h.ds) setDs(h.ds);
-      setDay(h.day ?? null);
+      if (h.day) setDay(h.day);   // a link without a day keeps the current one
       setCrit(h.crit ?? null);
     };
     window.addEventListener("hashchange", onHash);
@@ -113,9 +113,11 @@ export default function App() {
   return (
     <div className="page">
       <header className="top">
+        <span className="brand-squares" aria-hidden="true" />
         <div>
           <h1>Can My Network Tell How I Feel?</h1>
-          <p className="sub">Router-level network metrics → DSM-5 criterion likelihoods, per simulated persona.
+          <p className="tagline">Explainable Depression Indicators from Network Traffic Metadata</p>
+          <p className="disclaimer">Router-level network metrics → DSM-5 criterion likelihoods, per simulated persona.
             Research prototype, not a diagnostic tool.</p>
         </div>
         <nav className="personas" aria-label="Personas">

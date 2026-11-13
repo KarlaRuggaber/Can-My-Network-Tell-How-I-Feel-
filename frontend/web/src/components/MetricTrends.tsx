@@ -42,7 +42,7 @@ function bands(clin: [number, number] | null, sel: number) {
   return {
     markArea: clin ? {
       silent: true, itemStyle: { color: C.clinicalTint },
-      label: { show: true, position: "insideTopLeft", color: C.laptop, fontSize: 10, formatter: "clinical" },
+      label: { show: true, position: "insideTopLeft", color: C.critical, fontSize: 10, formatter: "clinical" },
       data: [[{ xAxis: clin[0] }, { xAxis: clin[1] }]],
     } : undefined,
     markLine: sel >= 0 ? {
@@ -72,7 +72,7 @@ export function MetricTrends({ tl, cfg, crit, theta, present, presentLabel, sele
       },
       series: [{
         name: `L ${crit}`, type: "line", data: L, symbol: "circle", symbolSize: 8, showSymbol: true,
-        lineStyle: { width: 2, color: C.phone }, itemStyle: { color: C.phone, borderColor: C.surface, borderWidth: 2 },
+        lineStyle: { width: 2, color: C.ink }, itemStyle: { color: C.ink, borderColor: C.surface, borderWidth: 2 },
         ...bl,
         markLine: {
           silent: true, symbol: "none",
@@ -91,7 +91,7 @@ export function MetricTrends({ tl, cfg, crit, theta, present, presentLabel, sele
         <h2>{crit} · {cfg.criterion_names[crit]}: likelihood and metrics</h2>
         <p className="sub">
           L<sub>{crit}</sub> = Σ w · μ(metric). Each metric chart shows the daily value, the
-          baseline mean ± 1 SD (grey band) and the membership function's active range
+          baseline mean ± 1 SD (tan band) and the membership function's active range
           (lo–hi, dotted). Shaded = clinical phase.
         </p>
       </div>
