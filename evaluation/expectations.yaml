@@ -1,0 +1,59 @@
+# What each persona's clinical phase should show compared with its own baseline phase.
+# Source: the profiles' §9 "Expected thesis output" (profiles/tier2-clinical/*.md) and
+# profiles/thesis-alignment.md §5. Directions are the change of the daily metric value (profile vs. baseline),
+# not of the membership: "up" = higher values in the clinical phase.
+# criteria: present = L_k >= theta on >= N of M days (with a calibrated config), elevated = higher L_k but not
+# present, borderline = may or may not reach the gate, flag = C9 overlay (any hit), absent = no change expected.
+
+gw_insomnia_a:
+  profile: insomnia-moderate
+  baseline: 9to5-worker
+  episode: "no"
+  criteria: {C1: elevated, C2: absent, C4: present, C6: absent, C8: absent}
+  metrics:
+    F8_NightDayRatioPkts: up
+    C4_F1_OnsetDelayFrom2200Min: up
+    C4_F5_NocturnalMicroSessionCount0106: up
+    C4_F8_NightDayTrafficRatioBytes: up
+    C4_F4_SleepDurationZAbs30d: up
+  unchanged: [C2_F1_UniqueSLD, C2_F3_ChatSessionCount, C2_F4_MeanUpstreamRateBps, C2_F6_ProductivityHits,
+              C8_F2_DNSBurstRatePerHour, C8_F4_RepeatedQueryRatio60m]
+
+gw_mdd_suicidality_a:
+  profile: mdd-severe-suicidality
+  baseline: student
+  episode: borderline
+  criteria: {C1: present, C2: present, C4: present, C6: borderline, C8: present, C9: flag}
+  metrics:
+    F8_NightDayRatioPkts: up
+    F7_HourlyCV: down
+    F1_DistinctSocial: down
+    F4_DownUpRatio: up
+    C2_F1_UniqueSLD: down
+    C2_F3_ChatSessionCount: down
+    C2_F4_MeanUpstreamRateBps: down
+    C2_F6_ProductivityHits: down
+    C4_F1_OnsetDelayFrom2200Min: up
+    C4_F4_SleepDurationZAbs30d: up
+    C4_F5_NocturnalMicroSessionCount0106: up
+    C4_F8_NightDayTrafficRatioBytes: up
+    C6_F8_FirstActivityMin: up
+    C6_F9_ActivationDelayVsBase28d: up
+    C8_F2_DNSBurstRatePerHour: up
+    C8_F4_RepeatedQueryRatio60m: up
+    C9_F1_CrisisLineHits: up
+  unchanged: []
+
+gw_social_anxiety_a:
+  profile: social-anxiety-moderate
+  baseline: student
+  episode: "no"
+  criteria: {C1: elevated, C2: elevated, C4: absent, C6: absent, C8: absent}
+  metrics:
+    F4_DownUpRatio: up
+    F8_NightDayRatioPkts: up            # slight, only on former going-out nights
+    C2_F4_MeanUpstreamRateBps: down
+    C2_F7_SocialOutgoingShareUp: down   # the SAD signature; computed, not configured
+    C4_F8_NightDayTrafficRatioBytes: up # slight
+  unchanged: [C2_F1_UniqueSLD, C2_F3_ChatSessionCount, C2_F6_ProductivityHits, C4_F1_OnsetDelayFrom2200Min,
+              C8_F2_DNSBurstRatePerHour, C8_F4_RepeatedQueryRatio60m]
