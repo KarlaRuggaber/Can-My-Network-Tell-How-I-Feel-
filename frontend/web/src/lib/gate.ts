@@ -31,3 +31,35 @@ export function episodeFlags(present: Record<string, boolean[]>, p: GateParams):
 export function daysAbove(L: (number | null)[], theta: number, idx: number[]): number {
   return idx.filter((i) => finite(L[i]) && (L[i] as number) >= theta).length;
 }
+
+export interface PhaseGate {
+  days: number;                     // days in the window: the last M of the phase
+  nPhaseDays: number;
+  criteria: Record<string, { daysOver: number; present: boolean }>;
+  totalPresent: number;
+  corePresent: boolean;
+  episode: boolean;
+}
+
+/** The gate on one phase's days only, identical to cmn_frontend.fasl.phase_gate and the
+ * evaluation's score_phases: days_over counts the last M days of the phase (a missing L is a day,
+ * not >= theta); present is the page's gate_present (last M days with data). */
+export function phaseGate(L: Record<string, (number | null)[]>, p: GateParams): PhaseGate {
+  const n = Math.max(0, ...Object.values(L).map((v) => v.length));
+  const criteria: PhaseGate["criteria"] = {};
+  for (const [c, vals] of Object.entries(L)) {
+    const tail = p.M > 0 ? vals.slice(-p.M) : [];
+    const withData = vals.filter(finite);
+    const tailData = p.M > 0 ? withData.slice(-p.M) : [];
+    criteria[c] = {
+      daysOver: tail.filter((v) => finite(v) && v >= p.theta).length,
+      present: tailData.length > 0 && tailData.filter((x) => x >= p.theta).length >= p.N,
+    };
+  }
+  const on = Object.keys(criteria).filter((c) => criteria[c].present);
+  const corePresent = on.some((c) => p.core.includes(c));
+  return {
+    days: p.M > 0 ? Math.min(n, p.M) : 0, nPhaseDays: n, criteria,
+    totalPresent: on.length, corePresent, episode: corePresent && on.length >= p.minPresent,
+  };
+}

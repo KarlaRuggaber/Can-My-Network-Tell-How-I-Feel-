@@ -83,10 +83,19 @@ def build_timeline(dataset: str, settings: Settings, cfg: fasl.FaslConfig) -> di
         })
 
     gate = cfg.gate
+    configured = [c for c in fasl.CRIT_KEYS if cfg.configured(c)]
+    # Default: the gate per phase, each on that phase's complete days only (as the evaluation's
+    # score_phases). The rolling window mixes phases right after the switch; it is an extra view.
+    by_phase = {}
+    for ph in ("baseline", "clinical"):
+        sel = [d for d in days if d["phase"] == ph and d["complete"]]
+        res = fasl.phase_gate({c: [d["L"][c] for d in sel] for c in configured}, gate)
+        by_phase[ph] = {**res, **_phase_span(phases, ph),
+                        "counted": [d["date"] for d in sel][-gate.window:] if gate.window > 0 else [],
+                        "in_progress": [d["date"] for d in days if d["phase"] == ph and not d["complete"]]}
     present = {c: fasl.gate_present_rolling([d["L"][c] for d in days], gate.theta, gate.need_days,
                                             gate.window)
-               for c in fasl.CRIT_KEYS if cfg.configured(c)}
-    episode = fasl.episode_flags(present, gate)
+               for c in configured}
     meta = persona_meta(dataset)
     return {
         "dataset": dataset,
@@ -94,9 +103,18 @@ def build_timeline(dataset: str, settings: Settings, cfg: fasl.FaslConfig) -> di
         "days": days,
         "gate": {"params": {"theta": gate.theta, "N": gate.need_days, "M": gate.window,
                             "core": list(gate.core), "min_present": gate.min_present},
-                 "present": present, "episode": episode},
+                 "phases": by_phase,
+                 "rolling": {"present": present, "episode": fasl.episode_flags(present, gate),
+                             "note": "rolling window over the last M days; mixes phases"}},
         "baseline_stats": _baseline_stats(days),
     }
+
+
+def _phase_span(phases: dict[str, str], label: str) -> dict[str, Any]:
+    """Planned first/last day and number of days of a phase, from the scheduler plan."""
+    ds = sorted(d for d, p in phases.items() if PHASE_LABEL.get(p, p) == label)
+    return {"planned_first": ds[0] if ds else None, "planned_last": ds[-1] if ds else None,
+            "planned_days": len(ds)}
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

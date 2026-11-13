@@ -3,9 +3,13 @@
 A cleaner view of the thesis app's results for the three simulated personas (Ben: insomnia,
 Maria: MDD with suicidality overlay, Carl: social anxiety). For each persona it shows:
 
-- **Expected vs. observed**: every DSM-5 criterion C1–C9 with the outcome expected in the
-  profile's §9 (`profiles/tier2-clinical/*.md`), the gate state at the end of the baseline and on
-  the latest clinical day, the number of days with L ≥ θ in each phase, and whether that matches.
+- **Baseline phase vs. clinical phase**: every DSM-5 criterion C1–C9 with the outcome expected in
+  the profile's §9 (`profiles/tier2-clinical/*.md`) and two gate results side by side, each computed
+  on that phase's own days only: "Baseline (26.10–08.11)" and "Clinical (09.11–22.11)", with the days
+  with L ≥ θ (n of the days counted) and present/absent, plus the episode per phase. The warm-up day
+  and the day still being ingested are not counted. While the clinical phase has fewer than M days
+  the result is marked *preliminary*. This is the same rule as the evaluation
+  (`evaluation/compare.py` `score_phases()`), and the numbers match it.
 - **Daily likelihoods**: a day × criterion grid of L<sub>k</sub> with the baseline/clinical phase,
   days ≥ θ, "present" according to the DSM gate, number of present criteria and the episode flag.
 - **Metric trends**: for the selected criterion, L over time with θ, and each configured metric with
@@ -14,7 +18,11 @@ Maria: MDD with suicidality overlay, Carl: social anxiety). For each persona it 
   timeline (baseline vs. clinical-profile, sensitive, away, failed), the block table with block IDs and
   runner status (ok / exit code / late), and the breakdown L = Σ w·μ for every metric of that day.
 
-θ, N and M can be changed in the browser; the gate is recomputed there. Weights and membership
+θ, N and M can be changed in the browser; the gate is recomputed there. In the grid, trends and day
+detail, a day carries its phase's gate result if it is counted in that phase. A rolling window over
+the last M days (as the Streamlit page evaluates it) can be switched on for these day marks only; it
+is labelled "mixes phases" because right after the switch it is mostly baseline days. It is never
+used in the summary. Weights and membership
 functions come from `app_pcap_to_dsm5/app/fasl_config.json` (re-read on every request).
 
 The Streamlit app in `app_pcap_to_dsm5/app/` is not changed and stays the reference.
@@ -32,7 +40,7 @@ app_pcap_to_dsm5/app/metrics  (imported, unchanged)┤  one day at a time, incre
                                                   │
 fasl_config.json ─────┐                           │
 ~/cmn-data/run/<dataset>.csv, .state.jsonl ───────┤  uvicorn cmn_frontend.api:app  (port 8600)
-traffic-runner/config/devices.csv ────────────────┤  scores L_k, rolling gate, joins ground truth
+traffic-runner/config/devices.csv ────────────────┤  scores L_k, gate per phase, joins ground truth
                                                   ▼
                                    React UI (Vite, port 5173 in dev; or built and served by the API)
 ```
@@ -53,10 +61,10 @@ traffic-runner/config/devices.csv ───────────────�
   The newest day is marked *incomplete* until a later day has data.
 - **Scoring** (`fasl.py`): membership functions and `fasl_score` are ported from the page, which cannot
   be imported (it runs Streamlit at import). `tests/test_fasl_parity.py` extracts the original
-  functions from the page source and checks that both give identical results. Two deliberate
-  differences: unconfigured criteria have no likelihood (the page shows 0), and the gate is evaluated
-  for **every day** over the M days up to it (the page evaluates it once, for the last M days; on the
-  last day both agree).
+  functions from the page source and checks that both give identical results. The gate is the
+  page's `gate_present`, applied per phase (`fasl.phase_gate`, shared test cases with the web code in
+  `shared/gate_cases.json`). One deliberate difference: unconfigured criteria have no likelihood (the
+  page shows 0).
 - **API** (`api.py`): only reads the cache. It never computes metrics, so it is light and can run
   while the export is working.
 - **UI** (`web/`): React + TypeScript + ECharts. The gate in `src/lib/gate.ts` and the Python gate

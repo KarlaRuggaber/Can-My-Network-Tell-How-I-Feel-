@@ -5,12 +5,24 @@ import pytest
 
 from cmn_frontend import fasl
 
-CASES = json.loads((Path(__file__).resolve().parents[2] / "shared" / "gate_cases.json").read_text())["cases"]
+_SHARED = json.loads((Path(__file__).resolve().parents[2] / "shared" / "gate_cases.json").read_text())
+CASES = _SHARED["cases"]
+PHASE_CASES = _SHARED["phase_cases"]
 
 
 @pytest.mark.parametrize("case", CASES)
 def test_shared_gate_cases(case):
     assert fasl.gate_present_rolling(case["L"], case["theta"], case["N"], case["M"]) == case["present"]
+
+
+@pytest.mark.parametrize("case", PHASE_CASES)
+def test_shared_phase_cases(case):
+    params = fasl.GateParams(case["theta"], case["N"], case["M"], tuple(case["core"]), case["minPresent"])
+    r = fasl.phase_gate(case["L"], params)
+    assert r["days"] == case["days"]
+    assert {c: v["days_over"] for c, v in r["criteria"].items()} == case["days_over"]
+    assert {c: v["present"] for c, v in r["criteria"].items()} == case["present"]
+    assert (r["total_present"], r["episode"]) == (case["total_present"], case["episode"])
 
 
 def test_episode_needs_core_and_five():

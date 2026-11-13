@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import type { Config, Day, Timeline } from "../api";
+import { phaseGate } from "../lib/gate";
 import { agreement, CriteriaSummary } from "./CriteriaSummary";
 
 describe("agreement", () => {
@@ -38,25 +39,42 @@ const tl: Timeline = {
   },
   days: [day("2026-11-07", "baseline", 0.1), day("2026-11-08", "baseline", 0.1),
     day("2026-11-09", "clinical", 0.9), day("2026-11-10", "clinical", 0.8)],
-  gate: { params: { theta: 0.6, N: 2, M: 14, core: ["C2"], min_present: 5 }, present: {}, episode: [] },
+  gate: {
+    params: { theta: 0.6, N: 2, M: 14, core: ["C2"], min_present: 5 },
+    phases: {} as Timeline["gate"]["phases"],
+    rolling: { present: {}, episode: [], note: "" },
+  },
   baseline_stats: {},
 };
 
+const gate = { theta: 0.6, N: 2, M: 14, core: ["C2"], minPresent: 5 };
+
+function phaseView(ph: "baseline" | "clinical") {
+  const days = tl.days.filter((d) => d.phase === ph);
+  const L = Object.fromEntries((["C1", "C2", "C4", "C8"] as const).map((c) => [c, days.map((d) => d.L[c])]));
+  return {
+    ...phaseGate(L, gate), counted: days.map((d) => d.date), inProgress: ph === "clinical" ? ["2026-11-11"] : [],
+    plannedFirst: ph === "baseline" ? "2026-10-26" : "2026-11-09",
+    plannedLast: ph === "baseline" ? "2026-11-08" : "2026-11-22", plannedDays: 14,
+  };
+}
+
 describe("CriteriaSummary", () => {
-  it("shows gate state at end of baseline and on the latest clinical day", () => {
-    const present = {
-      C1: [false, false, false, false], C2: [false, false, false, false],
-      C4: [false, false, false, true], C8: [false, false, false, false],
-    };
-    render(<CriteriaSummary tl={tl} cfg={cfg} present={present} episode={[false, false, false, false]}
-      theta={0.6} selected={null} onSelect={() => undefined} />);
+  it("shows the gate per phase, each on its own days, and marks the clinical phase preliminary", () => {
+    render(<CriteriaSummary tl={tl} cfg={cfg} gate={gate}
+      phases={{ baseline: phaseView("baseline"), clinical: phaseView("clinical") }}
+      selected={null} onSelect={() => undefined} />);
     const c4 = screen.getByText("Sleep").closest("tr")!;
-    expect(within(c4).getByText("0 / 2")).toBeTruthy();          // baseline days >= theta
-    expect(within(c4).getByText("2 / 2")).toBeTruthy();          // clinical days >= theta
-    expect(within(c4).getByText("● present")).toBeTruthy();
-    expect(within(c4).getByText("✓ as expected")).toBeTruthy();
+    expect(within(c4).getByText("0 of 2")).toBeTruthy();          // baseline: 0 of its 2 days >= theta
+    expect(within(c4).getByText("2 of 2")).toBeTruthy();          // clinical: 2 of its 2 days
+    expect(within(c4).getByText("○ absent")).toBeTruthy();        // baseline gate
+    expect(within(c4).getByText("● present")).toBeTruthy();       // clinical gate (N = 2)
+    expect(within(c4).getByText("✓ as expected so far")).toBeTruthy();
     const c3 = screen.getByText("Appetite").closest("tr")!;
     expect(within(c3).getByText("not configured")).toBeTruthy();
-    expect(screen.getByText(/day 2 of 14/)).toBeTruthy();
+    expect(screen.getByText(/26\/10–08\/11/)).toBeTruthy();
+    expect(screen.getByText(/2 of 14 days so far/)).toBeTruthy();
+    expect(screen.getByText("preliminary")).toBeTruthy();
+    expect(screen.getByText(/\(11\/11\) are not counted/)).toBeTruthy();
   });
 });

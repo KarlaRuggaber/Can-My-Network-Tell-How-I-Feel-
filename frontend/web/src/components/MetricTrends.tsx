@@ -10,6 +10,7 @@ type Props = {
   crit: CritKey;
   theta: number;
   present: boolean[];
+  presentLabel: string;
   selectedDay: string | null;
   onSelectDay: (d: string) => void;
 };
@@ -51,7 +52,7 @@ function bands(clin: [number, number] | null, sel: number) {
   };
 }
 
-export function MetricTrends({ tl, cfg, crit, theta, present, selectedDay, onSelectDay }: Props) {
+export function MetricTrends({ tl, cfg, crit, theta, present, presentLabel, selectedDay, onSelectDay }: Props) {
   const spec = cfg.criteria[crit] ?? {};
   const metrics = Object.entries(spec).sort((a, b) => b[1].w - a[1].w);
 
@@ -66,7 +67,7 @@ export function MetricTrends({ tl, cfg, crit, theta, present, selectedDay, onSel
         ...b.tooltip,
         formatter: (ps: { dataIndex: number }[]) => {
           const i = ps[0].dataIndex; const d = tl.days[i];
-          return `<b>${d.date}</b> · ${d.phase}<br/>L<sub>${crit}</sub> = ${fmtNum(L[i])}${present[i] ? " · <b>present</b>" : ""}`;
+          return `<b>${d.date}</b> · ${d.phase}<br/>L<sub>${crit}</sub> = ${fmtNum(L[i])}${present[i] ? ` · <b>${presentLabel}</b>` : ""}`;
         },
       },
       series: [{
@@ -82,7 +83,7 @@ export function MetricTrends({ tl, cfg, crit, theta, present, selectedDay, onSel
         },
       }],
     };
-  }, [tl, crit, theta, present, selectedDay]);
+  }, [tl, crit, theta, present, presentLabel, selectedDay]);
 
   return (
     <section className="card">

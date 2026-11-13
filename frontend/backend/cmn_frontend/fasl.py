@@ -6,8 +6,9 @@ extracts the original functions from the page source and checks that both give t
 
 Differences to the page, both deliberate:
 - tau is passed in explicitly instead of being read from Streamlit's session state.
-- The gate is evaluated for every day (rolling), not only for the last M days, so the UI can show
-  when a criterion turns present. For the last day it is identical to the page's gate_present().
+- The gate is applied per phase (phase_gate: the page's gate_present on one phase's days only, as
+  the evaluation's score_phases). A rolling per-day variant (gate_present_rolling) exists only for
+  the optional "mixes phases" view.
 """
 
 from __future__ import annotations
@@ -230,6 +231,41 @@ def gate_present_rolling(likelihoods: Sequence[float | None], theta: float, need
         tail = hist[-int(window):] if window > 0 else []
         out.append(bool(tail) and sum(1 for x in tail if x >= float(theta)) >= int(need_days))
     return out
+
+
+def gate_present(likelihoods: Sequence[float | None], theta: float, need_days: int, window: int) -> bool:
+    """The page's gate_present: at least `need_days` of the last `window` days with data have L >= theta."""
+    vals = [f for f in (_finite_or_none(v) for v in likelihoods) if f is not None]
+    tail = vals[-int(window):] if window > 0 else []
+    return bool(tail) and sum(1 for x in tail if x >= float(theta)) >= int(need_days)
+
+
+def phase_gate(L_by_crit: Mapping[str, Sequence[float | None]], params: GateParams) -> dict[str, Any]:
+    """The gate on one phase's days only (evaluation/compare.py score_phases, scoring.gate).
+
+    `L_by_crit` holds each configured criterion's likelihoods over the phase's days in date order.
+    days = days in the window (last M of the phase), days_over = days in the window with L >= theta,
+    present = the page's gate_present on those days, episode = >= min_present present incl. a core.
+    """
+    window = int(params.window)
+    n_days = max((len(v) for v in L_by_crit.values()), default=0)
+    crit = {}
+    for c, L in L_by_crit.items():
+        tail = list(L)[-window:] if window > 0 else []
+        crit[c] = {
+            "days_over": sum(1 for v in tail if (f := _finite_or_none(v)) is not None and f >= params.theta),
+            "present": gate_present(L, params.theta, params.need_days, window),
+        }
+    on = [c for c, v in crit.items() if v["present"]]
+    core_present = any(c in on for c in params.core)
+    return {
+        "days": min(n_days, window) if window > 0 else 0,
+        "n_phase_days": n_days,
+        "criteria": crit,
+        "total_present": len(on),
+        "core_present": core_present,
+        "episode": core_present and len(on) >= params.min_present,
+    }
 
 
 def episode_flags(present: Mapping[str, Sequence[bool]], params: GateParams) -> list[bool]:

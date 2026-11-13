@@ -1,13 +1,22 @@
-import type { Config, CritKey, Expectation, Timeline } from "../api";
+import type { Config, CritKey, Expectation, PhaseKey, Timeline } from "../api";
 import { CRIT_KEYS } from "../api";
-import { daysAbove } from "../lib/gate";
+import { fmtDay } from "../lib/format";
+import type { GateParams, PhaseGate } from "../lib/gate";
+
+/** Gate result of one phase plus what it was computed on. */
+export interface PhaseView extends PhaseGate {
+  counted: string[];              // dates in the window (last M complete days of the phase)
+  inProgress: string[];           // today's day while it is still being ingested (not counted)
+  plannedFirst: string | null;
+  plannedLast: string | null;
+  plannedDays: number;
+}
 
 type Props = {
   tl: Timeline;
   cfg: Config;
-  present: Partial<Record<CritKey, boolean[]>>;
-  episode: boolean[];
-  theta: number;
+  phases: Record<PhaseKey, PhaseView>;
+  gate: GateParams;
   selected: CritKey | null;
   onSelect: (c: CritKey) => void;
 };
@@ -20,6 +29,8 @@ const EXPECT_LABEL: Record<Expectation, string> = {
   flag: "flag (outside gate)",
 };
 
+const PHASE_TITLE: Record<PhaseKey, string> = { baseline: "Baseline", clinical: "Clinical" };
+
 /** Does the observed gate state agree with the profile's expectation? */
 export function agreement(expected: Expectation | undefined, observed: boolean | null): "match" | "miss" | "open" {
   if (expected === undefined || observed === null) return "open";
@@ -27,56 +38,69 @@ export function agreement(expected: Expectation | undefined, observed: boolean |
   return (expected === "present") === observed ? "match" : "miss";
 }
 
-function lastIndex(days: Timeline["days"], pred: (d: Timeline["days"][number]) => boolean): number {
-  for (let i = days.length - 1; i >= 0; i--) if (pred(days[i])) return i;
-  return -1;
+export function phaseSpan(p: PhaseView): string {
+  return p.plannedFirst && p.plannedLast ? `${fmtDay(p.plannedFirst)}–${fmtDay(p.plannedLast)}` : "";
 }
 
-export function CriteriaSummary({ tl, cfg, present, episode, theta, selected, onSelect }: Props) {
-  const days = tl.days;
-  const baseIdx = days.map((d, i) => (d.phase === "baseline" ? i : -1)).filter((i) => i >= 0);
-  const clinIdx = days.map((d, i) => (d.phase === "clinical" ? i : -1)).filter((i) => i >= 0);
-  const lastBase = lastIndex(days, (d) => d.phase === "baseline");
-  const lastClin = lastIndex(days, (d) => d.phase === "clinical");
-  const nClinPlanned = 14;
+/** Fewer days than the window M: the gate cannot reach its final state yet. */
+export function isPreliminary(p: PhaseView, gate: GateParams): boolean {
+  return p.days < gate.M;
+}
 
-  const state = (c: CritKey, i: number): boolean | null =>
-    i < 0 || !present[c] ? null : !!present[c]![i];
+export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: Props) {
+  const clin = phases.clinical;
+  const prelim = isPreliminary(clin, gate);
+  const order: PhaseKey[] = ["baseline", "clinical"];
 
-  const cell = (v: boolean | null) =>
-    v === null ? <span className="muted">–</span>
+  const gateCell = (v: boolean | undefined, p: PhaseView) =>
+    v === undefined || p.days === 0 ? <span className="muted">–</span>
       : v ? <span className="status status-on">● present</span>
         : <span className="status status-off">○ absent</span>;
 
   return (
     <section className="card">
       <div className="card-head">
-        <h2>DSM-5 criteria: expected vs. observed</h2>
+        <h2>DSM-5 criteria: baseline phase vs. clinical phase</h2>
         <p className="sub">
-          Gate state at the end of the baseline and on the latest clinical day
-          {lastClin >= 0 && ` (day ${clinIdx.length} of ${nClinPlanned})`}. Days ≥ θ counts the
-          days whose likelihood reaches θ = {theta.toFixed(2)}. Click a row for its metrics.
+          The gate is evaluated on each phase's own days: a criterion is present when L ≥ θ = {gate.theta.toFixed(2)} on
+          at least N = {gate.N} of the phase's last M = {gate.M} days. Warm-up and the day still being ingested
+          {clin.inProgress.length > 0 && ` (${clin.inProgress.map(fmtDay).join(", ")})`} are not counted.
+          Click a row for its metrics.
         </p>
+        {prelim && clin.days > 0 && (
+          <p className="prelim">
+            <b>Preliminary:</b> the clinical phase has {clin.days} of {gate.M} days so far
+            ({clin.plannedDays} planned, until {clin.plannedLast ? fmtDay(clin.plannedLast) : "–"}); a criterion needs
+            L ≥ θ on {gate.N} of {gate.M}. "Clinical vs. expected" compares the current state.
+          </p>
+        )}
       </div>
       <div className="table-wrap">
         <table className="crit-table">
           <thead>
             <tr>
-              <th>Criterion</th>
-              <th>Expected (§9)</th>
-              <th className="num">Baseline<br />days ≥ θ</th>
-              <th>End of baseline</th>
-              <th className="num">Clinical<br />days ≥ θ</th>
-              <th>Latest clinical</th>
-              <th>vs. expected</th>
+              <th rowSpan={2}>Criterion</th>
+              <th rowSpan={2}>Expected (§9, clinical)</th>
+              {order.map((ph) => (
+                <th key={ph} colSpan={2} className="phase-head">
+                  {PHASE_TITLE[ph]} {phaseSpan(phases[ph]) && <span className="muted">({phaseSpan(phases[ph])})</span>}
+                  {ph === "clinical" && prelim && <span className="tag tag-warn">preliminary</span>}
+                </th>
+              ))}
+              <th rowSpan={2}>Clinical vs. expected</th>
+            </tr>
+            <tr>
+              {order.map((ph) => [
+                <th key={`${ph}-n`} className="num">days L ≥ θ</th>,
+                <th key={`${ph}-g`}>gate</th>,
+              ])}
             </tr>
           </thead>
           <tbody>
             {CRIT_KEYS.map((c) => {
               const configured = Object.keys(cfg.criteria[c] ?? {}).length > 0;
               const exp = tl.persona.expected[c];
-              const L = days.map((d) => d.L[c]);
-              const obs = state(c, lastClin);
+              const obs = clin.days > 0 ? clin.criteria[c]?.present ?? null : null;
               const agr = configured ? agreement(exp?.present, obs) : "open";
               return (
                 <tr key={c}
@@ -91,28 +115,41 @@ export function CriteriaSummary({ tl, cfg, present, episode, theta, selected, on
                     {exp ? EXPECT_LABEL[exp.present] : "–"}
                     {exp?.note && <div className="note">{exp.note}</div>}
                   </td>
-                  <td className="num">{configured ? daysAbove(L, theta, baseIdx) + " / " + baseIdx.length : "–"}</td>
-                  <td>{configured ? cell(state(c, lastBase)) : <span className="muted">–</span>}</td>
-                  <td className="num">{configured ? daysAbove(L, theta, clinIdx) + " / " + clinIdx.length : "–"}</td>
-                  <td>{configured ? cell(obs) : <span className="muted">–</span>}</td>
+                  {order.map((ph) => {
+                    const p = phases[ph];
+                    const r = p.criteria[c];
+                    return [
+                      <td key={`${ph}-n`} className="num">
+                        {configured && r ? `${r.daysOver} of ${p.days}` : "–"}
+                      </td>,
+                      <td key={`${ph}-g`}>{configured ? gateCell(r?.present, p) : <span className="muted">–</span>}</td>,
+                    ];
+                  })}
                   <td>
-                    {agr === "match" && <span className="agree">✓ as expected</span>}
-                    {agr === "miss" && <span className="disagree">✗ differs</span>}
+                    {agr === "match" && <span className="agree">✓ as expected{prelim ? " so far" : ""}</span>}
+                    {agr === "miss" && <span className="disagree">✗ differs{prelim ? " so far" : ""}</span>}
                     {agr === "open" && <span className="muted">{configured && exp ? "see note" : "–"}</span>}
                   </td>
                 </tr>
               );
             })}
             <tr className="episode-row">
-              <td><b>Episode</b> ≥ 5 present incl. core ({cfg.core.join(", ")})</td>
+              <td><b>Episode</b> ≥ {gate.minPresent} present incl. core ({cfg.core.join(", ")})</td>
               <td title={tl.persona.episode?.note}>
                 {tl.persona.episode?.expected ?? "–"}
                 {tl.persona.episode?.note && <div className="note">{tl.persona.episode.note}</div>}
               </td>
-              <td />
-              <td>{lastBase >= 0 ? (episode[lastBase] ? <span className="status status-on">● likely</span> : <span className="status status-off">○ no</span>) : "–"}</td>
-              <td />
-              <td>{lastClin >= 0 ? (episode[lastClin] ? <span className="status status-on">● likely</span> : <span className="status status-off">○ no</span>) : "–"}</td>
+              {order.map((ph) => {
+                const p = phases[ph];
+                return [
+                  <td key={`${ph}-n`} className="num">{p.days > 0 ? `${p.totalPresent} present` : "–"}</td>,
+                  <td key={`${ph}-g`}>
+                    {p.days === 0 ? <span className="muted">–</span>
+                      : p.episode ? <span className="status status-on">● likely</span>
+                        : <span className="status status-off">○ no</span>}
+                  </td>,
+                ];
+              })}
               <td />
             </tr>
           </tbody>

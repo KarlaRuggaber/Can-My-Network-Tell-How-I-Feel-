@@ -121,3 +121,6 @@ footer { margin-top: 8px; }
   .split { grid-template-columns: 1fr; }
   .metric-grid { grid-template-columns: 1fr; }
 }
+.prelim { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; background: #fdf1d8; color: var(--text); font-size: 12.5px; }
+.phase-head { text-align: center; border-bottom: 1px solid var(--line); color: var(--text); font-weight: 600; }
+.rolling-toggle { margin-left: auto; font-size: 12px; }

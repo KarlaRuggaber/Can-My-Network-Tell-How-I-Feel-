@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Config, CritKey, PersonaListItem, Timeline } from "./api";
+import type { Config, CritKey, PersonaListItem, PhaseKey, Timeline } from "./api";
 import { api, CRIT_KEYS } from "./api";
-import { CriteriaSummary } from "./components/CriteriaSummary";
+import { CriteriaSummary, type PhaseView } from "./components/CriteriaSummary";
 import { DayDetail } from "./components/DayDetail";
 import { Heatmap } from "./components/Heatmap";
 import { MetricTrends } from "./components/MetricTrends";
-import { episodeFlags, gatePresentRolling, type GateParams } from "./lib/gate";
+import { episodeFlags, gatePresentRolling, phaseGate, type GateParams } from "./lib/gate";
+
+const PHASES: PhaseKey[] = ["baseline", "clinical"];
 
 // URL state: #/<dataset>/<day>/<criterion>, so a view can be bookmarked for the video.
 function readHash(): { ds?: string; day?: string; crit?: CritKey } {
@@ -23,6 +25,7 @@ export default function App() {
   const [day, setDay] = useState<string | null>(init.day ?? null);
   const [crit, setCrit] = useState<CritKey | null>(init.crit ?? null);
   const [gate, setGate] = useState<GateParams | null>(null);
+  const [rolling, setRolling] = useState(false);   // optional extra view; mixes phases
 
   useEffect(() => {
     Promise.all([api.config(), api.personas()])
@@ -63,12 +66,42 @@ export default function App() {
     () => (cfg ? CRIT_KEYS.filter((c) => Object.keys(cfg.criteria[c] ?? {}).length > 0) : []),
     [cfg]);
 
-  const { present, episode } = useMemo(() => {
-    if (!tl || !gate) return { present: {}, episode: [] as boolean[] };
-    const p: Partial<Record<CritKey, boolean[]>> = {};
-    for (const c of configured) p[c] = gatePresentRolling(tl.days.map((d) => d.L[c]), gate.theta, gate.N, gate.M);
-    return { present: p, episode: episodeFlags(p as Record<string, boolean[]>, gate) };
+  // Default: the gate per phase, on each phase's complete days only (as the evaluation).
+  const phases = useMemo(() => {
+    if (!tl || !gate) return null;
+    const out = {} as Record<PhaseKey, PhaseView>;
+    for (const ph of PHASES) {
+      const idx = tl.days.map((d, i) => (d.phase === ph && d.complete ? i : -1)).filter((i) => i >= 0);
+      const L = Object.fromEntries(configured.map((c) => [c, idx.map((i) => tl.days[i].L[c])]));
+      const info = tl.gate.phases[ph];
+      out[ph] = {
+        ...phaseGate(L, gate),
+        counted: (gate.M > 0 ? idx.slice(-gate.M) : []).map((i) => tl.days[i].date),
+        inProgress: tl.days.filter((d) => d.phase === ph && !d.complete).map((d) => d.date),
+        plannedFirst: info?.planned_first ?? null,
+        plannedLast: info?.planned_last ?? null,
+        plannedDays: info?.planned_days ?? 0,
+      };
+    }
+    return out;
   }, [tl, gate, configured]);
+
+  // Per-day marks for the heatmap, trends and day detail: by default a day carries its phase's
+  // gate result if it is counted in it; the rolling window (mixes phases) only on request.
+  const { present, episode } = useMemo(() => {
+    if (!tl || !gate || !phases) return { present: {}, episode: [] as boolean[] };
+    const p: Partial<Record<CritKey, boolean[]>> = {};
+    if (rolling) {
+      for (const c of configured) p[c] = gatePresentRolling(tl.days.map((d) => d.L[c]), gate.theta, gate.N, gate.M);
+      return { present: p, episode: episodeFlags(p as Record<string, boolean[]>, gate) };
+    }
+    const phaseOf = (d: Timeline["days"][number]) =>
+      PHASES.find((ph) => ph === d.phase && phases[ph].counted.includes(d.date));
+    for (const c of configured) {
+      p[c] = tl.days.map((d) => { const ph = phaseOf(d); return !!ph && !!phases[ph].criteria[c]?.present; });
+    }
+    return { present: p, episode: tl.days.map((d) => { const ph = phaseOf(d); return !!ph && phases[ph].episode; }) };
+  }, [tl, gate, configured, phases, rolling]);
 
   if (error) return <div className="page"><p className="error">Could not load data: {error}. Is the API running and has the export been run?</p></div>;
   if (!cfg || !personas || !gate) return <div className="page"><p className="muted">Loading…</p></div>;
@@ -106,6 +139,10 @@ export default function App() {
         <button className="link" disabled={isDefault}
           onClick={() => setGate({ ...gate, theta: cfg.theta, N: cfg.N, M: cfg.M })}>reset to fasl_config.json</button>
         <span className="muted small">{isDefault ? "as configured" : "changed: not saved"} · weights and membership functions from <code>fasl_config.json</code></span>
+        <label className="rolling-toggle" title="Day marks in the grid and trends from a rolling window over the last M days instead of per phase. Right after the switch the window is mostly baseline days.">
+          <input type="checkbox" checked={rolling} onChange={(e) => setRolling(e.target.checked)} />
+          day marks: rolling {gate.M}-day window <span className="tag tag-warn">mixes phases</span>
+        </label>
       </div>
 
       {!tl && <p className="muted">Loading persona…</p>}
@@ -124,13 +161,15 @@ export default function App() {
             </dl>
           </section>
 
-          <CriteriaSummary tl={tl} cfg={cfg} present={present} episode={episode} theta={gate.theta}
-            selected={activeCrit} onSelect={setCrit} />
+          {phases && (
+            <CriteriaSummary tl={tl} cfg={cfg} phases={phases} gate={gate}
+              selected={activeCrit} onSelect={setCrit} />
+          )}
           <Heatmap tl={tl} cfg={cfg} present={present} episode={episode} theta={gate.theta}
-            selectedDay={day} onSelectDay={setDay} />
+            rolling={rolling} M={gate.M} selectedDay={day} onSelectDay={setDay} />
           {activeCrit && (
             <MetricTrends tl={tl} cfg={cfg} crit={activeCrit} theta={gate.theta}
-              present={present[activeCrit] ?? []} selectedDay={day} onSelectDay={setDay} />
+              present={present[activeCrit] ?? []} presentLabel={rolling ? `present (rolling ${gate.M} days, mixes phases)` : "present in this phase"} selectedDay={day} onSelectDay={setDay} />
           )}
           {dayIndex >= 0 && (
             <DayDetail dataset={tl.dataset} day={tl.days[dayIndex]} cfg={cfg} present={present} dayIndex={dayIndex} />

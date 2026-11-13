@@ -45,14 +45,25 @@ export interface Day {
   parts: Partial<Record<CritKey, Record<string, MetricPart>>>;
 }
 
+export type PhaseKey = "baseline" | "clinical";
+
+export interface PhaseInfo {
+  days: number; n_phase_days: number; total_present: number; core_present: boolean; episode: boolean;
+  criteria: Partial<Record<CritKey, { days_over: number; present: boolean }>>;
+  planned_first: string | null; planned_last: string | null; planned_days: number;
+  counted: string[]; in_progress: string[];
+}
+
 export interface Timeline {
   dataset: string;
   persona: PersonaMeta;
   days: Day[];
   gate: {
     params: { theta: number; N: number; M: number; core: string[]; min_present: number };
-    present: Partial<Record<CritKey, boolean[]>>;
-    episode: boolean[];
+    /** Per-phase gate with the configured parameters (the UI recomputes it for its sliders). */
+    phases: Record<PhaseKey, PhaseInfo>;
+    /** Rolling window over the last M days: optional extra view, mixes phases. */
+    rolling: { present: Partial<Record<CritKey, boolean[]>>; episode: boolean[]; note: string };
   };
   baseline_stats: Record<string, { mean: number; sd: number; n: number }>;
 }

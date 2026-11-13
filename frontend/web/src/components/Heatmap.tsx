@@ -18,12 +18,15 @@ type Props = {
   present: Partial<Record<CritKey, boolean[]>>;
   episode: boolean[];
   theta: number;
+  rolling: boolean;
+  M: number;
   selectedDay: string | null;
   onSelectDay: (d: string) => void;
 };
 
 /** Day × criterion grid of daily likelihoods L, with the phase strip and gate state. */
-export function Heatmap({ tl, cfg, present, episode, theta, selectedDay, onSelectDay }: Props) {
+export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selectedDay, onSelectDay }: Props) {
+  const gateWord = rolling ? `rolling ${M}-day window, mixes phases` : "gate of this day's phase";
   const crits = CRIT_KEYS.filter((c) => Object.keys(cfg.criteria[c] ?? {}).length > 0);
   const days = tl.days;
   const xs = days.map((d) => `${fmtDay(d.date)}\n${d.weekday.slice(0, 2)}`);
@@ -72,14 +75,14 @@ export function Heatmap({ tl, cfg, present, episode, theta, selectedDay, onSelec
           const row = rows[p.data[1]];
           const head = `<b>${d.date} (${d.weekday})</b> · ${d.phase}${d.complete ? "" : " · incomplete"}`;
           if (row === "Phase") return `${head}<br/>${d.ground_truth.n_blocks} scripted blocks, ${d.ground_truth.n_profile_blocks} clinical-profile`;
-          if (row === "Criteria present") return `${head}<br/>${nPresent[i]} criteria present (gate)`;
-          if (row === "Episode") return `${head}<br/>episode ${episode[i] ? "likely" : "not likely"}`;
+          if (row === "Criteria present") return `${head}<br/>${nPresent[i]} criteria present (${gateWord})`;
+          if (row === "Episode") return `${head}<br/>episode ${episode[i] ? "likely" : "not likely"} (${gateWord})`;
           const c = row as CritKey;
           const L = d.L[c];
           const lines = Object.entries(d.parts[c] ?? {})
             .sort((a, b) => b[1].w * b[1].mu - a[1].w * a[1].mu)
             .map(([k, m]) => `${cfg.metric_labels[k] ?? k}: μ ${m.mu.toFixed(2)} × w ${m.w}`);
-          return `${head}<br/><b>${c}</b> L = ${L == null ? "–" : L.toFixed(2)}${present[c]?.[i] ? " · <b>present</b>" : ""}<br/><span style="color:${C.text2}">${lines.join("<br/>")}</span>`;
+          return `${head}<br/><b>${c}</b> L = ${L == null ? "–" : L.toFixed(2)}${present[c]?.[i] ? ` · <b>present</b> (${gateWord})` : ""}<br/><span style="color:${C.text2}">${lines.join("<br/>")}</span>`;
         },
       },
       xAxis: {
@@ -113,7 +116,7 @@ export function Heatmap({ tl, cfg, present, episode, theta, selectedDay, onSelec
         },
       }],
     };
-  }, [tl, cfg, present, episode, theta, selectedDay]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tl, cfg, present, episode, theta, rolling, M, selectedDay]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const height = 60 + rows.length * 34;
   return (
@@ -123,7 +126,9 @@ export function Heatmap({ tl, cfg, present, episode, theta, selectedDay, onSelec
         <p className="sub">
           Cell = likelihood L<sub>k</sub> of the day (darker = higher).{" "}
           <span className="key"><i className="dot" style={{ background: C.warning }} /> L ≥ θ</span>{" "}
-          <span className="key"><i className="bar" style={{ background: C.critical }} /> criterion present (≥ N of the last M days ≥ θ)</span>.
+          <span className="key"><i className="bar" style={{ background: C.critical }} /> {rolling
+            ? <>criterion present in a rolling window of the last {M} days <span className="tag tag-warn">mixes phases</span></>
+            : <>criterion present in the day's phase (gate on that phase's days; marked on the counted days)</>}</span>.
           Click a day for its ground truth.
         </p>
       </div>
