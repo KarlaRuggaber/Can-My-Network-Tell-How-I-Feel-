@@ -21,16 +21,24 @@ export function Chart({ option, height, onClick, ariaLabel }: Props) {
     const c = echarts.init(el.current, undefined, { renderer: "svg" });
     inst.current = c;
     c.on("click", (p) => clickRef.current?.(p as echarts.ECElementEvent));
-    let frame = 0;
+    // While the page slides (assistant panel) or the window is dragged, the container changes size
+    // every frame. Redrawing the chart each frame stutters; instead it is clipped meanwhile and
+    // morphs to the new size once the container has settled.
+    let timer = 0;
+    let first = true;
     const ro = new ResizeObserver(() => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => c.resize());
+      if (first) { first = false; return; }          // initial observation: already sized by init
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        c.resize(reduce ? undefined : { animation: { duration: 260, easing: "cubicOut" } });
+      }, 90);
     });
     ro.observe(el.current);
-    return () => { cancelAnimationFrame(frame); ro.disconnect(); c.dispose(); inst.current = null; };
+    return () => { window.clearTimeout(timer); ro.disconnect(); c.dispose(); inst.current = null; };
   }, []);
 
   useEffect(() => { inst.current?.setOption({ textStyle: { fontFamily: FONT.sans }, ...option }, { notMerge: true }); }, [option]);
 
-  return <div ref={el} style={{ height, width: "100%" }} role="img" aria-label={ariaLabel} />;
+  return <div ref={el} className="chart" style={{ height, width: "100%" }} role="img" aria-label={ariaLabel} />;
 }
