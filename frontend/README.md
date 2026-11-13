@@ -197,6 +197,32 @@ cd frontend/web && npm run build
    the tailnet can open. Start the API with `CMN_COOKIE_SECURE=1` then, so the login cookie is only
    sent over HTTPS.
 
+### Deploy on the gateway mini-PC (reachable only in the tailnet)
+
+The mini-PC serves the portal; the laptop keeps computing (the export needs 1–3 GB per day and up to
+~7 GB for a heavy day, which the mini-PC cannot spare during the live run). Files in `deploy/`:
+
+| File | Purpose |
+|---|---|
+| `Dockerfile`, `docker-compose.yml` | Container `cmn-portal` on top of the app's `app-app` image, host network, `127.0.0.1:8600` only, 512 MB limit, data mounted read-only |
+| `deploy-gateway.sh` | Builds the UI, copies the code to `/opt/cmn-portal/frontend`, (re)builds and starts the container |
+| `sync-gateway.sh [--watch 900]` | Pulls new partitions and plans and the portal's `profiles.json`, runs the export on the laptop, pushes the day records to `/var/lib/cmn-portal/cache` |
+| `gateway.env.example` | Host, user, key and sources; copy to `gateway.env` to change them |
+
+One-time steps:
+
+1. Tailscale admin console → DNS → enable **HTTPS Certificates** (needed by `tailscale serve`).
+2. `frontend/deploy/deploy-gateway.sh`, then `frontend/deploy/sync-gateway.sh`.
+3. Logins on the mini-PC: `sudo docker exec -it cmn-portal python -m cmn_frontend.users add …`
+   (or copy `users.json` from the laptop to `/var/lib/cmn-portal/home/`). The assistant is set up
+   in the portal under Settings → Assistant.
+4. Publish in the tailnet: `sudo tailscale serve --bg 8600` and allow HTTPS on `tailscale0` in
+   `/etc/nftables.conf` (`iifname "tailscale0" tcp dport 443 accept`, after a backup and
+   `sudo nft -c -f`). The portal is then at `https://minipc.<tailnet>.ts.net`.
+
+Rollback: `sudo tailscale serve reset`, restore the nftables backup, `sudo docker compose -f
+/opt/cmn-portal/frontend/deploy/docker-compose.yml down`.
+
 Do not put it on the public internet: the data is personal (health-related inferences), and the
 login has no rate limiting or second factor.
 
