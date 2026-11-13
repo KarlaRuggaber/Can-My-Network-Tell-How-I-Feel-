@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, type AssistantStatus, type ChatTurn } from "../api";
 import { Markdown } from "./Markdown";
 
@@ -115,7 +116,9 @@ export function Assistant({ open, onToggle, profileId, person, focus }: Props) {
   if (person && status && !status.enabled) return null;   // nothing to offer the person
 
   // Panel and tab stay mounted so opening and closing can slide; the closed panel is inert.
-  return (
+  // Rendered into <body>: the page gets a transform while it glides, and a transformed ancestor
+  // would make this fixed panel position itself against the page instead of the window.
+  return createPortal(
     <>
       <button className={`assistant-tab ${open ? "is-hidden" : ""}`} onClick={() => onToggle(true)}
         aria-expanded={open} aria-controls="assistant-panel" tabIndex={open ? -1 : 0}>
@@ -180,6 +183,7 @@ export function Assistant({ open, onToggle, profileId, person, focus }: Props) {
         </div>
       )}
     </aside>
-    </>
+    </>,
+    document.body,
   );
 }
