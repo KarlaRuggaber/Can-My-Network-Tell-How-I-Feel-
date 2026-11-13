@@ -12,7 +12,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from utils.acronyms import render_acronyms_helper_in_sidebar
-from utils.partitions import dataset_signature, newest_partition_mtime
+from utils.partitions import dataset_signature
+from metrics.daily_cache import update_feature_cache
 
 from metrics.base_features import compute_daily_base_record
 from metrics.common import drop_background, enrich_with_hostnames
@@ -292,13 +293,6 @@ def list_partition_files(base_name: str) -> list[str]:
     return sorted(os.path.join(d, f) for f in os.listdir(d) if f.endswith(".parquet"))
 
 
-def _safe_mtime(path: str) -> float:
-    try:
-        return os.path.getmtime(path)
-    except OSError:
-        return 0.0
-
-
 def partition_file_to_start_dt(path: str):
     m = re.search(r"__(\d{8})_(\d{4})\.parquet$", os.path.basename(path))
     if not m:
@@ -308,104 +302,6 @@ def partition_file_to_start_dt(path: str):
         return pd.to_datetime(datestr + timestr, format="%Y%m%d%H%M")
     except Exception:
         return None
-
-
-def _read_parquet_with_pyarrow(fp: str) -> pd.DataFrame | None:
-    try:
-        import pyarrow as pa
-        import pyarrow.parquet as pq
-    except Exception:
-        return None
-
-    try:
-        pf = pq.ParquetFile(fp)
-    except Exception:
-        return None
-
-    tables = []
-    for i in range(pf.num_row_groups):
-        try:
-            tables.append(pf.read_row_group(i))
-        except Exception:
-            continue
-    if not tables:
-        return None
-    try:
-        return pa.concat_tables(tables, promote=True).to_pandas()
-    except Exception:
-        return None
-
-
-def _read_parquet_with_fastparquet(fp: str) -> pd.DataFrame | None:
-    try:
-        import fastparquet
-    except Exception:
-        return None
-    try:
-        pf = fastparquet.ParquetFile(fp)
-        return pf.to_pandas()
-    except Exception:
-        return None
-
-
-def _load_parquet_file(fp: str) -> pd.DataFrame | None:
-    try:
-        return pd.read_parquet(fp)
-    except Exception:
-        pass
-
-    df = _read_parquet_with_pyarrow(fp)
-    if df is not None:
-        return df
-
-    return _read_parquet_with_fastparquet(fp)
-
-
-@st.cache_data(show_spinner=False, max_entries=256)
-def _load_day_dataframe_cached(
-    day_key: str, file_sigs: tuple[tuple[str, float], ...]
-) -> pd.DataFrame:
-    """Load and enrich all parquet partitions for a given day; reused across reruns."""
-    if not file_sigs:
-        return pd.DataFrame(columns=["Timestamp"])
-
-    day = pd.to_datetime(day_key).normalize()
-    next_day = day + pd.Timedelta(days=1)
-    dfs: List[pd.DataFrame] = []
-    for fp, _ in file_sigs:
-        df = _load_parquet_file(fp)
-        if df is None:
-            continue
-        df = df.copy()
-        # derive Timestamp if only Date/Hour present
-        if "Timestamp" not in df.columns and {"Date", "Hour"}.issubset(df.columns):
-            df["Timestamp"] = pd.to_datetime(df["Date"].astype(str)) + pd.to_timedelta(
-                df["Hour"], unit="h"
-            )
-        df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce")
-        dfs.append(df)
-    if not dfs:
-        return pd.DataFrame(columns=["Timestamp"])
-    out = pd.concat(dfs, ignore_index=True)
-    out = out[(out["Timestamp"] >= day) & (out["Timestamp"] < next_day)].copy()
-    out["Date"] = out["Timestamp"].dt.date
-    out["Hour"] = out["Timestamp"].dt.hour
-    out = drop_background(enrich_with_hostnames(out))
-    return out
-
-
-def load_day_dataframe(base_name: str, day) -> pd.DataFrame:
-    day = pd.to_datetime(day).normalize()
-    next_day = day + pd.Timedelta(days=1)
-    chosen = []
-    for p in list_partition_files(base_name):
-        dt = partition_file_to_start_dt(p)
-        if dt is not None and (day <= dt) and (dt < next_day):
-            chosen.append(p)
-    if not chosen:
-        return pd.DataFrame(columns=["Timestamp"])
-    file_sigs = tuple((fp, _safe_mtime(fp)) for fp in chosen)
-    return _load_day_dataframe_cached(day.isoformat(), file_sigs)
 
 
 def available_days_for(base_names: list[str]) -> list[pd.Timestamp]:
@@ -419,62 +315,17 @@ def available_days_for(base_names: list[str]) -> list[pd.Timestamp]:
 
 
 @st.cache_data(show_spinner=False)
-def compute_all_daily(base_names: list[str], days: list[pd.Timestamp], data_sig: str = "") -> pd.DataFrame:
-    # data_sig only keys the memo cache, so new or rewritten partitions trigger a recompute.
+def compute_all_daily(base_names: list[str], days: list[pd.Timestamp], data_sig: str = "",
+                      force: bool = False) -> pd.DataFrame:
+    """ALL_DAILY via metrics.daily_cache: the same cache file and computation as Network Metrics.
+    Missing or changed days are computed one per short process (memory), and the cache file is
+    saved after every day. data_sig only keys the memo cache (new partitions -> re-check)."""
     if not base_names or not days:
         return pd.DataFrame(columns=["Date"])
-
-    rows: List[dict] = []
-    day_list = sorted({pd.to_datetime(d).normalize() for d in days})
-
-    for d in day_list:
-        frames = []
-        for bn in base_names:
-            df_b = load_day_dataframe(bn, d)
-            if not df_b.empty:
-                frames.append(df_b)
-        if not frames:
-            continue
-
-        df_day = pd.concat(frames, ignore_index=True)
-        df_day["Timestamp"] = pd.to_datetime(df_day["Timestamp"], errors="coerce")
-        df_day = df_day.dropna(subset=["Timestamp"]).sort_values("Timestamp")
-
-        today = compute_daily_base_record(df_day)
-        today["Date"] = pd.to_datetime(d).normalize()
-
-        history_df = pd.DataFrame(rows).sort_values("Date") if rows else pd.DataFrame(columns=["Date"])
-        aux_ctx = {
-            "today_row": today,
-            "ALL_DAILY": history_df,
-            "IS_val": today.get("IS"),
-            "IV_val": today.get("IV"),
-            "nd_ratio": today.get("ND_Ratio"),
-            "n_total_packets_today": today.get("n_total_packets_today"),
-            "n_night_packets_today": today.get("n_night_packets_today"),
-            "night_pkts_today": today.get("night_pkts_today"),
-            "day_pkts_today": today.get("day_pkts_today"),
-            "down_bytes_today": today.get("down_bytes_today"),
-            "up_bytes_today": today.get("up_bytes_today"),
-        }
-
-        for crit in get_criterion_instances():
-            try:
-                metrics = crit.compute(df_day, today, aux_ctx, history_df)
-            except Exception:
-                continue
-            if not metrics:
-                continue
-            for m in metrics:
-                dist_col = m.get("dist_col")
-                if dist_col:
-                    today[dist_col] = m.get("value")
-
-        rows.append(today)
-
-    if not rows:
-        return pd.DataFrame(columns=["Date"])
-    df_out = pd.DataFrame(rows).sort_values("Date")
+    with st.status("Checking the per-day metrics cache…", expanded=False) as s:
+        df_out = update_feature_cache(PROCESSED_DIR, FEATURE_CACHE_DIR, base_names, days, force=force,
+                                      progress=lambda msg: s.update(label=msg, state="running"))
+        s.update(label=f"{len(df_out)} day(s) computed or loaded.", state="complete")
     return df_out
 
 
@@ -951,7 +802,8 @@ with st.sidebar:
             "Select dataset groups (prefix match)",
             options=group_display_options,
             key="fasl_group_tokens",
-            default=["[ALL OTHER]"],
+            # Nothing by default: a dataset is one person (see 02_Network_Metrics.py).
+            default=[],
         )
         selected_cache_files = []
         _register_widget_change("Select dataset groups (prefix match)", "fasl_group_tokens", selected_group_tokens)
@@ -973,7 +825,7 @@ if not use_feature_cache:
 
 selected_base_names = sorted(auto_selected_from_groups)
 if not use_feature_cache and not selected_base_names:
-    st.info("No datasets selected. Choose dataset type(s) and group(s) in the sidebar.")
+    st.info("No dataset selected. Pick one person (one dataset, e.g. gw_insomnia_a) under 'Select dataset groups' in the sidebar.")
     _finalize_change_tracker_and_stop()
 if use_feature_cache and not selected_cache_files:
     st.info("Select a feature cache snapshot to continue.")
@@ -1143,35 +995,20 @@ with col_s_right:
             "Building per-day base features (ALL_DAILY)…", expanded=False
         ) as s2:
             cpath = _cache_path_for_selection(selected_base_names)
-            loaded = pd.DataFrame()
+            # A cache written before a metric existed lacks its column: recompute all days once.
+            header = []
             if os.path.isfile(cpath):
                 try:
-                    loaded = pd.read_csv(cpath, parse_dates=["Date"])
+                    header = list(pd.read_csv(cpath, nrows=0).columns)
                 except Exception:
-                    loaded = pd.DataFrame()
-            want = set(pd.to_datetime(days).normalize())
-            have = (
-                set(pd.to_datetime(loaded["Date"]).dt.normalize())
-                if (not loaded.empty and "Date" in loaded.columns)
-                else set()
-            )
-            missing = sorted(list(want - have))
-            missing_metric_cols = (
-                [col for col in EXPECTED_METRIC_COLUMNS if col not in loaded.columns]
-                if not loaded.empty
-                else list(EXPECTED_METRIC_COLUMNS)
-            )
-
-            # Partitions newer than the CSV (live ingest) make the CSV stale.
-            csv_stale = os.path.isfile(cpath) and os.path.getmtime(cpath) < newest_partition_mtime(PROCESSED_DIR, selected_base_names)
-            if loaded.empty or missing or missing_metric_cols or csv_stale:
-                ALL_DAILY = compute_all_daily(selected_base_names, days, data_signature)
-                try:
-                    ALL_DAILY.to_csv(cpath, index=False)
-                except Exception:
-                    pass
-            else:
-                ALL_DAILY = loaded.sort_values("Date")
+                    header = []
+            outdated = bool(header) and any(col not in header for col in EXPECTED_METRIC_COLUMNS)
+            # Once per session: a metric that fails on every day never gets its column.
+            forced = st.session_state.setdefault("fasl_forced_caches", set())
+            force = outdated and cpath not in forced
+            if force:
+                forced.add(cpath)
+            ALL_DAILY = compute_all_daily(selected_base_names, days, data_signature, force=force)
             s2.update(
                 label=f"DONE: {len(ALL_DAILY)} day(s) ready (cache: {'used' if os.path.isfile(cpath) else 'new'}).",
                 state="complete",

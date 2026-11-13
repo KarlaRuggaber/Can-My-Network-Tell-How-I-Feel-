@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 
 from .base import make_metric, thresholds_text
-from .common import (  # light, fast utilities
+from .common import (
+    outbound_mask, inbound_mask,  # light, fast utilities
     chat_mask,
     sessions_from_timestamps,
     streaming_inbound_mask,
@@ -354,8 +355,8 @@ def _count_long_streams_ge_2h(df: pd.DataFrame, gap_sec: int = 300) -> Tuple[flo
 def _down_up_byte_ratio(df: pd.DataFrame) -> Tuple[float, Dict[str, Any]]:
     if df.empty or not {"Source IP", "Destination IP", "Length"}.issubset(df.columns):
         return np.nan, {}
-    down = float(df.loc[df.apply(lambda r: is_inbound(r["Source IP"], r["Destination IP"]), axis=1), "Length"].sum())
-    up   = float(df.loc[df.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1), "Length"].sum())
+    down = float(df.loc[inbound_mask(df), "Length"].sum())
+    up   = float(df.loc[outbound_mask(df), "Length"].sum())
     if up <= 0 and down <= 0:
         return np.nan, {}
     if up <= 0:
