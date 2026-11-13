@@ -10,6 +10,8 @@ DATASETS = ["gw_insomnia_a", "gw_mdd_suicidality_a", "gw_social_anxiety_a"]
 
 def cmd_daily(args) -> int:
     from . import daily
+    if args.peer_external:
+        daily.peer_external()
     days = None
     if args.day:
         days = [daily.parse_day(d) for d in args.day]
@@ -40,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--day", action="append", help="only this day (YYYY-MM-DD), repeatable")
     d.add_argument("--first", help="first day")
     d.add_argument("--last", help="last day")
+    d.add_argument("--peer-external", action="store_true",
+                   help="variant: count the peer stack (10.43.0.0/24) as internet, so calls and games are up/download")
     d.set_defaults(func=cmd_daily)
     c = sub.add_parser("compare", help="baseline vs. clinical phase per persona, against expectations.yaml")
     c.add_argument("--eval", default="~/cmn-data/eval", help="folder with <dataset>.daily.csv")

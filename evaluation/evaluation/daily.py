@@ -11,6 +11,7 @@ criterion metric under its `dist_col`, with the days before it as history (`ALL_
 
 from __future__ import annotations
 
+import ipaddress
 import re
 import sys
 import time
@@ -45,6 +46,35 @@ AUX_KEYS = {"IS_val": "IS", "IV_val": "IV", "nd_ratio": "ND_Ratio", "n_total_pac
             "up_bytes_today": "up_bytes_today"}
 
 
+PEER_NETWORK = "10.43.0.0/24"   # peer stack on the gateway (Jitsi, game server): br-peer, HardwareSetup §16
+
+
+def peer_external(networks: tuple[str, ...] = (PEER_NETWORK,)) -> None:
+    """Variant: count the given private networks as public, in this process only.
+
+    The app counts a packet as upload/download only between a private and a public address (`is_outbound`,
+    `is_inbound` in metrics/common.py, both built on `is_private_ip`). The runner's calls and games go to the
+    peer on the gateway (10.43.0.x, private), so the app ignores them in every up/down metric. With real
+    Zoom/Discord servers they would count. This swaps `is_private_ip` in every metrics module that holds it;
+    is_outbound/is_inbound use the module's global and follow. The app's files are not changed."""
+    import metrics.common as common
+    nets = [ipaddress.ip_network(n) for n in networks]
+    original = common.is_private_ip
+
+    def is_private_ip(ip_str: str) -> bool:
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except Exception:
+            return False
+        if any(ip in n for n in nets):
+            return False
+        return ip.is_private
+
+    for name, mod in list(sys.modules.items()):
+        if (name == "metrics" or name.startswith("metrics.")) and getattr(mod, "is_private_ip", None) is original:
+            mod.is_private_ip = is_private_ip
+
+
 def partitions_by_day(dataset_dir: Path) -> dict[date, list[Path]]:
     """Partition files grouped by the (naive local) day of their start, as `load_day_dataframe` selects them."""
     out: dict[date, list[Path]] = {}
@@ -77,7 +107,11 @@ def load_day(files: list[Path], day: date) -> pd.DataFrame:
     return out
 
 
-def compute_dataset(dataset_dir: Path, days: list[date] | None = None, log=print) -> tuple[pd.DataFrame, dict]:
+def _log(msg: str) -> None:
+    print(msg, flush=True)
+
+
+def compute_dataset(dataset_dir: Path, days: list[date] | None = None, log=_log) -> tuple[pd.DataFrame, dict]:
     """All days of one dataset (or `days`), in order, each with the previous days as history.
 
     Returns the daily table and per-criterion error counts. The page silently skips a criterion that raises;
@@ -109,7 +143,7 @@ def compute_dataset(dataset_dir: Path, days: list[date] | None = None, log=print
                 if m.get("dist_col"):
                     today[m["dist_col"]] = m.get("value")
         rows.append(today)
-        log(f"  {d}: {len(df_day):>9,} rows, {time.time() - t0:5.1f} s")
+        log(f"  {d}: {len(df_day):>9,} rows, {time.time() - t0:5.1f} s ({len(rows)}/{len(wanted)})")
         del df_day
     table = pd.DataFrame(rows).sort_values("Date") if rows else pd.DataFrame(columns=["Date"])
     return table, errors
@@ -128,7 +162,7 @@ def run(parquet_dir: Path, datasets: list[str], out_dir: Path, plans_dir: Path |
     out_dir.mkdir(parents=True, exist_ok=True)
     written = {}
     for ds in datasets:
-        print(f"{ds}:")
+        print(f"{ds}:", flush=True)
         table, errors = compute_dataset(parquet_dir / ds, days)
         if plans_dir is not None and (plans_dir / f"{ds}.csv").exists() and not table.empty:
             table = table.merge(phases(plans_dir / f"{ds}.csv"), on="Date", how="left")

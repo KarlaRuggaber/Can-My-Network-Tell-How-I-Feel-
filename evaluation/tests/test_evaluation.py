@@ -90,3 +90,19 @@ def test_day_loop_on_a_tiny_dataset(tmp_path):
     table, errors = daily.compute_dataset(ds, log=lambda *_: None)
     assert table["Date"].dt.strftime("%Y-%m-%d").tolist() == ["2026-11-09", "2026-11-10"]
     assert "C2_F1_UniqueSLD" in table.columns
+
+
+def test_peer_external_variant_counts_calls_as_upload():
+    import metrics.common as common
+    import metrics.base_features as bf
+    original = common.is_private_ip
+    try:
+        assert not common.is_outbound("10.42.1.41", "10.43.0.13")      # app as is: call to the peer is neither
+        daily.peer_external()
+        assert common.is_outbound("10.42.1.41", "10.43.0.13")          # variant: upload
+        assert common.is_inbound("10.43.0.13", "10.42.1.41")           # and download
+        assert not common.is_outbound("10.42.1.41", "10.42.1.1")       # DNS to the gateway stays local
+        assert bf.is_private_ip is common.is_private_ip                # modules that imported it by name follow
+    finally:
+        for mod in (common, bf):
+            mod.is_private_ip = original

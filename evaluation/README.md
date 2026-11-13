@@ -31,6 +31,9 @@ python3 -m evaluation daily --dataset gw_mdd_suicidality_a --day 2026-11-12  # o
 python3 -m evaluation compare                                  # -> ~/cmn-data/eval/report.md (+ .metrics.csv)
 python3 -m evaluation compare --config path/to/fasl_config_gateway.json --out ~/cmn-data/eval/report-gateway.md
 python3 -m evaluation compare --all-metrics                    # also every other metric that changed
+# variant: calls and games to the peer stack (10.43.0.0/24) counted as internet up/download
+python3 -m evaluation daily --peer-external --first 2026-10-25 --last 2026-11-22 --out ~/cmn-data/eval-peer
+python3 -m evaluation compare --eval ~/cmn-data/eval-peer --out ~/cmn-data/eval-peer/report.md
 ```
 
 `daily` writes `~/cmn-data/eval/<dataset>.daily.csv`: one row per day with the page's base record, every criterion metric under its `dist_col`, and `phase`/`profile` from the scheduler plan (`~/cmn-data/run/<dataset>.csv`). A criterion that raises is skipped for that day, as on the page, but counted and printed.
@@ -42,3 +45,4 @@ python3 -m evaluation compare --all-metrics                    # also every othe
 - **Change of a metric:** Cliff's d = P(clinical > baseline) − P(clinical < baseline); |d| ≥ 0.33 (medium effect) counts as a change. It is rank-based, so outliers and skewed metrics (packet counts) don't dominate, and it works with 14 vs. 14 days. With fewer clinical days (before 22.11) the result is preliminary.
 - **Verdict** against `expectations.yaml`: *as expected*, *opposite*, *no change*, and for metrics that should stay put *unchanged (ok)* or *changed (expected none)*.
 - **Two configs** (thesis-alignment §4): the original thesis config (`fasl_config.json`) shows how the Dataset-B tuning transfers; a calibrated gateway config (tuned on the baseline days only) shows whether the logic works once calibrated. The calibration is a separate decision.
+- **Peer variant** (`--peer-external`): the app counts upload/download only between a private and a public address. The runner's calls and games go to the peer stack on the gateway (10.43.0.0/24, private), so the app ignores them in every up/down metric (`up_bytes_today`, `F4_DownUpRatio`, `C6_F4`, …); with real Zoom/Discord servers they would count. The variant treats that network as public in the evaluation process only (the app is unchanged). On 25.10–12.11 it changes the up/down metrics, not the criteria: e.g. `F4_DownUpRatio` goes from *opposite* to *no change* (MDD) and *as expected* (SAD).
