@@ -92,6 +92,15 @@ def _periods(profile: Profile, days: list[date], plan_phases: dict[str, str]) ->
     return out, spans
 
 
+def _hourly(activity: dict[str, Any] | None) -> list[int] | None:
+    """Packets per hour of the day (24 values) from the 5-minute activity bins."""
+    if not activity or not activity.get("total"):
+        return None
+    per = max(1, 60 // int(activity.get("bin_minutes") or 5))
+    tot = activity["total"]
+    return [int(sum(tot[h * per:(h + 1) * per])) for h in range(24)]
+
+
 def profile_meta(p: Profile) -> dict[str, Any]:
     meta = persona_meta(p.persona) if p.persona else persona_meta("")
     return {**meta, "name": p.name, "id": p.id, "source": p.source,
@@ -120,6 +129,7 @@ def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig) -
             "computed_at": rec.get("computed_at"),
             "ground_truth": day_summary(blocks_on_day(blocks, day)) if has_plan else None,
             "metrics": {k: v for k, v in rec["metrics"].items() if k != "Date"},
+            "hourly": _hourly(rec.get("activity")),
             "L": sc["L"],
             "parts": sc["parts"],
         })

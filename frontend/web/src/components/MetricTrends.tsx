@@ -88,7 +88,7 @@ export function MetricTrends({ tl, cfg, crit, theta, present, presentLabel, sele
   return (
     <section className="card">
       <div className="card-head">
-        <h2><span className="step">3</span>Why: {crit} {cfg.criterion_names[crit]}</h2>
+        <h2><span className="step">4</span>Why: {crit} {cfg.criterion_names[crit]}</h2>
         <p className="sub">The likelihood over time, and the network metrics it is built from. Pick another criterion in the overview.</p>
         <details className="howto">
           <summary>How to read these charts</summary>

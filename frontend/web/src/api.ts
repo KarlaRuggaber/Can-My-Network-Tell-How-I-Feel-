@@ -66,6 +66,7 @@ export interface Day {
   first_packet: string | null; last_packet: string | null; computed_at: string;
   ground_truth: GroundTruthSummary | null;   // only for scripted sources
   metrics: Record<string, number | string | boolean | null>;
+  hourly: number[] | null;   // packets per hour of the day
   L: Record<CritKey, number | null>;
   parts: Partial<Record<CritKey, Record<string, MetricPart>>>;
 }

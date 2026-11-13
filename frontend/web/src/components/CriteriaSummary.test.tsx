@@ -1,7 +1,8 @@
 import { render, screen, within } from "@testing-library/react";
 import type { Config, Day, Timeline } from "../api";
 import { phaseGate } from "../lib/gate";
-import { agreement, CriteriaSummary } from "./CriteriaSummary";
+import { agreement, CriteriaSummary, episodePossible } from "./CriteriaSummary";
+import { c9Days } from "./UnscoredMetrics";
 
 describe("agreement", () => {
   it("compares the gate state with the profile expectation", () => {
@@ -26,7 +27,7 @@ const day = (date: string, phase: string, c4: number): Day => ({
   date, weekday: "Mon", phase, complete: true, n_partitions: 288, packets_kept: 1,
   first_packet: null, last_packet: null, computed_at: "",
   ground_truth: { n_blocks: 0, n_profile_blocks: 0, n_sensitive: 0, n_failed: 0, n_not_run: 0, profile_blocks: {} },
-  metrics: {}, parts: {},
+  metrics: {}, parts: {}, hourly: null,
   L: { C1: 0.1, C2: 0.1, C3: null, C4: c4, C5: null, C6: null, C7: null, C8: 0.1, C9: null },
 });
 
@@ -97,5 +98,30 @@ describe("CriteriaSummary for live traffic", () => {
     expect(screen.queryByText("Expected")).toBeNull();
     expect(screen.queryByText(/expectations met/)).toBeNull();
     expect(screen.getByText("Recent", { selector: ".phase-tile-title" })).toBeTruthy();
+  });
+});
+
+describe("episodes", () => {
+  it("cannot be reached when fewer criteria are scored than an episode needs", () => {
+    expect(episodePossible(cfg, gate)).toBe(false);                     // 4 scored, 5 needed
+    const all = { ...cfg, criteria: Object.fromEntries(Object.keys(cfg.criteria).map((c) => [c, spec])) } as unknown as Config;
+    expect(episodePossible(all, gate)).toBe(true);
+    render(<CriteriaSummary tl={tl} cfg={cfg} gate={gate}
+      phases={{ baseline: phaseView("baseline"), current: phaseView("current") }}
+      selected={null} onSelect={() => undefined} />);
+    expect(screen.getAllByText("not possible with this configuration")).toHaveLength(2);
+    expect(screen.queryByText(/Insomnia/, { selector: "h2" })).toBeNull();
+  });
+});
+
+describe("C9 flag", () => {
+  it("lists the days with any C9 metric above zero", () => {
+    const days = tl.days.map((d, i) => ({ ...d, metrics: { C9_F1_CrisisLineHits: i === 2 ? 1098 : 0, C9_F2_X: null, C9_F4_Forum: 1000 + i } }));
+    const stats = { C9_F1_CrisisLineHits: { mean: 0, sd: 0, n: 2 }, C9_F4_Forum: { mean: 1000.5, sd: 0.7, n: 2 } };
+    // crisis-line hits rise above an all-zero baseline; forum traffic within mean + 2 SD is not a signal
+    expect(c9Days({ ...tl, days, baseline_stats: stats })).toEqual([
+      { date: "2026-11-09", metrics: ["C9_F1_CrisisLineHits", "C9_F4_Forum"] },
+      { date: "2026-11-10", metrics: ["C9_F4_Forum"] },
+    ]);
   });
 });

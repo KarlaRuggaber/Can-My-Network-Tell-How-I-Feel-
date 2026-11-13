@@ -47,6 +47,12 @@ export function isPreliminary(p: PhaseView, gate: GateParams): boolean {
 
 const presentList = (p: PhaseView, crits: CritKey[]) => crits.filter((c) => p.criteria[c]?.present);
 
+/** With fewer scored criteria than an episode needs (or no core criterion), no episode can be likely. */
+export function episodePossible(cfg: Config, gate: GateParams): boolean {
+  const scored = CRIT_KEYS.filter((c) => Object.keys(cfg.criteria[c] ?? {}).length > 0);
+  return scored.length >= gate.minPresent && scored.some((c) => gate.core.includes(c));
+}
+
 function PhaseTile({ ph, title, p, crits, cfg, gate }: { ph: PhaseKey; title: string; p: PhaseView; crits: CritKey[]; cfg: Config; gate: GateParams }) {
   const on = presentList(p, crits);
   const prelim = isPreliminary(p, gate);
@@ -67,7 +73,9 @@ function PhaseTile({ ph, title, p, crits, cfg, gate }: { ph: PhaseKey; title: st
             {on.map((c) => <span key={c} className="pill pill-red">{c} {cfg.criterion_names[c]}</span>)}
           </div>
           <div className="small">
-            Episode: {p.episode ? <b className="status-on">likely</b> : <span>no</span>}
+            Episode: {!episodePossible(cfg, gate)
+              ? <span className="muted" title={`Only ${crits.length} of 9 criteria are scored; an episode needs ${gate.minPresent} present criteria.`}>not possible with this configuration</span>
+              : p.episode ? <b className="status-on">likely</b> : <span>no</span>}
           </div>
         </>
       )}
@@ -110,6 +118,13 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
               : <span className="muted">none</span>}
           </div>
           <div className="small muted">Episode expected: {tl.persona.episode?.expected ?? "–"}</div>
+          {(tl.persona.condition || tl.persona.summary) && (
+            <details className="howto script">
+              <summary>About the script</summary>
+              <p><b>{tl.persona.condition}</b>{tl.persona.baseline_profile && <> (everyday profile: {tl.persona.baseline_profile})</>}.
+                {tl.persona.summary && <> {tl.persona.summary}</>}</p>
+            </details>
+          )}
         </div>}
       </div>
 
@@ -174,7 +189,8 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
           Every day gets a likelihood L between 0 and 1 per criterion. A criterion is <b>present</b> in a phase when
           L ≥ θ = {gate.theta.toFixed(2)} on at least N = {gate.N} of that period's last M = {gate.M} days. An
           <b> episode</b> is likely when at least {gate.minPresent} criteria are present, including a core criterion
-          ({cfg.core.join(", ")}). {tl.profile.has_plan
+          ({cfg.core.join(", ")}).{!episodePossible(cfg, gate) && <> With the current <code>fasl_config.json</code> only {scored.length} criteria
+          are scored, so an episode cannot be reached; the episode result is shown for completeness.</>} {tl.profile.has_plan
             ? <>The {title.baseline.toLowerCase()} and {title.current.toLowerCase()} phase come from the scripted plan; the warm-up day is not counted.</>
             : <>The baseline is the person's usual behaviour ({phaseSpan(phases.baseline) || "first 14 days"}, set under People and devices); every later day is “{title.current.toLowerCase()}”.</>}
           {" "}Today (still being recorded

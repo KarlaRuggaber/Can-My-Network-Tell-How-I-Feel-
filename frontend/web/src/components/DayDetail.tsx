@@ -65,7 +65,7 @@ export function DayDetail({ profileId, day, cfg, present, dayIndex, phaseLabels 
   return (
     <section className="card">
       <div className="card-head">
-        <h2><span className="step">4</span>{day.weekday} {fmtDay(day.date)} <span className={`pill ${day.phase === "current" ? "pill-red" : "pill-beige"}`}>{(day.phase === "current" || day.phase === "baseline" ? phaseLabels[day.phase as PhaseKey] : day.phase).toLowerCase()}</span>
+        <h2><span className="step">6</span>{day.weekday} {fmtDay(day.date)} <span className={`pill ${day.phase === "current" ? "pill-red" : "pill-beige"}`}>{(day.phase === "current" || day.phase === "baseline" ? phaseLabels[day.phase as PhaseKey] : day.phase).toLowerCase()}</span>
           {!day.complete && <span className="pill pill-outline">still being recorded</span>}</h2>
         <p className="sub">{gt ? "What the persona was scripted to do, and the traffic the gateway saw." : "The traffic of this person's devices over the day."}</p>
         <details className="howto">

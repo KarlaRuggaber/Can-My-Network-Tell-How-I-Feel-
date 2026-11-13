@@ -14,7 +14,7 @@ const cfg = {
 } as unknown as Config;
 const day = (date: string, phase: string, c4: number): Day => ({
   date, weekday: "Mon", phase, complete: true, n_partitions: 1, packets_kept: 1000,
-  first_packet: null, last_packet: null, computed_at: "", ground_truth: null, metrics: {}, parts: {},
+  first_packet: null, last_packet: null, computed_at: "", ground_truth: null, metrics: {}, parts: {}, hourly: null,
   L: { C1: 0.1, C2: 0.1, C3: null, C4: c4, C5: null, C6: null, C7: null, C8: 0.7, C9: null },
 });
 const days = [day("2026-11-01", "baseline", 0.1), day("2026-11-09", "current", 0.9), day("2026-11-10", "current", 0.8)];

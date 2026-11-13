@@ -47,6 +47,15 @@ For multi-profile users the portal shows:
   (`evaluation/compare.py` `score_phases()`), and the numbers match it.
 - **Daily likelihoods**: a day × criterion grid of L<sub>k</sub> with the baseline/clinical phase,
   days ≥ θ, "present" according to the DSM gate, number of present criteria and the episode flag.
+- **When the devices were online**: a day × hour grid of packets (log scale relative to the
+  person's own hours), so late nights, early waking and quiet days show up as patterns.
+- **Other criteria (not scored)**: the metrics the thesis code computes for criteria without weights in
+  `fasl_config.json` (currently C3, C5, C6, C7, C9), as raw daily values. A C9 (suicidality) metric
+  above its baseline (mean + 2 SD, or above zero when it was always 0) is flagged here and as a row
+  in the daily grid; it stays outside the gate. Never shown to the person.
+- **Episodes**: an episode needs 5 present criteria including a core one. With the current
+  configuration only 4 criteria are scored, so the portal says that an episode is not possible
+  instead of showing "no".
 - **Metric trends**: for the selected criterion, L over time with θ, and each configured metric with
   its baseline mean ± 1 SD, the membership function's range and μ per day.
 - **Day detail (traceability)**: packets per 5 minutes per device; for scripted sources the plan blocks on a

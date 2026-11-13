@@ -4,6 +4,7 @@ import { CRIT_KEYS } from "../api";
 import { fmtDay } from "../lib/format";
 import { C } from "../theme";
 import { Chart } from "./Chart";
+import { c9Signal } from "./UnscoredMetrics";
 
 type Cell = { x: number; y: number; fill: string; text: string; textFill: string; above?: boolean; present?: boolean };
 
@@ -32,7 +33,13 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
   const days = tl.days;
   const xs = days.map((d) => `${fmtDay(d.date)}\n${d.weekday.slice(0, 2)}`);
   // rows top to bottom: phase, criteria, gate count, episode
-  const rows = ["Episode", "Criteria present", ...[...crits].reverse(), "Phase"];
+  // The episode row is shown only when the configuration can reach an episode (enough scored criteria).
+  const canEpisode = crits.length >= 5 && crits.some((c) => cfg.core.includes(c));
+  // C9 (suicidality) is not scored, but any C9 metric above zero is marked as a flag row.
+  const c9Flags = days.map((d) => Object.entries(d.metrics).filter(([k, v]) => k.startsWith("C9_") && c9Signal(tl, k, v)).map(([k]) => k));
+  const c9 = c9Flags.filter((x) => x.length).length;
+  const showC9 = c9 > 0 && !crits.includes("C9");
+  const rows = [...(canEpisode ? ["Episode"] : []), "Criteria present", ...(showC9 ? ["C9 signal"] : []), ...[...crits].reverse(), "Phase"];
   const rowOf = (name: string) => rows.indexOf(name);
 
   const option = useMemo(() => {
@@ -55,11 +62,15 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
           above: L != null && L >= theta, present: !!present[c]?.[i],
         });
       });
+      if (showC9) cells.push({
+        x: i, y: rowOf("C9 signal"), fill: c9Flags[i].length ? C.critical : "#f6f3ef",
+        text: c9Flags[i].length ? "!" : "", textFill: "#fff",
+      });
       cells.push({
         x: i, y: rowOf("Criteria present"), fill: nPresent[i] > 0 ? "#f6ece2" : "#f6f3ef",
         text: String(nPresent[i]), textFill: C.text,
       });
-      cells.push({
+      if (canEpisode) cells.push({
         x: i, y: rowOf("Episode"), fill: episode[i] ? C.critical : "#f6f3ef",
         text: episode[i] ? "yes" : "", textFill: "#fff",
       });
@@ -76,6 +87,7 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
           const row = rows[p.data[1]];
           const head = `<b>${d.date} (${d.weekday})</b> · ${phaseName(d.phase)}${d.complete ? "" : " · incomplete"}`;
           if (row === "Phase") return d.ground_truth ? `${head}<br/>${d.ground_truth.n_blocks} scripted blocks, ${d.ground_truth.n_profile_blocks} clinical` : head;
+          if (row === "C9 signal") return `${head}<br/>${c9Flags[i].length ? `C9 above baseline: ${c9Flags[i].map((k) => cfg.metric_labels[k] ?? k).join(", ")}` : "no C9 signal"} (not scored, outside the gate)`;
           if (row === "Criteria present") return `${head}<br/>${nPresent[i]} criteria present (${gateWord})`;
           if (row === "Episode") return `${head}<br/>episode ${episode[i] ? "likely" : "not likely"} (${gateWord})`;
           const c = row as CritKey;
@@ -130,6 +142,8 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
           <span className="key"><i className="bar" style={{ background: C.ink }} /> present{rolling
             ? <> (rolling {M}-day window, mixes phases)</> : <> in this phase</>}</span>.
           Click a day to open it below.
+          {!canEpisode && <> No episode row: the configuration scores {crits.length} criteria, and an episode needs 5 present.</>}
+          {c9 > 0 && <> <span className="key"><i className="dot" style={{ background: C.critical }} /> C9 signal (outside the gate)</span>.</>}
         </p>
       </div>
       <Chart option={option} height={height}

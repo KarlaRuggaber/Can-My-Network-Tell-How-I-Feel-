@@ -242,6 +242,25 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
             for c in configured
         },
     }
+    if not person_view:
+        # Criteria without weights in the config: raw values only (no likelihood, outside the gate).
+        # Never sent for the person (C9 is suicidality).
+        unscored = [c for c in fasl.CRIT_KEYS if not cfg.configured(c)]
+        per_day = {}
+        for d in tl["days"]:
+            vals = {metric_labels.get(k, k): _r(v) for k, v in d["metrics"].items()
+                    if k[:2] in unscored and k[2] == "_" and isinstance(v, (int, float)) and not isinstance(v, bool) and v}
+            if vals:
+                per_day[d["date"]] = vals
+        ctx["unscored_criteria"] = {
+            "note": ("metrics of criteria the configuration does not score (no weights): raw daily values, "
+                     "non-zero ones only; not part of any likelihood or the gate. For C9 (suicidality) the "
+                     "portal flags a day when a metric is above its baseline mean + 2 SD."),
+            "criteria": [f"{c} {fasl.CRIT_NAMES[c]}" for c in unscored],
+            "baseline_mean_sd": {metric_labels.get(k, k): {"mean": _r(v["mean"]), "sd": _r(v["sd"])}
+                                 for k, v in tl.get("baseline_stats", {}).items() if k[:2] in unscored and k[2] == "_"},
+            "days": per_day,
+        }
     if not person_view and tl["persona"].get("expected"):
         ctx["scripted_expectations"] = {
             "note": ("expected outcomes of the test script (profile §9) for the CLINICAL phase only, not "

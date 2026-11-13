@@ -4,6 +4,8 @@ import { api, CRIT_KEYS, setUnauthorizedHandler } from "./api";
 import { CriteriaSummary, type PhaseView } from "./components/CriteriaSummary";
 import { DayDetail } from "./components/DayDetail";
 import { Heatmap } from "./components/Heatmap";
+import { HourlyHeatmap } from "./components/HourlyHeatmap";
+import { UnscoredMetrics } from "./components/UnscoredMetrics";
 import { Assistant } from "./components/Assistant";
 import { AssistantSettings } from "./components/AssistantSettings";
 import { Login } from "./components/Login";
@@ -196,7 +198,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
               {profiles.map((p) => (
                 <button key={p.id} className={p.id === pid ? "active" : ""} onClick={() => { setPid(p.id); setDay(null); }}>
                   <span className="p-name">{p.name}</span>
-                  <span className="p-cond">{p.condition || `${p.source} · ${p.config.all_devices ? "all devices" : `${p.config.devices.length} device(s)`}`}</span>
+                  <span className="p-cond">{p.scripted ? "scripted run" : "live"} · {p.config.all_devices ? "all devices" : `${p.config.devices.length} device(s)`}</span>
                 </button>
               ))}
             </nav>
@@ -254,8 +256,8 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
             <>
               {multi && <section className="intro">
                 <div>
-                  <h2>{tl.persona.name}{tl.persona.condition && <> · {tl.persona.condition}</>}</h2>
-                  {tl.persona.summary && <p>{tl.persona.summary}</p>}
+                  {/* the title names the person only: a condition here would frame what the reader sees */}
+                  <h2>{tl.persona.name}</h2>
                 </div>
                 <dl className="facts">
                   <div><dt>Traffic</dt><dd>{tl.profile.has_plan ? "scripted run" : "live"} · {tl.profile.all_devices ? "all devices" : tl.profile.devices.map((d) => d.label || d.ip).join(", ")}</dd></div>
@@ -284,11 +286,13 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                     selected={activeCrit} onSelect={setCrit} />
                   <Heatmap tl={tl} cfg={cfg} present={present} episode={episode} theta={gate.theta}
                     rolling={rolling} M={gate.M} selectedDay={day} onSelectDay={setDay} />
+                  <HourlyHeatmap tl={tl} selectedDay={day} onSelectDay={setDay} step={3} />
                   {activeCrit && (
                     <MetricTrends tl={tl} cfg={cfg} crit={activeCrit} theta={gate.theta}
                       present={present[activeCrit] ?? []} presentLabel={rolling ? `present (rolling ${gate.M} days, mixes phases)` : "present in this phase"}
                       selectedDay={day} onSelectDay={setDay} />
                   )}
+                  <UnscoredMetrics tl={tl} cfg={cfg} selectedDay={day} onSelectDay={setDay} step={5} />
                   {dayIndex >= 0 && (
                     <DayDetail profileId={tl.profile.id} day={tl.days[dayIndex]} cfg={cfg} present={present}
                       dayIndex={dayIndex} phaseLabels={labels} />

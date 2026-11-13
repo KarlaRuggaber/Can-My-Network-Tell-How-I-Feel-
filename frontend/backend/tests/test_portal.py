@@ -80,6 +80,9 @@ def test_timeline_from_plan(portal):
     assert (d0["date"], d0["phase"], d0["complete"]) == ("2026-11-08", "baseline", True)
     assert d1["complete"] is False and d1["ground_truth"]["n_sensitive"] == 1
     assert d0["L"]["C3"] is None and 0.0 <= d0["L"]["C1"] <= 1.0
+    assert len(d0["hourly"]) == 24 and sum(d0["hourly"]) == d0["packets_kept"]
+    assert d0["hourly"][8] > 0 and d0["hourly"][3] == 0                   # partitions at 08, 12, 23 h
+    assert any(k.startswith("C9_") for k in d0["metrics"])               # unscored criteria computed too
     configured = {k for k, v in cfg["criteria"].items() if v}
     base = tl["gate"]["phases"]["baseline"]
     assert base["counted"] == ["2026-11-08"] and set(base["criteria"]) == configured
@@ -202,7 +205,7 @@ def test_assistant_explains_from_derived_results_only(portal, scripted, monkeypa
     assert "cache_control" in kw["system"][-1]
     for secret in (PHONE_IP, RESOLVER_IP, "test_a_phone", "151.101", "nzz", "expected", "Insomnia"):
         assert secret not in data, secret
-    assert "Sleep" in data and "C4" not in data
+    assert "Sleep" in data and "C4" not in data and "unscored_criteria" not in data and "C9" not in data
     assert "time of the first activity in the morning" in data and "WakeAfter0400" not in data
 
     # a clinician gets criterion names and the script's expectations, marked as such
@@ -211,6 +214,7 @@ def test_assistant_explains_from_derived_results_only(portal, scripted, monkeypa
     c.post(f"/api/profiles/{scripted}/assistant", json={"messages": [{"role": "user", "content": "C4?"}]})
     data = fake.calls[-1]["system"][-1]["text"]
     assert "C4 Sleep" in data and "scripted_expectations" in data and PHONE_IP not in data
+    assert "unscored_criteria" in data and "C9 Suicidality" in data
     bad = c.post(f"/api/profiles/{scripted}/assistant", json={"messages": [{"role": "assistant", "content": "x"}]})
     assert bad.status_code == 422
 
