@@ -135,7 +135,40 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 const get = <T,>(path: string) => call<T>("GET", path);
 const enc = encodeURIComponent;
 
+export interface AssistantStatus {
+  enabled: boolean; notice: string;
+  // multi-profile users only:
+  provider?: string; model?: string; has_key?: boolean;
+  providers?: Record<string, { label: string; default_model: string }>;
+}
+export interface AssistantSettingsBody { enabled: boolean; provider: string; model: string; api_key?: string | null }
+export interface ChatTurn { role: "user" | "assistant"; content: string }
+
+/** Ask the explanation assistant; calls onText for every streamed chunk. */
+async function ask(id: string, messages: ChatTurn[], focus: string | null, onText: (t: string) => void): Promise<void> {
+  const r = await fetch(`/api/profiles/${encodeURIComponent(id)}/assistant`, {
+    method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages, focus }),
+  });
+  if (!r.ok || !r.body) {
+    let msg = `${r.status} ${r.statusText}`;
+    try { const d = (await r.json()).detail; msg = typeof d === "string" ? d : msg; } catch { /* not JSON */ }
+    if (r.status === 401) onUnauthorized();
+    throw new ApiError(r.status, msg);
+  }
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    onText(dec.decode(value, { stream: true }));
+  }
+}
+
 export const api = {
+  assistant: () => get<AssistantStatus>("/api/assistant"),
+  saveAssistant: (b: AssistantSettingsBody) => call<AssistantStatus>("PUT", "/api/assistant", b),
+  ask,
   login: (username: string, password: string) => call<Me>("POST", "/api/login", { username, password }),
   logout: () => call<{ ok: boolean }>("POST", "/api/logout"),
   me: () => get<Me>("/api/me"),

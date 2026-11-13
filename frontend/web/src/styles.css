@@ -229,3 +229,33 @@ details.fold[open] { padding-bottom: 12px; }
 .row-between { gap: 12px; }
 @media (max-width: 860px) { .top-right { align-items: flex-start; } .usermenu { justify-content: flex-start; } }
 .top .brand-squares { display: none; }
+
+/* person view */
+.person-intro h2 { font-size: 28px; margin-bottom: 6px; }
+.person-intro p { max-width: 760px; margin: 6px 0 0; }
+.area-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-bottom: 10px; }
+.area-card { border-radius: 14px; padding: 16px; background: var(--beige-faint); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.area-name { font-family: var(--serif); font-size: 20px; }
+.area-status { font-weight: 700; }
+.area-usual .area-status { color: var(--good); }
+.area-some .area-status { color: var(--warn); }
+.area-different { border-color: var(--red); background: #fff; }
+.area-different .area-status { color: var(--red-text); }
+.area-unknown .area-status { color: var(--muted); }
+.area-dots { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--beige); background: #fff; }
+.dot-on { background: var(--ink); border-color: var(--ink); }
+.care { background: var(--beige-soft); border-color: var(--beige); box-shadow: none; }
+.care p { margin: 0; }
+
+/* assistant */
+.assistant .chat { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; padding: 4px 2px 8px; }
+.bubble { max-width: 80%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; line-height: 1.5; }
+.bubble-user { align-self: flex-end; background: var(--ink); color: #fff; border-bottom-right-radius: 4px; }
+.bubble-assistant { align-self: flex-start; background: var(--beige-soft); border-bottom-left-radius: 4px; }
+.ask { display: flex; gap: 8px; margin: 10px 0 6px; flex-wrap: wrap; }
+.ask input { flex: 1; min-width: 200px; font: inherit; padding: 9px 14px; border: 1px solid var(--border); border-radius: 99px; }
+.ask input:focus { outline: 2px solid var(--beige); border-color: var(--ink); }
+.suggestions { gap: 6px; }
+button.suggestion { cursor: pointer; background: #fff; font: inherit; font-size: 12.5px; white-space: normal; text-align: left; }
+button.suggestion:hover { border-color: var(--ink); color: var(--ink); }

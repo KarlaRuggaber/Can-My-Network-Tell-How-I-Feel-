@@ -71,7 +71,7 @@ def test_single_user_sees_only_own_profile(portal):
 
 
 def test_timeline_from_plan(portal):
-    c = login(portal, "anna", "pw-anna")
+    c = login(portal, "doc", "pw-doc")          # the plan is only shown to multi-profile users
     cfg = c.get("/api/config").json()
     tl = c.get("/api/profiles/tester").json()
     assert tl["status"] == "ready" and tl["profile"]["has_plan"]
@@ -120,3 +120,158 @@ def test_live_source_uses_profile_baseline():
     assert spans["baseline"]["planned_days"] == 7 and spans["current"]["planned_first"] == "2026-11-10"
     phase, spans = _periods(Profile("y", "Y", "live"), days, {})      # default: first 14 days
     assert sum(v == "baseline" for v in phase.values()) == 14 and phase[days[-1]] == "current"
+
+
+# ---- person view and explanation assistant ----
+
+class _FakeStream:
+    def __init__(self, calls, kw):
+        calls.append(kw)
+        self.text_stream = iter(["Your sleep ", "looks as usual."])
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def get_final_message(self):
+        return type("M", (), {"stop_reason": "end_turn"})()
+
+
+class FakeClaude:
+    def __init__(self):
+        self.calls = []
+        msgs = type("Msgs", (), {"stream": lambda _s, **kw: _FakeStream(self.calls, kw)})()
+        self.beta = type("Beta", (), {"messages": msgs})()
+
+
+@pytest.fixture()
+def scripted(portal):
+    """A profile with a scripted persona's expectations, visible to anna (single) and doc (multi)."""
+    store = ProfileStore(portal)
+    store.upsert(Profile("ben2", "Ben", DS, all_devices=True, persona="gw_insomnia_a"))
+    auth.UserStore(portal.home_dir).add("ben", "pw-ben", "single", ["ben2"])
+    yield "ben2"
+    store.delete("ben2")
+
+
+def test_person_sees_no_expectations_or_plan(portal, scripted):
+    doc = login(portal, "doc", "pw-doc").get(f"/api/profiles/{scripted}").json()
+    assert doc["persona"]["expected"] and doc["persona"]["condition"]           # clinician: all of it
+    me = login(portal, "ben", "pw-ben")
+    tl = me.get(f"/api/profiles/{scripted}").json()
+    assert tl["persona"]["expected"] == {} and tl["persona"]["episode"] is None
+    assert tl["persona"]["condition"] == "" and tl["persona"]["summary"] == ""
+    assert tl["profile"]["persona"] is None and tl["profile"]["phase_labels"]["current"] == "Recent"
+    assert all(d["ground_truth"] is None for d in tl["days"])
+    assert me.get(f"/api/profiles/{scripted}/days/2026-11-09").json()["blocks"] == []
+    assert me.get("/api/profiles").json()[0]["condition"] == ""
+    day = me.get(f"/api/profiles/{scripted}/days/2026-11-09").json()
+    assert list(day["activity"]["devices"]) == ["Device 1"]
+    text = (str(tl) + str(me.get("/api/profiles").json()) + str(day)).lower()
+    for word in ("insomnia", "elevated", DS, "test_a_phone"):
+        assert word not in text, word
+
+
+def test_assistant_is_off_by_default(portal, monkeypatch):
+    for v in ("CMN_ASSISTANT", "CMN_ASSISTANT_PROVIDER", "OPENROUTER_API_KEY"):
+        monkeypatch.delenv(v, raising=False)
+    c = login(portal, "anna", "pw-anna")
+    assert c.get("/api/assistant").json()["enabled"] is False
+    r = c.post("/api/profiles/tester/assistant", json={"messages": [{"role": "user", "content": "hi"}]})
+    assert r.status_code == 503
+
+
+def test_assistant_explains_from_derived_results_only(portal, scripted, monkeypatch):
+    monkeypatch.setenv("CMN_ASSISTANT", "1")
+    monkeypatch.setenv("CMN_ASSISTANT_PROVIDER", "anthropic")
+    fake = FakeClaude()
+    app = create_app(portal, llm_client=fake)
+    c = TestClient(app)
+    c.post("/api/login", json={"username": "ben", "password": "pw-ben"})
+    r = c.post(f"/api/profiles/{scripted}/assistant",
+               json={"messages": [{"role": "user", "content": "Why is my sleep marked?"}], "focus": "Sleep"})
+    assert r.status_code == 200 and r.text == "Your sleep looks as usual."
+    kw = fake.calls[-1]
+    assert kw["model"] == "claude-opus-5-5" and kw["thinking"] == {"type": "adaptive"}
+    assert kw["messages"][-1]["content"].endswith("Why is my sleep marked?")
+    system = " ".join(b["text"] for b in kw["system"])
+    assert "Do not use\n  DSM-5 criterion names" in system                     # person rules
+    data = kw["system"][-1]["text"]
+    assert "cache_control" in kw["system"][-1]
+    for secret in (PHONE_IP, RESOLVER_IP, "test_a_phone", "151.101", "nzz", "expected", "Insomnia"):
+        assert secret not in data, secret
+    assert "Sleep" in data and "C4" not in data
+
+    # a clinician gets criterion names and the script's expectations, marked as such
+    c = TestClient(app)
+    c.post("/api/login", json={"username": "doc", "password": "pw-doc"})
+    c.post(f"/api/profiles/{scripted}/assistant", json={"messages": [{"role": "user", "content": "C4?"}]})
+    data = fake.calls[-1]["system"][-1]["text"]
+    assert "C4 Sleep" in data and "scripted_expectations" in data and PHONE_IP not in data
+    bad = c.post(f"/api/profiles/{scripted}/assistant", json={"messages": [{"role": "assistant", "content": "x"}]})
+    assert bad.status_code == 422
+
+
+def test_assistant_settings_and_openrouter(portal, scripted, monkeypatch):
+    import json
+    import os
+
+    import httpx
+    for v in ("CMN_ASSISTANT", "CMN_ASSISTANT_PROVIDER", "CMN_ASSISTANT_MODEL", "OPENROUTER_API_KEY"):
+        monkeypatch.delenv(v, raising=False)
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        sse = (": OPENROUTER PROCESSING\n\n"
+               'data: {"choices":[{"delta":{"content":"Sleep "}}]}\n\n'
+               'data: {"choices":[{"delta":{"content":"was usual."},"finish_reason":"stop"}]}\n\n'
+               "data: [DONE]\n\n")
+        return httpx.Response(200, text=sse, headers={"content-type": "text/event-stream"})
+
+    app = create_app(portal, http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+    person, doc = TestClient(app), TestClient(app)
+    person.post("/api/login", json={"username": "ben", "password": "pw-ben"})
+    doc.post("/api/login", json={"username": "doc", "password": "pw-doc"})
+    assert person.put("/api/assistant", json={"enabled": True, "provider": "openrouter", "model": "x"}).status_code == 403
+    st = doc.get("/api/assistant").json()
+    assert st["provider"] == "openrouter" and st["model"] == "deepseek/deepseek-v4.1-flash-1017"
+    assert st["enabled"] is False and st["has_key"] is False
+
+    r = doc.put("/api/assistant", json={"enabled": True, "provider": "openrouter",
+                                        "model": "deepseek/deepseek-v4.1-flash-1017", "api_key": "sk-or-test"})
+    assert r.status_code == 200 and r.json()["has_key"] and "sk-or-test" not in r.text
+    path = portal.home_dir / "assistant.json"
+    assert oct(os.stat(path).st_mode & 0o777) == "0o600"
+    assert "sk-or-test" not in doc.get("/api/assistant").text
+    assert set(person.get("/api/assistant").json()) == {"enabled", "notice"}     # person: no settings
+    # saving without a key keeps the stored one
+    doc.put("/api/assistant", json={"enabled": True, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash-1017"})
+    assert json.loads(path.read_text())["api_keys"]["openrouter"] == "sk-or-test"
+
+    r = person.post(f"/api/profiles/{scripted}/assistant", json={"messages": [{"role": "user", "content": "Sleep?"}]})
+    assert r.status_code == 200 and r.text == "Sleep was usual."
+    req = seen[-1]
+    assert str(req.url) == "https://openrouter.ai/api/v1/chat/completions"
+    assert req.headers["authorization"] == "Bearer sk-or-test"
+    body = json.loads(req.content)
+    assert body["model"] == "deepseek/deepseek-v4.1-flash-1017" and body["stream"] is True
+    assert body["messages"][0]["role"] == "system" and "<results>" in body["messages"][0]["content"]
+    assert body["messages"][-1] == {"role": "user", "content": "Sleep?"}
+    assert PHONE_IP not in req.content.decode() and "Insomnia" not in req.content.decode()
+
+    doc.put("/api/assistant", json={"enabled": False, "provider": "openrouter",
+                                    "model": "deepseek/deepseek-v4.1-flash-1017", "api_key": ""})
+    assert "openrouter" not in json.loads(path.read_text())["api_keys"]
+    path.unlink()
+
+
+def test_openrouter_errors_become_short_notes():
+    import httpx
+    from cmn_frontend.assistant import stream_openrouter
+    sys_ = [{"type": "text", "text": "s"}]
+    for status, note in ((401, "rejected"), (402, "no credit"), (429, "busy")):
+        client = httpx.Client(transport=httpx.MockTransport(lambda r, s=status: httpx.Response(s, json={"error": {"message": "x"}})))
+        assert note in "".join(stream_openrouter("k", "m", sys_, [{"role": "user", "content": "q"}], client))

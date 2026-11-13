@@ -7,7 +7,12 @@ Carl: social anxiety) or live home traffic.
 
 **Logins and roles** (as the Streamlit app, a login comes first; the portal looks the same for all):
 
-- *Single-profile user* (the person themself): sees only their own profile, no settings.
+- *Single-profile user* (the person themself): a simpler, friendly view of their own profile:
+  four everyday areas (daily rhythm, variety and social contact, sleep, focus) with "as usual / a
+  few different days / noticeably different" for the recent days, and daily network activity. The
+  server never sends them expected outcomes, condition, persona description, scripted plan, DSM
+  criterion names, or source and device names (these name the scripted condition), so the view
+  cannot suggest symptoms (no expectation or placebo effect).
 - *Multi-profile user* (clinician, parent): chooses between their profiles, can adjust the gate,
   and under **People and devices** adds people, picks their traffic source, assigns which devices
   (local IP addresses seen in that source) belong to whom, and sets the baseline period.
@@ -19,7 +24,19 @@ router stay apart). Scripted sources bring their plan (baseline and clinical pha
 data), and every later day is "recent". The three scripted personas are created as profiles on the
 first start, with all devices of their source, so their numbers stay those of the evaluation.
 
-For each profile the portal shows:
+**Assistant** (explanation layer, off by default): questions in natural language about the
+results shown, answered only from the profile's derived daily results (likelihoods, metric values,
+μ, w, baseline mean ± SD, gate per period). It never gets raw packets, IP addresses, hostnames or
+device names and must not diagnose. Persons get everyday language without clinical terms or
+expectations; clinicians get criterion names and, for scripted personas, the script's expectations
+marked as such. A multi-profile user turns it on under **Settings → Assistant** and enters the
+provider, model and API key there (stored in `~/cmn-data/frontend/assistant.json`, owner-only, never
+sent back to a browser; `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` also work). Providers: OpenRouter
+(default for testing: `deepseek/deepseek-v4.1-flash-1017`) and Anthropic (Claude, `claude-opus-5-5`,
+official SDK, with server-side refusal fallback). The question and the derived results go to that
+provider, so use it with the scripted data, or with live data only where participants agreed.
+
+For multi-profile users the portal shows:
 
 - **Baseline vs. clinical (or recent) period**: every scored DSM-5 criterion with, for scripted
   personas, the outcome expected in the profile's §9 (`profiles/tier2-clinical/*.md`) and two gate results side by side, each computed

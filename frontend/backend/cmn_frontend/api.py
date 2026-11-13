@@ -17,10 +17,11 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, fasl
+from . import assistant, auth, fasl
 from .groundtruth import blocks_on_day, day_summary, load_devices, load_plan, phase_by_day
 from .personas import PHASE_LABEL, persona_meta
 from .profiles import Device, Profile, ProfileStore
@@ -152,6 +153,40 @@ def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig) -
     }
 
 
+def for_person(tl: dict[str, Any]) -> dict[str, Any]:
+    """What a single-profile user (the person themself) may see.
+
+    No expected outcomes, condition, persona description or scripted plan, so the view cannot
+    suggest symptoms (no expectation or placebo effect). The second period is called "Recent".
+    """
+    tl = dict(tl)
+    tl["persona"] = {"id": tl["persona"]["id"], "name": tl["persona"]["name"], "source": "",
+                     "scripted": False, "condition": "", "summary": "", "profile": None,
+                     "baseline_profile": None, "expected": {}, "episode": None}
+    tl["profile"] = {**tl["profile"], "persona": None, "has_plan": False, "source": "",
+                     "devices": [{"ip": "", "label": f"Device {i + 1}"} for i in range(len(tl["profile"]["devices"]))],
+                     "phase_labels": {"baseline": "Usual weeks", "current": "Recent"}}
+    tl["days"] = [{**d, "ground_truth": None} for d in tl["days"]]
+    return tl
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class AssistantBody(BaseModel):
+    messages: list[ChatMessage]
+    focus: str | None = None
+
+
+class AssistantSettingsBody(BaseModel):
+    enabled: bool
+    provider: str
+    model: str
+    api_key: str | None = None      # None: keep the stored key; "": remove it
+
+
 class LoginBody(BaseModel):
     username: str
     password: str
@@ -172,8 +207,9 @@ class ProfileBody(BaseModel):
     baseline_last: str | None = None
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, llm_client: Any = None, http_client: Any = None) -> FastAPI:
     settings = settings or load_settings()
+    assistant_cfg = assistant.AssistantConfig(settings.home_dir)
     app = FastAPI(title="Can My Network Tell How I Feel? – results API")
     app.add_middleware(GZipMiddleware, minimum_size=2048)
     users = auth.UserStore(settings.home_dir)
@@ -242,15 +278,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         for p in visible(user):
             days = [d for d, _ in store.days(p.cache_name)]
             meta = profile_meta(p)
-            out.append({"id": p.id, "name": p.name, "condition": meta["condition"], "source": p.source,
-                        "scripted": meta["scripted"], "n_days": len(days), "config": p.to_json(),
+            person = user.role == "single"
+            cfg_json = p.to_json()
+            if person:     # source and device names of scripted runs name the condition
+                cfg_json.update(source="", persona=None,
+                                devices=[{"ip": "", "label": f"Device {i + 1}"} for i in range(len(p.devices))])
+            out.append({"id": p.id, "name": p.name, "condition": "" if person else meta["condition"],
+                        "source": "" if person else p.source, "scripted": False if person else meta["scripted"], "n_days": len(days), "config": cfg_json,
                         "first_day": days[0].isoformat() if days else None,
                         "last_day": days[-1].isoformat() if days else None})
         return out
 
     @app.get("/api/profiles/{pid}")
     def timeline(pid: str, user: auth.User = Depends(current_user)) -> dict[str, Any]:
-        return build_timeline(profile_for(user, pid), settings, config())
+        tl = build_timeline(profile_for(user, pid), settings, config())
+        return for_person(tl) if user.role == "single" else tl
 
     @app.get("/api/profiles/{pid}/days/{day}")
     def day_detail(pid: str, day: str, user: auth.User = Depends(current_user)) -> dict[str, Any]:
@@ -262,12 +304,56 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         rec = DayStore(settings.cache_dir).load(p.cache_name, d)
         if rec is None:
             raise HTTPException(404, f"no data for {pid} on {day}")
-        blocks = blocks_on_day(load_plan(settings.run_dir, p.source), d)
-        return {"profile": pid, "date": day, "activity": rec.get("activity"),
+        blocks = [] if user.role == "single" else blocks_on_day(load_plan(settings.run_dir, p.source), d)
+        activity = rec.get("activity")
+        if user.role == "single" and activity:
+            activity = {**activity, "devices": {f"Device {i + 1}": v for i, v in enumerate(activity.get("devices", {}).values())}}
+        return {"profile": pid, "date": day, "activity": activity,
                 "blocks": [b.to_json() for b in blocks],
                 "packets_raw": rec.get("packets_raw"), "packets_kept": rec.get("packets_kept"),
                 "n_partitions": rec.get("n_partitions"),
                 "last_partition_start": rec.get("last_partition_start")}
+
+    # ---- explanation assistant ----
+
+    @app.get("/api/assistant")
+    def assistant_status(user: auth.User = Depends(current_user)) -> dict[str, Any]:
+        pub = assistant_cfg.public()
+        pub["enabled"] = pub["enabled"] and pub["has_key"]
+        if user.role != "multi":
+            pub = {k: pub[k] for k in ("enabled", "notice")}
+        return pub
+
+    @app.put("/api/assistant")
+    def assistant_settings(body: AssistantSettingsBody, user: auth.User = Depends(multi_user)) -> dict[str, Any]:
+        try:
+            assistant_cfg.save(body.enabled, body.provider, body.model, body.api_key)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        return assistant_cfg.public()
+
+    @app.post("/api/profiles/{pid}/assistant")
+    def ask(pid: str, body: AssistantBody, user: auth.User = Depends(current_user)) -> StreamingResponse:
+        st = assistant_cfg.load()
+        if not st["enabled"]:
+            raise HTTPException(503, "The assistant is turned off (Settings → Assistant).")
+        p = profile_for(user, pid)
+        person = user.role == "single"
+        tl = build_timeline(p, settings, config())
+        if person:
+            tl = for_person(tl)
+        if not tl["days"]:
+            raise HTTPException(409, "No data for this profile yet.")
+        try:
+            msgs = assistant.clean_messages([m.model_dump() for m in body.messages], body.focus)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        labels, _ = _metric_labels(str(settings.app_dir))
+        ctx = assistant.build_context(tl, config(), person, labels)
+        chunks = assistant.stream_answer(st, assistant.system_blocks(ctx, person), msgs,
+                                         anthropic_client=llm_client, http_client=http_client)
+        return StreamingResponse(chunks, media_type="text/plain; charset=utf-8",
+                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
     # ---- configuration (multi-profile users) ----
 

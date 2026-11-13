@@ -41,3 +41,9 @@ export const deviceColor = (device: string, index = 0) =>
 
 export const deviceRole = (device: string) =>
   device.endsWith("_laptop") ? "laptop" : device.endsWith("_phone") ? "phone" : device;
+
+/** Everyday names of the criteria for the person view (no clinical terms; same as the backend). */
+export const AREA_NAMES: Record<string, string> = {
+  C1: "Daily rhythm", C2: "Variety and social contact", C3: "Appetite-related use", C4: "Sleep",
+  C5: "Restlessness", C6: "Energy", C7: "Self-related browsing", C8: "Focus", C9: "Sensitive searches",
+};

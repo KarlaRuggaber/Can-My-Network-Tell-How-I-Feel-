@@ -4,7 +4,10 @@ import { api, CRIT_KEYS, setUnauthorizedHandler } from "./api";
 import { CriteriaSummary, type PhaseView } from "./components/CriteriaSummary";
 import { DayDetail } from "./components/DayDetail";
 import { Heatmap } from "./components/Heatmap";
+import { Assistant } from "./components/Assistant";
+import { AssistantSettings } from "./components/AssistantSettings";
 import { Login } from "./components/Login";
+import { PersonView } from "./components/PersonView";
 import { MetricTrends } from "./components/MetricTrends";
 import { ProfileSettings } from "./components/ProfileSettings";
 import { episodeFlags, gatePresentRolling, phaseGate, type GateParams } from "./lib/gate";
@@ -152,7 +155,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
             <span className="muted small">Signed in as <b>{me.username}</b></span>
             {multi && (
               <button className={`btn ${settings ? "btn-active" : ""}`} onClick={() => setSettings(!settings)}>
-                People and devices
+                Settings
               </button>
             )}
             <button className="btn btn-quiet" onClick={onLogout}>Log out</button>
@@ -171,14 +174,17 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
       </header>
 
       {settings && multi && (
-        <ProfileSettings onClose={() => setSettings(false)}
-          onChanged={(id) => { loadProfiles(id); if (id) { setPid(id); setTl(null); } }} />
+        <>
+          <ProfileSettings onClose={() => setSettings(false)}
+            onChanged={(id) => { loadProfiles(id); if (id) { setPid(id); setTl(null); } }} />
+          <AssistantSettings />
+        </>
       )}
 
       {!settings && profiles.length === 0 && (
         <section className="card">
           <h2>No profile yet</h2>
-          <p>{multi ? "Add a person under “People and devices”." : "Your login has no profile assigned. Please contact the study team."}</p>
+          <p>{multi ? "Add a person under Settings → People and devices." : "Your login has no profile assigned. Please contact the study team."}</p>
         </section>
       )}
 
@@ -215,7 +221,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
           {!tl && <p className="muted">Loading…</p>}
           {tl && (
             <>
-              <section className="intro">
+              {multi && <section className="intro">
                 <div>
                   <h2>{tl.persona.name}{tl.persona.condition && <> · {tl.persona.condition}</>}</h2>
                   {tl.persona.summary && <p>{tl.persona.summary}</p>}
@@ -224,7 +230,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                   <div><dt>Traffic</dt><dd>{tl.profile.has_plan ? "scripted run" : "live"} · {tl.profile.all_devices ? "all devices" : tl.profile.devices.map((d) => d.label || d.ip).join(", ")}</dd></div>
                   <div><dt>Recorded days</dt><dd>{tl.days.filter((d) => d.phase === "baseline").length} {labels.baseline.toLowerCase()} · {tl.days.filter((d) => d.phase === "current").length} {labels.current.toLowerCase()}</dd></div>
                 </dl>
-              </section>
+              </section>}
 
               {tl.status === "pending" && (
                 <section className="card">
@@ -234,7 +240,14 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                 </section>
               )}
 
-              {tl.status === "ready" && phases && (
+              {tl.status === "ready" && phases && !multi && (
+                <>
+                  <PersonView tl={tl} cfg={cfg} recent={phases.current} gate={gate} />
+                  <Assistant profileId={tl.profile.id} person focus={null} />
+                </>
+              )}
+
+              {tl.status === "ready" && phases && multi && (
                 <>
                   <CriteriaSummary tl={tl} cfg={cfg} phases={phases} gate={gate}
                     selected={activeCrit} onSelect={setCrit} />
@@ -249,16 +262,18 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                     <DayDetail profileId={tl.profile.id} day={tl.days[dayIndex]} cfg={cfg} present={present}
                       dayIndex={dayIndex} phaseLabels={labels} />
                   )}
+                  <Assistant profileId={tl.profile.id} person={false}
+                    focus={[day && `day ${day}`, activeCrit && `${activeCrit} ${cfg.criterion_names[activeCrit]}`].filter(Boolean).join(", ") || null} />
                 </>
               )}
             </>
           )}
         </>
       )}
-      <footer className="muted small">
+      {multi && <footer className="muted small">
         Metrics computed with the unchanged thesis metric code (<code>app_pcap_to_dsm5/app/metrics</code>) on the
         person's devices.{tl?.profile.has_plan && " Expected outcomes: profile §9."}
-      </footer>
+      </footer>}
     </div>
   );
 }
