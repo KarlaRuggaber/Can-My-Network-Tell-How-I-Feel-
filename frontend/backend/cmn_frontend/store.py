@@ -52,6 +52,12 @@ class DayStore:
             json.dump(record, f, separators=(",", ":"))
         os.replace(tmp, p)
 
+    def remove(self, dataset: str, day: date) -> None:
+        try:
+            self.path(dataset, day).unlink()
+        except FileNotFoundError:
+            pass
+
     def datasets(self) -> list[str]:
         if not self.cache_dir.is_dir():
             return []

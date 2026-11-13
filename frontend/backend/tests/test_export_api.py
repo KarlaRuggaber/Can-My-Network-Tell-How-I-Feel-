@@ -18,7 +18,7 @@ from fixtures import DS, make_run
 def run(tmp_path_factory):
     s = make_run(tmp_path_factory.mktemp("run"))
     stats = export_dataset(DS, s)
-    assert stats == {"computed": 2, "cached": 0}
+    assert stats == {"computed": 2, "imported": 0, "cached": 0, "skipped": 0}
     return s
 
 
@@ -42,16 +42,16 @@ def test_cache_records(run):
 
 
 def test_incremental_and_cascade(run):
-    assert export_dataset(DS, run) == {"computed": 0, "cached": 2}
+    assert export_dataset(DS, run) == {"computed": 0, "imported": 0, "cached": 2, "skipped": 0}
     # rewriting a partition of the first day recomputes it and every later day
     p = sorted((run.processed_dir / DS).glob("*20261108_0800.parquet"))[0]
     t = time.time() + 5
     os.utime(p, (t, t))
-    assert export_dataset(DS, run) == {"computed": 2, "cached": 0}
+    assert export_dataset(DS, run) == {"computed": 2, "imported": 0, "cached": 0, "skipped": 0}
     # a change on the last day only recomputes that day
     p = sorted((run.processed_dir / DS).glob("*20261109_2000.parquet"))[0]
     os.utime(p, (t + 5, t + 5))
-    assert export_dataset(DS, run) == {"computed": 1, "cached": 1}
+    assert export_dataset(DS, run) == {"computed": 1, "imported": 0, "cached": 1, "skipped": 0}
 
 
 def test_api(run):
@@ -98,3 +98,35 @@ def test_ip_cache_does_not_change_results(run):
     finally:
         daily.load_metric_code(run.app_dir)
     assert plain["metrics"] == cached["metrics"]
+
+
+def test_daily_table_is_preferred(tmp_path):
+    """Days in the evaluation's daily table are imported, the others computed; pre-run days skipped."""
+    import pandas as pd
+    s = make_run(tmp_path)
+    s.daily_tables.mkdir()
+    table = s.daily_tables / f"{DS}.daily.csv"
+    pd.DataFrame([{"dataset": DS, "Date": "2026-11-08", "phase": "baseline", "profile": "student",
+                   "F8_NightDayRatioPkts": 0.42, "C2_F1_UniqueSLD": 7}]).to_csv(table, index=False)
+    t = time.time() + 60
+    os.utime(table, (t, t))                       # newer than the partitions
+    assert export_dataset(DS, s) == {"computed": 1, "imported": 1, "cached": 0, "skipped": 0}
+    store = DayStore(s.cache_dir)
+    rec8 = store.load(DS, date(2026, 11, 8))
+    assert rec8["source"] == "table"
+    assert rec8["metrics"]["F8_NightDayRatioPkts"] == 0.42 and "phase" not in rec8["metrics"]
+    assert sum(rec8["activity"]["total"]) == rec8["packets_kept"] > 0   # traffic still summarised
+    assert store.load(DS, date(2026, 11, 9))["source"] == "computed"
+    assert export_dataset(DS, s)["cached"] == 2
+
+    # a table that starts later: earlier (pre-run) days are dropped from the cache
+    pd.DataFrame([{"Date": "2026-11-09", "C2_F1_UniqueSLD": 3}]).to_csv(table, index=False)
+    os.utime(table, (t + 10, t + 10))
+    assert export_dataset(DS, s) == {"computed": 0, "imported": 1, "cached": 0, "skipped": 1}
+    assert store.load(DS, date(2026, 11, 8)) is None
+    assert store.load(DS, date(2026, 11, 9))["metrics"]["C2_F1_UniqueSLD"] == 3
+
+    # a partition rewritten after the table was written: that day is recomputed
+    p = sorted((s.processed_dir / DS).glob("*20261109_2000.parquet"))[0]
+    os.utime(p, (t + 20, t + 20))
+    assert export_dataset(DS, s)["computed"] == 1

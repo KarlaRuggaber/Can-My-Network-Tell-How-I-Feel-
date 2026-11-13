@@ -22,7 +22,8 @@ The Streamlit app in `app_pcap_to_dsm5/app/` is not changed and stays the refere
 ## How it works
 
 ```
-~/cmn-data/processed_parquet/<dataset>/*.parquet ─┐
+~/cmn-data/eval/<dataset>.daily.csv ──────────────┐  (evaluation's daily metric tables, preferred)
+~/cmn-data/processed_parquet/<dataset>/*.parquet ─┤
                                                   │  python -m cmn_frontend.export
 app_pcap_to_dsm5/app/metrics  (imported, unchanged)┤  one day at a time, incremental
                                                   ▼
@@ -36,7 +37,14 @@ traffic-runner/config/devices.csv ───────────────�
                                    React UI (Vite, port 5173 in dev; or built and served by the API)
 ```
 
-- **Export** (`backend/cmn_frontend/export.py`, `daily.py`): mirrors `compute_all_daily()` of the
+- **Source of the daily metrics**: the evaluation (`evaluation/`, branch `evaluation`) writes the
+  same daily rows to `~/cmn-data/eval/<dataset>.daily.csv`. The export takes a day's metrics from that
+  table when the table has the day and is newer than the day's partitions, and then only computes the
+  5-minute traffic summary (seconds per day). Days the table does not have yet (e.g. today during the
+  live run) are computed here with the same code, using the previous rows as history. Days before the
+  table's first day (pre-run test captures) are skipped, so the history matches the evaluation's.
+  Without a table, every day is computed here.
+- **Export** (`backend/cmn_frontend/export.py`, `daily.py`): when computing, it mirrors `compute_all_daily()` of the
   Early Signs page (same partition-to-day rule, hostname enrichment, background filter, base record,
   all nine criteria, previous days as history). It keeps only the resulting row per day, so memory
   stays at about one day of packets (1–3 GB, up to ~7 GB for a 9M-packet day) instead of the 24 GB
@@ -57,13 +65,15 @@ traffic-runner/config/devices.csv ───────────────�
 Speed: the metric code calls `is_private_ip` per packet in row-wise `apply`, which dominates the run
 time. The export memoizes this pure function in its own process (results identical, tested;
 `CMN_NO_IP_CACHE=1` disables it). A normal day still takes 0.5–3 min, and a 9M-packet streaming day
-several minutes. A first full export of three personas × ~21 days takes about an hour with `--jobs 3`;
-after that, only new or changed days are computed.
+several minutes. Computing everything here takes about an hour for three personas with `--jobs 3`; importing
+from the evaluation's tables takes about a minute per persona. After that, only new or changed days
+are processed.
 
 ## Run it (laptop only, not on the gateway)
 
 Prerequisites: Python 3.11+, Node 20+, and the gateway data copied to `~/cmn-data`
-(`processed_parquet/` and `run/`, as for the local Streamlit run).
+(`processed_parquet/` and `run/`, as for the local Streamlit run). Run the evaluation's daily step
+first if possible (`~/cmn-data/eval/`); otherwise the export computes the metrics itself.
 
 ```bash
 cd frontend/backend
@@ -110,6 +120,7 @@ The URL keeps the view: `#/<dataset>/<day>/<criterion>`, e.g. `#/gw_mdd_suicidal
 | `CMN_DATA` | `~/cmn-data` | Base folder of the copied gateway data |
 | `CMN_PROCESSED` | `$CMN_DATA/processed_parquet` | Parquet partitions |
 | `CMN_RUN` | `$CMN_DATA/run` | Plans (`<dataset>.csv`) and runner logs (`<dataset>.state.jsonl`) |
+| `CMN_DAILY_TABLES` | `$CMN_DATA/eval` | Evaluation's daily metric tables (`<dataset>.daily.csv`), used when present |
 | `CMN_CACHE` | `$CMN_DATA/frontend_cache` | Per-day results of this frontend (separate from Streamlit's `feature_cache`) |
 | `CMN_APP_DIR` | `app_pcap_to_dsm5/app` | Thesis app with `metrics/` and `fasl_config.json` |
 | `CMN_FASL_CONFIG` | `$CMN_APP_DIR/fasl_config.json` | FASL weights, membership functions, θ/N/M |
@@ -129,7 +140,7 @@ cd frontend/web && npm test && npm run typecheck
 
 Backend: FASL parity with the Streamlit page, the gate cases, ground-truth join (plan + runner state,
 blocks crossing midnight, away/planned/not-run status), export on synthetic partitions with the real
-metric code (cache, incremental update, cascade) and the API. Web: gate (same cases), formatting,
+metric code (cache, incremental update, cascade, import from a daily table) and the API. Web: gate (same cases), formatting,
 and the expected-vs-observed table.
 
 ## Reading the results

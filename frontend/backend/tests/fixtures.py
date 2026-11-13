@@ -80,5 +80,6 @@ def make_run(tmp: Path) -> Settings:
                        "other_phone,phone,02:00:00:00:00:02,10.42.1.99,gw_other_a\n")
     app_dir = REPO_ROOT / "app_pcap_to_dsm5" / "app"
     return Settings(data_dir=tmp, processed_dir=processed, run_dir=run, cache_dir=cache,
+                    daily_tables=tmp / "eval",
                     app_dir=app_dir, fasl_config=app_dir / "fasl_config.json",
                     devices_csv=devices, web_dist=tmp / "no-dist")

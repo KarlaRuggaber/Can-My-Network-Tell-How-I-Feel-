@@ -221,5 +221,54 @@ def compute_day(files: list[Path], day: date, history: pd.DataFrame, code: Metri
     }
 
 
+def activity_for_day(files: list[Path], day: date, code: MetricCode,
+                     ip_to_device: dict[str, str]) -> dict[str, Any]:
+    """Only the traffic summary of a day (for days whose metrics come from a daily table)."""
+    cols = ["Timestamp", "Date", "Hour", "Protocol", "Source IP", "Destination IP", "Source Port",
+            "Destination Port", "Length", "IsDNS", "DNS_QNAME", "DNS_ANS_IPS", "DNS_ANS_NAME"]
+    frames = []
+    for fp in files:
+        try:
+            frames.append(pd.read_parquet(fp, columns=cols))
+        except Exception:
+            try:
+                frames.append(pd.read_parquet(fp))
+            except Exception:
+                continue
+    raw = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["Timestamp"])
+    n_raw = int(len(raw))
+    df_day = prepare_day(raw, day, code)
+    del raw
+    out = {
+        "activity": activity_bins(df_day, day, ip_to_device),
+        "packets_raw": n_raw,
+        "packets_kept": int(len(df_day)),
+        "first_packet": df_day["Timestamp"].iloc[0].isoformat() if len(df_day) else None,
+        "last_packet": df_day["Timestamp"].iloc[-1].isoformat() if len(df_day) else None,
+    }
+    del df_day
+    gc.collect()
+    return out
+
+
+def load_daily_table(path: Path) -> dict[date, dict[str, Any]]:
+    """Daily metric rows of the evaluation (evaluation/daily.py: same compute_all_daily rows).
+
+    Returns day -> JSON-safe metric row (Date as ISO timestamp, like compute_day's rows).
+    Bookkeeping columns of the table (dataset, phase, profile) are dropped.
+    """
+    if not Path(path).is_file():
+        return {}
+    df = pd.read_csv(path)
+    if "Date" not in df.columns:
+        return {}
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["Date"])
+    out = {}
+    for row in df.drop(columns=[c for c in ("dataset", "phase", "profile") if c in df.columns]).to_dict("records"):
+        out[row["Date"].date()] = json_safe(row)
+    return out
+
+
 def day_end(day: date) -> datetime:
     return datetime.combine(day, datetime.min.time()) + timedelta(days=1)
