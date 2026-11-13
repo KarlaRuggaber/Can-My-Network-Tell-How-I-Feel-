@@ -315,7 +315,7 @@ sudo systemctl enable --now traffic-executor@gw_insomnia_a traffic-executor@gw_m
 
 The executors wait until each plan's first block. `systemctl status 'traffic-executor@*'` and `python3 -m scheduler execute --commands … --state … --status` show where they are.
 
-**Synthetic (later).** The synthesizer reads `plan.csv` directly. For each row it takes a recorded snippet of the same `activity_id`, role and `mix` (from the live runs' PCAPs, cut by the ground-truth rows). It trims or loops the snippet to `duration`, shifts it to `start` and rewrites the addresses to the device's IP/MAC from `devices.csv`. Nothing is added outside planned rows: idle stays empty and away is a gap. The synthetic PCAPs then go through the same ingest (`tapingest --once`) as the live ones. Every packet stays traceable to a `block_id` → profile block → profile, which is the traceability the project objective asks for.
+**Synthetic** ([synthesizer/README.md](../synthesizer/README.md)). The synthesizer reads `plan.csv` directly. For each row it takes a recorded snippet of the same `activity_id`, role and `mix` (from the live runs' PCAPs, cut by the ground-truth rows). It trims or loops the snippet to `duration`, shifts it to `start` and rewrites the addresses to the device's IP/MAC from `devices.csv`. Nothing is added outside planned rows: idle stays empty and away is a gap. The synthetic PCAPs then go through the same ingest (`tapingest --once`) as the live ones. Every packet stays traceable to a `block_id` → profile block → profile, which is the traceability the project objective asks for.
 
 **Analysis.** Per day: `day`/`phase` say which phase (warm-up days are discarded; baseline vs. profile come from `phase`, not from the dataset name, catalog §1). `profile_block` connects the app's per-day metrics to the profile's §9.
 
@@ -329,7 +329,7 @@ The executors wait until each plan's first block. `systemctl status 'traffic-exe
 | `tier2-clinical/mdd-severe-suicidality` | ✓ | defaults of §8 (23.10). Sensitive: review with Lukasz before use (profile header) |
 | `tier2-clinical/social-anxiety-moderate` | ✓ | defaults of §8 (23.10) |
 
-Not done: the synthesizer.
+The synthesizer is done (PR #10). A first real library (3 run days) and a leave-one-day-out validation of 28.10 are in its README §8.
 
 ## 7. Ambiguities in the profile markdown (decisions needed)
 
