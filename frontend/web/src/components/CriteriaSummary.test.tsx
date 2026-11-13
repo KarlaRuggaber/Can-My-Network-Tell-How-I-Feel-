@@ -123,5 +123,8 @@ describe("C9 flag", () => {
       { date: "2026-11-09", metrics: ["C9_F1_CrisisLineHits", "C9_F4_Forum"] },
       { date: "2026-11-10", metrics: ["C9_F4_Forum"] },
     ]);
+    // reddit fallback count is never a signal, however high
+    const reddit = tl.days.map((d) => ({ ...d, metrics: { C9_F4_SelfHarmForumVisits: 335382 } }));
+    expect(c9Days({ ...tl, days: reddit, baseline_stats: { C9_F4_SelfHarmForumVisits: { mean: 0, sd: 0, n: 2 } } })).toEqual([]);
   });
 });

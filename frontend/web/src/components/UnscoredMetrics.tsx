@@ -12,7 +12,11 @@ const num = (v: unknown): number | null => (typeof v === "number" && Number.isFi
 /** A C9 value counts as a signal when it is above the person's baseline: above mean + 2 SD, or above
  * zero for a metric that was always 0 in the baseline. Some C9 metrics are non-zero every day (e.g.
  * forum traffic), so "above zero" alone would flag every day. */
+// Not used for the flag: without URLs in the gateway data, this metric counts all reddit.com packets.
+const NOT_A_C9_SIGNAL = new Set(["C9_F4_SelfHarmForumVisits"]);
+
 export function c9Signal(tl: Timeline, key: string, v: unknown): boolean {
+  if (NOT_A_C9_SIGNAL.has(key)) return false;
   const x = num(v);
   if (x === null || x <= 0) return false;
   const s = tl.baseline_stats[key];

@@ -255,7 +255,9 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
         ctx["unscored_criteria"] = {
             "note": ("metrics of criteria the configuration does not score (no weights): raw daily values, "
                      "non-zero ones only; not part of any likelihood or the gate. For C9 (suicidality) the "
-                     "portal flags a day when a metric is above its baseline mean + 2 SD."),
+                     "portal flags a day when a metric is above its baseline mean + 2 SD, except "
+                     "'Self-harm forum visits': without URLs in the gateway data it counts all reddit.com "
+                     "packets, so it says nothing about self-harm sites and is never a C9 signal."),
             "criteria": [f"{c} {fasl.CRIT_NAMES[c]}" for c in unscored],
             "baseline_mean_sd": {metric_labels.get(k, k): {"mean": _r(v["mean"]), "sd": _r(v["sd"])}
                                  for k, v in tl.get("baseline_stats", {}).items() if k[:2] in unscored and k[2] == "_"},
