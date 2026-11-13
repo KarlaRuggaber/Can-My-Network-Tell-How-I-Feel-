@@ -21,9 +21,13 @@ export function Chart({ option, height, onClick, ariaLabel }: Props) {
     const c = echarts.init(el.current, undefined, { renderer: "svg" });
     inst.current = c;
     c.on("click", (p) => clickRef.current?.(p as echarts.ECElementEvent));
-    const ro = new ResizeObserver(() => c.resize());
+    let frame = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => c.resize());
+    });
     ro.observe(el.current);
-    return () => { ro.disconnect(); c.dispose(); inst.current = null; };
+    return () => { cancelAnimationFrame(frame); ro.disconnect(); c.dispose(); inst.current = null; };
   }, []);
 
   useEffect(() => { inst.current?.setOption({ textStyle: { fontFamily: FONT.sans }, ...option }, { notMerge: true }); }, [option]);

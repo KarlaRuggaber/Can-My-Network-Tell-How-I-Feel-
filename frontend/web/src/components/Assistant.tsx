@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type AssistantStatus, type ChatTurn } from "../api";
 import { Markdown } from "./Markdown";
 
@@ -23,6 +23,20 @@ const SUGGEST_CLINICIAN = [
   "How does the recent period differ from the baseline?",
 ];
 
+const DEFAULT_W = 420;
+const MIN_W = 320;
+const WIDTH_KEY = "cmn.assistantWidth";
+const maxW = () => Math.max(MIN_W, Math.min(900, Math.round(window.innerWidth * 0.7)));
+const clampW = (w: number) => Math.round(Math.min(maxW(), Math.max(MIN_W, w)));
+
+/** Panel width lives in a CSS variable, so the page margin and the panel follow it together. */
+function applyWidth(w: number) {
+  document.documentElement.style.setProperty("--drawer-user-w", `${w}px`);
+}
+function storedWidth(): number {
+  try { const v = Number(window.localStorage.getItem(WIDTH_KEY)); return v ? clampW(v) : DEFAULT_W; } catch { return DEFAULT_W; }
+}
+
 /** Explanation layer: natural-language questions about the results shown, answered from the data. */
 export function Assistant({ open, onToggle, profileId, person, focus }: Props) {
   const [status, setStatus] = useState<AssistantStatus | null>(null);
@@ -31,6 +45,39 @@ export function Assistant({ open, onToggle, profileId, person, focus }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const widthRef = useRef(storedWidth());
+
+  const setWidth = useCallback((w: number, save = true) => {
+    widthRef.current = clampW(w);
+    applyWidth(widthRef.current);
+    if (save) { try { window.localStorage.setItem(WIDTH_KEY, String(widthRef.current)); } catch { /* convenience only */ } }
+  }, []);
+  useEffect(() => { applyWidth(widthRef.current); }, []);
+
+  // Drag the left edge: no transitions while dragging, width follows the pointer.
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    document.documentElement.classList.add("drawer-resizing");
+    const move = (ev: PointerEvent) => setWidth(window.innerWidth - ev.clientX, false);
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      handle.removeEventListener("pointercancel", up);
+      document.documentElement.classList.remove("drawer-resizing");
+      setWidth(widthRef.current);
+      window.dispatchEvent(new Event("resize"));
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+    handle.addEventListener("pointercancel", up);
+  };
+  const keyResize = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowLeft") { e.preventDefault(); setWidth(widthRef.current + 24); }
+    if (e.key === "ArrowRight") { e.preventDefault(); setWidth(widthRef.current - 24); }
+  };
 
   useEffect(() => { api.assistant().then(setStatus).catch(() => setStatus(null)); }, []);
   useEffect(() => { setTurns([]); setError(null); }, [profileId]);
@@ -67,17 +114,19 @@ export function Assistant({ open, onToggle, profileId, person, focus }: Props) {
 
   if (person && status && !status.enabled) return null;   // nothing to offer the person
 
-  if (!open) {
-    return (
-      <button className="assistant-tab" onClick={() => onToggle(true)} aria-expanded={false} aria-controls="assistant-panel">
+  // Panel and tab stay mounted so opening and closing can slide; the closed panel is inert.
+  return (
+    <>
+      <button className={`assistant-tab ${open ? "is-hidden" : ""}`} onClick={() => onToggle(true)}
+        aria-expanded={open} aria-controls="assistant-panel" tabIndex={open ? -1 : 0}>
         <span className="assistant-tab-icon" aria-hidden="true">?</span>
         <span>{person ? "Questions" : "Assistant"}</span>
       </button>
-    );
-  }
-
-  return (
-    <aside id="assistant-panel" className="assistant-drawer" aria-label="Assistant">
+    <aside id="assistant-panel" className={`assistant-drawer ${open ? "is-open" : ""}`} aria-label="Assistant"
+      aria-hidden={!open} {...(!open ? { inert: "" } : {})}>
+      <div className="drawer-resize" role="separator" aria-orientation="vertical" aria-label="Resize the assistant panel"
+        tabIndex={open ? 0 : -1} onPointerDown={startResize} onKeyDown={keyResize}
+        onDoubleClick={() => setWidth(DEFAULT_W)} title="Drag to resize · double-click to reset" />
       <div className="drawer-head">
         <div>
           <h2>{person ? "Questions about your results" : "Ask about these results"}</h2>
@@ -131,5 +180,6 @@ export function Assistant({ open, onToggle, profileId, person, focus }: Props) {
         </div>
       )}
     </aside>
+    </>
   );
 }
