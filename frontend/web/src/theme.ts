@@ -29,8 +29,15 @@ export const C = {
   seqWhiteFrom: 5,                  // white cell text from this step on (contrast >= 4.3)
 };
 
-export const deviceColor = (device: string) =>
-  device.endsWith("_laptop") ? C.laptop : C.phone;
+// Fixed device order (validated: CVD ΔE >= 8, normal >= 16, contrast >= 3:1); the legend names
+// every series. A fifth device and beyond is drawn in grey rather than with a generated hue.
+export const DEVICE_SERIES = [C.phone, C.laptop, "#2f8f6a", "#8a5cb8"];
+export const DEVICE_OTHER = "#9a948e";
+
+/** Colour of a device: scripted names keep phone/laptop; others follow the fixed order. */
+export const deviceColor = (device: string, index = 0) =>
+  device.endsWith("_laptop") ? C.laptop : device.endsWith("_phone") ? C.phone
+    : DEVICE_SERIES[index] ?? DEVICE_OTHER;
 
 export const deviceRole = (device: string) =>
   device.endsWith("_laptop") ? "laptop" : device.endsWith("_phone") ? "phone" : device;

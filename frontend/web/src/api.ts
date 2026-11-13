@@ -15,13 +15,38 @@ export interface Config {
   fasl_config_path: string;
 }
 
-export interface PersonaListItem {
-  dataset: string; name: string; condition: string;
-  first_day: string; last_day: string; n_days: number;
+export type Role = "single" | "multi";
+export interface Me { username: string; role: Role; profiles: string[] }
+
+export interface ProfileListItem {
+  id: string; name: string; condition: string; source: string; scripted: boolean;
+  first_day: string | null; last_day: string | null; n_days: number;
+  config: Profile;
+}
+
+export interface DeviceRef { ip: string; label: string }
+
+/** A person: a name, a traffic source, and their devices (or all devices of the source). */
+export interface Profile {
+  id: string; name: string; source: string; all_devices: boolean; devices: DeviceRef[];
+  baseline_first: string | null; baseline_last: string | null; persona: string | null; view_key: string;
+}
+
+export interface Source { source: string; n_days: number; first_day: string | null; last_day: string | null; has_plan: boolean }
+
+export interface SourceDevice {
+  ip: string; packets: number; days: number; last_seen: string | null;
+  label: string; role: string; assigned_to: string[];
+}
+
+export interface ProfileBody {
+  id?: string; name: string; source: string; all_devices: boolean; devices: DeviceRef[];
+  baseline_first: string | null; baseline_last: string | null;
 }
 
 export type Expectation = "present" | "no" | "elevated" | "borderline" | "flag";
 export interface PersonaMeta {
+  id: string; source: string; scripted: boolean;
   name: string; condition: string; profile: string | null; baseline_profile: string | null;
   summary: string;
   expected: Partial<Record<CritKey, { present: Expectation; note: string }>>;
@@ -39,13 +64,14 @@ export interface Day {
   date: string; weekday: string; phase: string; complete: boolean;
   n_partitions: number; packets_kept: number;
   first_packet: string | null; last_packet: string | null; computed_at: string;
-  ground_truth: GroundTruthSummary;
+  ground_truth: GroundTruthSummary | null;   // only for scripted sources
   metrics: Record<string, number | string | boolean | null>;
   L: Record<CritKey, number | null>;
   parts: Partial<Record<CritKey, Record<string, MetricPart>>>;
 }
 
-export type PhaseKey = "baseline" | "clinical";
+/** "current" = the clinical phase of a scripted run, or the recent days of live traffic. */
+export type PhaseKey = "baseline" | "current";
 
 export interface PhaseInfo {
   days: number; n_phase_days: number; total_present: number; core_present: boolean; episode: boolean;
@@ -55,8 +81,9 @@ export interface PhaseInfo {
 }
 
 export interface Timeline {
-  dataset: string;
+  profile: Profile & { has_plan: boolean; phase_labels: Record<PhaseKey, string> };
   persona: PersonaMeta;
+  status: "ready" | "pending";
   days: Day[];
   gate: {
     params: { theta: number; N: number; M: number; core: string[]; min_present: number };
@@ -76,27 +103,49 @@ export interface Block {
 }
 
 export interface DayDetail {
-  dataset: string; date: string;
+  profile: string; date: string;
   activity: { bin_minutes: number; total: number[]; devices: Record<string, number[]> } | null;
   blocks: Block[];
   packets_raw: number; packets_kept: number; n_partitions: number;
   last_partition_start: string | null;
 }
 
-async function get<T>(path: string): Promise<T> {
-  const r = await fetch(path);
+export class ApiError extends Error {
+  constructor(public status: number, message: string) { super(message); }
+}
+
+/** Called when the session is gone (401), so the app can show the login again. */
+let onUnauthorized: () => void = () => undefined;
+export const setUnauthorizedHandler = (f: () => void) => { onUnauthorized = f; };
+
+async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const r = await fetch(path, {
+    method, credentials: "same-origin",
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
   if (!r.ok) {
     let msg = `${r.status} ${r.statusText}`;
-    try { msg = (await r.json()).detail ?? msg; } catch { /* not JSON */ }
-    throw new Error(msg);
+    try { const d = (await r.json()).detail; msg = typeof d === "string" ? d : JSON.stringify(d); } catch { /* not JSON */ }
+    if (r.status === 401 && path !== "/api/login") onUnauthorized();
+    throw new ApiError(r.status, msg);
   }
   return r.json() as Promise<T>;
 }
+const get = <T,>(path: string) => call<T>("GET", path);
+const enc = encodeURIComponent;
 
 export const api = {
+  login: (username: string, password: string) => call<Me>("POST", "/api/login", { username, password }),
+  logout: () => call<{ ok: boolean }>("POST", "/api/logout"),
+  me: () => get<Me>("/api/me"),
   config: () => get<Config>("/api/config"),
-  personas: () => get<PersonaListItem[]>("/api/personas"),
-  timeline: (ds: string) => get<Timeline>(`/api/personas/${encodeURIComponent(ds)}`),
-  day: (ds: string, day: string) =>
-    get<DayDetail>(`/api/personas/${encodeURIComponent(ds)}/days/${day}`),
+  profiles: () => get<ProfileListItem[]>("/api/profiles"),
+  timeline: (id: string) => get<Timeline>(`/api/profiles/${enc(id)}`),
+  day: (id: string, day: string) => get<DayDetail>(`/api/profiles/${enc(id)}/days/${day}`),
+  sources: () => get<Source[]>("/api/sources"),
+  sourceDevices: (source: string) => get<SourceDevice[]>(`/api/sources/${enc(source)}/devices`),
+  createProfile: (b: ProfileBody) => call<Profile & { pending: boolean }>("POST", "/api/profiles", b),
+  updateProfile: (id: string, b: ProfileBody) => call<Profile & { pending: boolean }>("PUT", `/api/profiles/${enc(id)}`, b),
+  deleteProfile: (id: string) => call<{ ok: boolean }>("DELETE", `/api/profiles/${enc(id)}`),
 };

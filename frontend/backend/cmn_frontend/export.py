@@ -1,6 +1,6 @@
 """Compute (or update) the per-day cache for one or more datasets.
 
-    python -m cmn_frontend.export                       # all datasets in processed_parquet
+    python -m cmn_frontend.export                       # all sources + every person's device set
     python -m cmn_frontend.export gw_insomnia_a         # one dataset
     python -m cmn_frontend.export --watch 900           # repeat every 15 min (live run)
 
@@ -30,7 +30,9 @@ log = logging.getLogger("cmn_frontend.export")
 
 
 def export_dataset(dataset: str, settings: Settings, code: daily.MetricCode | None = None,
-                   force: bool = False, until: date | None = None) -> dict[str, int]:
+                   force: bool = False, until: date | None = None,
+                   ips: list[str] | None = None, cache_name: str | None = None,
+                   labels: dict[str, str] | None = None) -> dict[str, int]:
     """Update the per-day cache of one dataset.
 
     Metric rows come from the evaluation's daily table (<daily_tables>/<dataset>.daily.csv) when it
@@ -42,10 +44,15 @@ def export_dataset(dataset: str, settings: Settings, code: daily.MetricCode | No
     code = code or daily.load_metric_code(settings.app_dir)
     store = DayStore(settings.cache_dir)
     version = code_version(settings.app_dir)
-    devices = {ip: d["device"] for ip, d in load_devices(settings.devices_csv).items()
-               if d.get("dataset") == dataset}
+    name = cache_name or dataset
+    if labels is not None:
+        devices = dict(labels)
+    else:
+        devices = {ip: d["device"] for ip, d in load_devices(settings.devices_csv).items()
+                   if d.get("dataset") == dataset}
     table_path = settings.daily_tables / f"{dataset}.daily.csv"
-    table = daily.load_daily_table(table_path)
+    # the evaluation's tables hold whole-source metrics: only usable without a device filter
+    table = {} if ips else daily.load_daily_table(table_path)
     table_mtime = table_path.stat().st_mtime if table else 0.0
     table_sig = f"{table_mtime:.0f}" if table else ""
     first_table_day = min(table) if table else None
@@ -58,7 +65,7 @@ def export_dataset(dataset: str, settings: Settings, code: daily.MetricCode | No
         if until and day > until:
             break
         if first_table_day and day < first_table_day:
-            store.remove(dataset, day)
+            store.remove(name, day)
             stats["skipped"] += 1
             continue
         files = by_day[day]
@@ -66,7 +73,7 @@ def export_dataset(dataset: str, settings: Settings, code: daily.MetricCode | No
         newest = max((p.stat().st_mtime for p in files), default=0.0)
         use_table = day in table and table_mtime >= newest
         source = "table" if use_table else "computed"
-        cached = store.load(dataset, day)
+        cached = store.load(name, day)
         if (not dirty and cached and cached.get("signature") == sig
                 and cached.get("code_version") == version and cached.get("source") == source
                 and (source == "computed" or cached.get("table_signature") == table_sig)):
@@ -80,11 +87,12 @@ def export_dataset(dataset: str, settings: Settings, code: daily.MetricCode | No
             stats["imported"] += 1
         else:
             dirty = True  # later computed days see a changed history
-            rec = daily.compute_day(files, day, history_frame(history), code, devices)
+            rec = daily.compute_day(files, day, history_frame(history), code, devices, ips)
             stats["computed"] += 1
         last_start = max((partition_start(p) for p in files), default=None)
         rec.update({
             "dataset": dataset,
+            "devices": sorted(ips) if ips else None,
             "date": day.isoformat(),
             "source": source,
             "table_signature": table_sig if use_table else None,
@@ -95,9 +103,9 @@ def export_dataset(dataset: str, settings: Settings, code: daily.MetricCode | No
             "last_partition_start": last_start.isoformat() if last_start else None,
             "seconds": round(time.monotonic() - t0, 1),
         })
-        store.save(dataset, day, rec)
+        store.save(name, day, rec)
         history.append(rec)
-        log.info("%s %s: %s, %d partitions, %d packets kept, %.0f s", dataset, day,
+        log.info("%s %s: %s, %d partitions, %d packets kept, %.0f s", name, day,
                  "metrics from daily table" if use_table else "metrics computed",
                  len(files), rec["packets_kept"], rec["seconds"])
     return stats
@@ -107,8 +115,24 @@ def _init_worker() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 
 
-def _export_one(dataset: str, force: bool, until: date | None) -> dict[str, int]:
-    return export_dataset(dataset, load_settings(), force=force, until=until)
+def _export_one(task: tuple, force: bool, until: date | None) -> dict[str, int]:
+    dataset, ips, name, labels = task
+    return export_dataset(dataset, load_settings(), force=force, until=until, ips=ips,
+                          cache_name=name, labels=labels)
+
+
+def tasks(settings: Settings, datasets: list[str] | None) -> list[tuple]:
+    """Every source (all traffic) plus every person profile with its own device set."""
+    from .profiles import ProfileStore
+    sources = datasets or list_datasets(settings.processed_dir)
+    out: list[tuple] = [(ds, None, ds, None) for ds in sources]
+    seen = set()
+    for p in ProfileStore(settings).all():
+        if p.view_key == "all" or p.source not in sources or p.cache_name in seen:
+            continue
+        seen.add(p.cache_name)
+        out.append((p.source, p.device_ips, p.cache_name, {d.ip: d.label or d.ip for d in p.devices}))
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -125,21 +149,22 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings()
     code = daily.load_metric_code(settings.app_dir)
     while True:
-        datasets = args.datasets or list_datasets(settings.processed_dir)
-        if not datasets:
+        todo = tasks(settings, args.datasets)
+        if not todo:
             log.error("no datasets in %s", settings.processed_dir)
             return 1
-        if args.jobs > 1 and len(datasets) > 1:
-            with ProcessPoolExecutor(max_workers=min(args.jobs, len(datasets)),
+        if args.jobs > 1 and len(todo) > 1:
+            with ProcessPoolExecutor(max_workers=min(args.jobs, len(todo)),
                                      initializer=_init_worker) as pool:
-                results = pool.map(_export_one, datasets, [args.force] * len(datasets),
-                                   [args.until] * len(datasets))
-                for ds, stats in zip(datasets, results):
-                    log.info("%s: %s", ds, stats)
+                results = pool.map(_export_one, todo, [args.force] * len(todo),
+                                   [args.until] * len(todo))
+                for t, stats in zip(todo, results):
+                    log.info("%s: %s", t[2], stats)
         else:
-            for ds in datasets:
-                stats = export_dataset(ds, settings, code, force=args.force, until=args.until)
-                log.info("%s: %s", ds, stats)
+            for t in todo:
+                stats = export_dataset(t[0], settings, code, force=args.force, until=args.until,
+                                       ips=t[1], cache_name=t[2], labels=t[3])
+                log.info("%s: %s", t[2], stats)
         if not args.watch:
             return 0
         args.force = False

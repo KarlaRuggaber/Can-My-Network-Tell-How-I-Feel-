@@ -61,7 +61,8 @@ class DayStore:
     def datasets(self) -> list[str]:
         if not self.cache_dir.is_dir():
             return []
-        return sorted(p.name for p in self.cache_dir.iterdir() if p.is_dir() and any(p.glob("*.json")))
+        return sorted(p.name for p in self.cache_dir.iterdir()
+                      if p.is_dir() and not p.name.startswith("@") and any(p.glob("*.json")))
 
     def days(self, dataset: str) -> Iterator[tuple[date, dict[str, Any]]]:
         d = self.cache_dir / dataset

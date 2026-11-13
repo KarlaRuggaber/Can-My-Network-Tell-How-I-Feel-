@@ -22,7 +22,7 @@ function phaseRange(tl: Timeline, phase: string): [number, number] | null {
 }
 
 function baseOption(tl: Timeline, selectedDay: string | null) {
-  const clin = phaseRange(tl, "clinical");
+  const clin = phaseRange(tl, "current");
   const sel = tl.days.findIndex((d) => d.date === selectedDay);
   return {
     animation: false,
@@ -38,11 +38,11 @@ function baseOption(tl: Timeline, selectedDay: string | null) {
   };
 }
 
-function bands(clin: [number, number] | null, sel: number) {
+function bands(clin: [number, number] | null, sel: number, clinLabel: string) {
   return {
     markArea: clin ? {
       silent: true, itemStyle: { color: C.clinicalTint },
-      label: { show: true, position: "insideTopLeft", color: C.critical, fontSize: 10, formatter: "clinical" },
+      label: { show: true, position: "insideTopLeft", color: C.critical, fontSize: 10, formatter: clinLabel },
       data: [[{ xAxis: clin[0] }, { xAxis: clin[1] }]],
     } : undefined,
     markLine: sel >= 0 ? {
@@ -59,7 +59,7 @@ export function MetricTrends({ tl, cfg, crit, theta, present, presentLabel, sele
   const lOption = useMemo(() => {
     const b = baseOption(tl, selectedDay);
     const L = tl.days.map((d) => d.L[crit]);
-    const bl = bands(b._clin, b._sel);
+    const bl = bands(b._clin, b._sel, tl.profile.phase_labels.current.toLowerCase());
     return {
       ...b,
       yAxis: { type: "value", min: 0, max: 1, splitNumber: 4, axisLabel: { color: C.text2, fontSize: 10 }, splitLine: { lineStyle: { color: C.grid } } },
@@ -95,7 +95,7 @@ export function MetricTrends({ tl, cfg, crit, theta, present, presentLabel, sele
           <p>
             L<sub>{crit}</sub> = Σ w · μ(metric): each metric is turned into a score μ between 0 and 1 and weighted
             with w. The metric charts show the daily value, the baseline mean ± 1 SD (tan band) and the range where
-            the metric starts to count (lo–hi, dotted). Dot colour = μ of that day. The shaded part is the clinical phase.
+            the metric starts to count (lo–hi, dotted). Dot colour = μ of that day. The shaded part is the {tl.profile.phase_labels.current.toLowerCase()} period.
           </p>
         </details>
       </div>
@@ -127,7 +127,7 @@ function MetricChart({ tl, cfg, crit, metric, w, lo, mid, hi, invert, selectedDa
     });
     const mus = tl.days.map((d) => d.parts[crit]?.[metric]?.mu ?? null);
     const stats = tl.baseline_stats[metric];
-    const bl = bands(b._clin, b._sel);
+    const bl = bands(b._clin, b._sel, tl.profile.phase_labels.current.toLowerCase());
     const markAreaData: object[] = [...(bl.markArea?.data ?? [])];
     if (stats) {
       markAreaData.push([

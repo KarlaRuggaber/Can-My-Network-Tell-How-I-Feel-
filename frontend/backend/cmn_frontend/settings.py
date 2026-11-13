@@ -20,6 +20,11 @@ class Settings:
     fasl_config: Path
     devices_csv: Path    # traffic-runner/config/devices.csv: IP -> device name
     web_dist: Path       # built React app, served by the API when present
+    home: Path | None = None  # logins, person profiles, session key (default <data_dir>/frontend)
+
+    @property
+    def home_dir(self) -> Path:
+        return self.home or self.data_dir / "frontend"
 
 
 def load_settings() -> Settings:
@@ -36,4 +41,5 @@ def load_settings() -> Settings:
         devices_csv=Path(os.environ.get(
             "CMN_DEVICES", REPO_ROOT / "traffic-runner" / "config" / "devices.csv")).expanduser(),
         web_dist=REPO_ROOT / "frontend" / "web" / "dist",
+        home=Path(os.environ.get("CMN_HOME", data_dir / "frontend")).expanduser(),
     )

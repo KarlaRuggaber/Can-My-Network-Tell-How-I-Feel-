@@ -73,7 +73,7 @@ PERSONAS: dict[str, dict[str, Any]] = {
     },
 }
 
-PHASE_LABEL = {"warmup": "warm-up", "baseline": "baseline", "profile": "clinical"}
+PHASE_LABEL = {"warmup": "warm-up", "baseline": "baseline", "profile": "current"}  # current = clinical phase
 
 
 def persona_meta(dataset: str) -> dict[str, Any]:

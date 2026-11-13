@@ -1,66 +1,92 @@
-import { useEffect, useMemo, useState } from "react";
-import type { Config, CritKey, PersonaListItem, PhaseKey, Timeline } from "./api";
-import { api, CRIT_KEYS } from "./api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Config, CritKey, Me, PhaseKey, ProfileListItem, Timeline } from "./api";
+import { api, CRIT_KEYS, setUnauthorizedHandler } from "./api";
 import { CriteriaSummary, type PhaseView } from "./components/CriteriaSummary";
 import { DayDetail } from "./components/DayDetail";
 import { Heatmap } from "./components/Heatmap";
+import { Login } from "./components/Login";
 import { MetricTrends } from "./components/MetricTrends";
+import { ProfileSettings } from "./components/ProfileSettings";
 import { episodeFlags, gatePresentRolling, phaseGate, type GateParams } from "./lib/gate";
 
-const PHASES: PhaseKey[] = ["baseline", "clinical"];
+const PHASES: PhaseKey[] = ["baseline", "current"];
 
-// URL state: #/<dataset>/<day>/<criterion>, so a view can be bookmarked for the video.
-function readHash(): { ds?: string; day?: string; crit?: CritKey } {
-  const [ds, day, crit] = window.location.hash.replace(/^#\/?/, "").split("/");
-  return { ds: ds || undefined, day: day || undefined, crit: (crit as CritKey) || undefined };
+// URL state: #/<profile>/<day>/<criterion>, or #/settings, so a view can be bookmarked.
+function readHash(): { pid?: string; day?: string; crit?: CritKey; settings: boolean } {
+  const [pid, day, crit] = window.location.hash.replace(/^#\/?/, "").split("/");
+  if (pid === "settings") return { settings: true };
+  return { pid: pid || undefined, day: day || undefined, crit: (crit as CritKey) || undefined, settings: false };
 }
 
+/** Login gate: the portal looks the same for everyone; the role decides what it offers. */
 export default function App() {
+  const [me, setMe] = useState<Me | null | undefined>(undefined);   // undefined: checking
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => setMe(null));
+    api.me().then(setMe).catch(() => setMe(null));
+  }, []);
+
+  if (me === undefined) return <div className="page"><p className="muted">Loading…</p></div>;
+  if (me === null) return <Login onLogin={setMe} />;
+  return <Portal me={me} onLogout={() => { api.logout().finally(() => setMe(null)); }} />;
+}
+
+function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
+  const multi = me.role === "multi";
   const [cfg, setCfg] = useState<Config | null>(null);
-  const [personas, setPersonas] = useState<PersonaListItem[] | null>(null);
+  const [profiles, setProfiles] = useState<ProfileListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const init = readHash();
-  const [ds, setDs] = useState<string | undefined>(init.ds);
+  const [pid, setPid] = useState<string | undefined>(init.pid);
+  const [settings, setSettings] = useState(init.settings && multi);
   const [tl, setTl] = useState<Timeline | null>(null);
   const [day, setDay] = useState<string | null>(init.day ?? null);
   const [crit, setCrit] = useState<CritKey | null>(init.crit ?? null);
   const [gate, setGate] = useState<GateParams | null>(null);
   const [rolling, setRolling] = useState(false);   // optional extra view; mixes phases
 
-  useEffect(() => {
-    Promise.all([api.config(), api.personas()])
-      .then(([c, p]) => {
-        setCfg(c); setPersonas(p);
-        setGate({ theta: c.theta, N: c.N, M: c.M, core: c.core, minPresent: 5 });
-        if (!ds && p.length) setDs(p[0].dataset);
-      })
-      .catch((e) => setError(String(e.message ?? e)));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadProfiles = useCallback((select?: string) =>
+    api.profiles().then((p) => {
+      setProfiles(p);
+      setPid((cur) => select ?? (cur && p.some((x) => x.id === cur) ? cur : p[0]?.id));
+    }), []);
 
   useEffect(() => {
-    if (!ds) return;
+    Promise.all([api.config(), loadProfiles()])
+      .then(([c]) => {
+        setCfg(c);
+        setGate({ theta: c.theta, N: c.N, M: c.M, core: c.core, minPresent: 5 });
+      })
+      .catch((e) => setError(String(e.message ?? e)));
+  }, [loadProfiles]);
+
+  useEffect(() => {
+    if (!pid || settings) return;
     setTl(null);
-    api.timeline(ds).then((t) => {
+    api.timeline(pid).then((t) => {
       setTl(t);
       setDay((d) => (d && t.days.some((x) => x.date === d) ? d : t.days[t.days.length - 1]?.date ?? null));
     }).catch((e) => setError(String(e.message ?? e)));
-  }, [ds]);
+  }, [pid, settings]);
 
   useEffect(() => {
-    if (ds) window.history.replaceState(null, "", `#/${ds}/${day ?? ""}/${crit ?? ""}`);
-  }, [ds, day, crit]);
+    const h = settings ? "#/settings" : pid ? `#/${pid}/${day ?? ""}/${crit ?? ""}` : "";
+    if (h) window.history.replaceState(null, "", h);
+  }, [pid, day, crit, settings]);
 
   // follow links / manual edits of the hash (replaceState above does not fire this event)
   useEffect(() => {
     const onHash = () => {
       const h = readHash();
-      if (h.ds) setDs(h.ds);
+      setSettings(h.settings && multi);
+      if (h.pid) setPid(h.pid);
       if (h.day) setDay(h.day);   // a link without a day keeps the current one
       setCrit(h.crit ?? null);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
-  }, []);
+  }, [multi]);
 
   const configured = useMemo(
     () => (cfg ? CRIT_KEYS.filter((c) => Object.keys(cfg.criteria[c] ?? {}).length > 0) : []),
@@ -86,7 +112,7 @@ export default function App() {
     return out;
   }, [tl, gate, configured]);
 
-  // Per-day marks for the heatmap, trends and day detail: by default a day carries its phase's
+  // Per-day marks for the grid, trends and day detail: by default a day carries its phase's
   // gate result if it is counted in it; the rolling window (mixes phases) only on request.
   const { present, episode } = useMemo(() => {
     if (!tl || !gate || !phases) return { present: {}, episode: [] as boolean[] };
@@ -104,11 +130,12 @@ export default function App() {
   }, [tl, gate, configured, phases, rolling]);
 
   if (error) return <div className="page"><p className="error">Could not load data: {error}. Is the API running and has the export been run?</p></div>;
-  if (!cfg || !personas || !gate) return <div className="page"><p className="muted">Loading…</p></div>;
+  if (!cfg || !profiles || !gate) return <div className="page"><p className="muted">Loading…</p></div>;
 
   const activeCrit: CritKey = crit && configured.includes(crit) ? crit : configured[0];
   const dayIndex = tl ? tl.days.findIndex((d) => d.date === day) : -1;
   const isDefault = gate.theta === cfg.theta && gate.N === cfg.N && gate.M === cfg.M;
+  const labels = tl?.profile.phase_labels ?? { baseline: "Baseline", current: "Recent" };
 
   return (
     <div className="page">
@@ -117,77 +144,120 @@ export default function App() {
         <div>
           <h1>Can My Network Tell How I Feel?</h1>
           <p className="tagline">Explainable Depression Indicators from Network Traffic Metadata</p>
-          <p className="disclaimer">Router-level network metrics → DSM-5 criterion likelihoods, per simulated persona.
+          <p className="disclaimer">Router-level network metrics → DSM-5 criterion likelihoods.
             Research prototype, not a diagnostic tool.</p>
         </div>
-        <nav className="personas" aria-label="Personas">
-          {personas.map((p) => (
-            <button key={p.dataset} className={p.dataset === ds ? "active" : ""} onClick={() => { setDs(p.dataset); setDay(null); }}>
-              <span className="p-name">{p.name}</span>
-              <span className="p-cond">{p.condition || p.dataset}</span>
-            </button>
-          ))}
-        </nav>
+        <div className="top-right">
+          <div className="usermenu">
+            <span className="muted small">Signed in as <b>{me.username}</b></span>
+            {multi && (
+              <button className={`btn ${settings ? "btn-active" : ""}`} onClick={() => setSettings(!settings)}>
+                People and devices
+              </button>
+            )}
+            <button className="btn btn-quiet" onClick={onLogout}>Log out</button>
+          </div>
+          {multi && !settings && profiles.length > 0 && (
+            <nav className="personas" aria-label="People">
+              {profiles.map((p) => (
+                <button key={p.id} className={p.id === pid ? "active" : ""} onClick={() => { setPid(p.id); setDay(null); }}>
+                  <span className="p-name">{p.name}</span>
+                  <span className="p-cond">{p.condition || `${p.source} · ${p.config.all_devices ? "all devices" : `${p.config.devices.length} device(s)`}`}</span>
+                </button>
+              ))}
+            </nav>
+          )}
+        </div>
       </header>
 
-      <details className="gatebar card">
-        <summary>
-          <span className="gate-title">Gate</span>
-          <span>a criterion counts as <b>present</b> when L ≥ <b>{gate.theta.toFixed(2)}</b> on <b>{gate.N}</b> of a phase's
-            last <b>{gate.M}</b> days</span>
-          {!isDefault && <span className="pill pill-beige">changed</span>}
-          {rolling && <span className="pill pill-beige">day marks: rolling window</span>}
-          <span className="gate-adjust">Adjust</span>
-        </summary>
-        <div className="gate-controls">
-          <label>θ <input type="range" min={0} max={1} step={0.01} value={gate.theta}
-            onChange={(e) => setGate({ ...gate, theta: Number(e.target.value) })} /> <b>{gate.theta.toFixed(2)}</b></label>
-          <label>N <input type="number" min={1} max={60} value={gate.N}
-            onChange={(e) => setGate({ ...gate, N: Math.max(1, Number(e.target.value)) })} /> days ≥ θ</label>
-          <label>within M <input type="number" min={1} max={60} value={gate.M}
-            onChange={(e) => setGate({ ...gate, M: Math.max(1, Number(e.target.value)) })} /> days</label>
-          <button className="btn" disabled={isDefault}
-            onClick={() => setGate({ ...gate, theta: cfg.theta, N: cfg.N, M: cfg.M })}>Reset</button>
-          <label className="rolling-toggle" title="Right after the switch to the clinical phase, a rolling window is mostly baseline days.">
-            <input type="checkbox" checked={rolling} onChange={(e) => setRolling(e.target.checked)} />
-            mark days with a rolling {gate.M}-day window instead (mixes phases)
-          </label>
-          <p className="muted small gate-note">Changes apply in this browser only. Weights and membership functions come from <code>fasl_config.json</code>.</p>
-        </div>
-      </details>
+      {settings && multi && (
+        <ProfileSettings onClose={() => setSettings(false)}
+          onChanged={(id) => { loadProfiles(id); if (id) { setPid(id); setTl(null); } }} />
+      )}
 
-      {!tl && <p className="muted">Loading persona…</p>}
-      {tl && (
+      {!settings && profiles.length === 0 && (
+        <section className="card">
+          <h2>No profile yet</h2>
+          <p>{multi ? "Add a person under “People and devices”." : "Your login has no profile assigned. Please contact the study team."}</p>
+        </section>
+      )}
+
+      {!settings && profiles.length > 0 && (
         <>
-          <section className="intro">
-            <div>
-              <h2>{tl.persona.name} · {tl.persona.condition}</h2>
-              <p>{tl.persona.summary}</p>
-            </div>
-            <dl className="facts" title={tl.dataset}>
-              <div><dt>Everyday profile</dt><dd>{tl.persona.baseline_profile ?? "–"}</dd></div>
-              <div><dt>Recorded days</dt><dd>{tl.days.filter((d) => d.phase === "baseline").length} baseline · {tl.days.filter((d) => d.phase === "clinical").length} clinical</dd></div>
-            </dl>
-          </section>
+          {multi && (
+            <details className="gatebar card">
+              <summary>
+                <span className="gate-title">Gate</span>
+                <span>a criterion counts as <b>present</b> when L ≥ <b>{gate.theta.toFixed(2)}</b> on <b>{gate.N}</b> of a phase's
+                  last <b>{gate.M}</b> days</span>
+                {!isDefault && <span className="pill pill-beige">changed</span>}
+                {rolling && <span className="pill pill-beige">day marks: rolling window</span>}
+                <span className="gate-adjust">Adjust</span>
+              </summary>
+              <div className="gate-controls">
+                <label>θ <input type="range" min={0} max={1} step={0.01} value={gate.theta}
+                  onChange={(e) => setGate({ ...gate, theta: Number(e.target.value) })} /> <b>{gate.theta.toFixed(2)}</b></label>
+                <label>N <input type="number" min={1} max={60} value={gate.N}
+                  onChange={(e) => setGate({ ...gate, N: Math.max(1, Number(e.target.value)) })} /> days ≥ θ</label>
+                <label>within M <input type="number" min={1} max={60} value={gate.M}
+                  onChange={(e) => setGate({ ...gate, M: Math.max(1, Number(e.target.value)) })} /> days</label>
+                <button className="btn" disabled={isDefault}
+                  onClick={() => setGate({ ...gate, theta: cfg.theta, N: cfg.N, M: cfg.M })}>Reset</button>
+                <label className="rolling-toggle" title="Right after the baseline, a rolling window is mostly baseline days.">
+                  <input type="checkbox" checked={rolling} onChange={(e) => setRolling(e.target.checked)} />
+                  mark days with a rolling {gate.M}-day window instead (mixes phases)
+                </label>
+                <p className="muted small gate-note">Changes apply in this browser only. Weights and membership functions come from <code>fasl_config.json</code>.</p>
+              </div>
+            </details>
+          )}
 
-          {phases && (
-            <CriteriaSummary tl={tl} cfg={cfg} phases={phases} gate={gate}
-              selected={activeCrit} onSelect={setCrit} />
-          )}
-          <Heatmap tl={tl} cfg={cfg} present={present} episode={episode} theta={gate.theta}
-            rolling={rolling} M={gate.M} selectedDay={day} onSelectDay={setDay} />
-          {activeCrit && (
-            <MetricTrends tl={tl} cfg={cfg} crit={activeCrit} theta={gate.theta}
-              present={present[activeCrit] ?? []} presentLabel={rolling ? `present (rolling ${gate.M} days, mixes phases)` : "present in this phase"} selectedDay={day} onSelectDay={setDay} />
-          )}
-          {dayIndex >= 0 && (
-            <DayDetail dataset={tl.dataset} day={tl.days[dayIndex]} cfg={cfg} present={present} dayIndex={dayIndex} />
+          {!tl && <p className="muted">Loading…</p>}
+          {tl && (
+            <>
+              <section className="intro">
+                <div>
+                  <h2>{tl.persona.name}{tl.persona.condition && <> · {tl.persona.condition}</>}</h2>
+                  {tl.persona.summary && <p>{tl.persona.summary}</p>}
+                </div>
+                <dl className="facts">
+                  <div><dt>Traffic</dt><dd>{tl.profile.has_plan ? "scripted run" : "live"} · {tl.profile.all_devices ? "all devices" : tl.profile.devices.map((d) => d.label || d.ip).join(", ")}</dd></div>
+                  <div><dt>Recorded days</dt><dd>{tl.days.filter((d) => d.phase === "baseline").length} {labels.baseline.toLowerCase()} · {tl.days.filter((d) => d.phase === "current").length} {labels.current.toLowerCase()}</dd></div>
+                </dl>
+              </section>
+
+              {tl.status === "pending" && (
+                <section className="card">
+                  <h2>Data is being prepared</h2>
+                  <p>No days have been computed for {tl.persona.name}'s devices yet. They appear after the next export run
+                    (<code>python -m cmn_frontend.export</code>, or the running <code>--watch</code> loop).</p>
+                </section>
+              )}
+
+              {tl.status === "ready" && phases && (
+                <>
+                  <CriteriaSummary tl={tl} cfg={cfg} phases={phases} gate={gate}
+                    selected={activeCrit} onSelect={setCrit} />
+                  <Heatmap tl={tl} cfg={cfg} present={present} episode={episode} theta={gate.theta}
+                    rolling={rolling} M={gate.M} selectedDay={day} onSelectDay={setDay} />
+                  {activeCrit && (
+                    <MetricTrends tl={tl} cfg={cfg} crit={activeCrit} theta={gate.theta}
+                      present={present[activeCrit] ?? []} presentLabel={rolling ? `present (rolling ${gate.M} days, mixes phases)` : "present in this phase"}
+                      selectedDay={day} onSelectDay={setDay} />
+                  )}
+                  {dayIndex >= 0 && (
+                    <DayDetail profileId={tl.profile.id} day={tl.days[dayIndex]} cfg={cfg} present={present}
+                      dayIndex={dayIndex} phaseLabels={labels} />
+                  )}
+                </>
+              )}
+            </>
           )}
         </>
       )}
       <footer className="muted small">
-        Data: gateway Parquet partitions, metrics computed with the unchanged thesis metric code
-        (<code>app_pcap_to_dsm5/app/metrics</code>). Expected outcomes: profile §9.
+        Metrics computed with the unchanged thesis metric code (<code>app_pcap_to_dsm5/app/metrics</code>) on the
+        person's devices.{tl?.profile.has_plan && " Expected outcomes: profile §9."}
       </footer>
     </div>
   );

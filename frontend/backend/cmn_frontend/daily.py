@@ -11,6 +11,7 @@ from __future__ import annotations
 import functools
 import gc
 import importlib
+import ipaddress
 import math
 import os
 import sys
@@ -174,6 +175,30 @@ def activity_bins(df_day: pd.DataFrame, day: date, ip_to_device: dict[str, str])
     return out
 
 
+def local_ip_counts(df_day: pd.DataFrame) -> dict[str, int]:
+    """Packets per local (private) IP address, for choosing a person's devices."""
+    if df_day.empty or "Source IP" not in df_day.columns or "Destination IP" not in df_day.columns:
+        return {}
+    vc = pd.concat([df_day["Source IP"], df_day["Destination IP"]], ignore_index=True).astype(str).value_counts()
+    out = {}
+    for ip, n in vc.items():
+        try:
+            a = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if a.is_private and not (a.is_loopback or a.is_multicast or a.is_link_local or a.is_unspecified):
+            out[ip] = int(n)
+    return out
+
+
+def filter_devices(df_day: pd.DataFrame, ips: list[str] | None) -> pd.DataFrame:
+    """Only the packets to or from one person's devices (None: all traffic of the source)."""
+    if not ips or df_day.empty:
+        return df_day
+    keep = df_day["Source IP"].isin(ips) | df_day["Destination IP"].isin(ips)
+    return df_day[keep].copy()
+
+
 def json_safe(row: dict[str, Any]) -> dict[str, Any]:
     """Scalar metric values only; NaN/inf -> None, timestamps -> ISO strings."""
     out: dict[str, Any] = {}
@@ -194,11 +219,13 @@ def json_safe(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def compute_day(files: list[Path], day: date, history: pd.DataFrame, code: MetricCode,
-                ip_to_device: dict[str, str]) -> dict[str, Any]:
+                ip_to_device: dict[str, str], ips: list[str] | None = None) -> dict[str, Any]:
     raw = read_partitions(files)
     n_raw = int(len(raw))
     df_day = prepare_day(raw, day, code)
     del raw
+    local_ips = local_ip_counts(df_day)
+    df_day = filter_devices(df_day, ips)
     if df_day.empty:
         row: dict[str, Any] = {"Date": pd.Timestamp(day)}
         bins = activity_bins(df_day, day, ip_to_device)
@@ -218,6 +245,7 @@ def compute_day(files: list[Path], day: date, history: pd.DataFrame, code: Metri
         "packets_kept": n_kept,
         "first_packet": first,
         "last_packet": last,
+        "local_ips": local_ips,
     }
 
 
@@ -240,6 +268,7 @@ def activity_for_day(files: list[Path], day: date, code: MetricCode,
     df_day = prepare_day(raw, day, code)
     del raw
     out = {
+        "local_ips": local_ip_counts(df_day),
         "activity": activity_bins(df_day, day, ip_to_device),
         "packets_raw": n_raw,
         "packets_kept": int(len(df_day)),

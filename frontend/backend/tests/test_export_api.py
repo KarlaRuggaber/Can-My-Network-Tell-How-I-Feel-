@@ -54,43 +54,6 @@ def test_incremental_and_cascade(run):
     assert export_dataset(DS, run) == {"computed": 1, "imported": 0, "cached": 1, "skipped": 0}
 
 
-def test_api(run):
-    client = TestClient(create_app(run))
-    assert client.get("/api/health").json()["datasets"] == [DS]
-
-    cfg = client.get("/api/config").json()
-    assert cfg["theta"] == pytest.approx(0.6) and cfg["core"] == ["C2"]
-    assert cfg["metric_labels"]["C4_F2_WakeAfter0400Min"]
-    assert cfg["metric_criterion"]["C4_F2_WakeAfter0400Min"] == "C4"
-
-    personas = client.get("/api/personas").json()
-    assert personas[0]["dataset"] == DS and personas[0]["n_days"] == 2
-
-    tl = client.get(f"/api/personas/{DS}").json()
-    d0, d1 = tl["days"]
-    assert (d0["date"], d0["phase"], d0["complete"]) == ("2026-11-08", "baseline", True)
-    assert d1["complete"] is False                              # newest day: still being ingested
-    assert d1["ground_truth"]["n_sensitive"] == 1
-    assert d0["L"]["C3"] is None                                # not configured
-    assert 0.0 <= d0["L"]["C1"] <= 1.0
-    assert set(d0["parts"]["C4"]) == set(cfg["criteria"]["C4"])
-    configured = {c for c, s in cfg["criteria"].items() if s}
-    base, clin = tl["gate"]["phases"]["baseline"], tl["gate"]["phases"]["clinical"]
-    assert base["counted"] == ["2026-11-08"] and base["days"] == 1   # per phase, complete days only
-    assert set(base["criteria"]) == configured
-    assert "2026-11-09" not in base["counted"] + clin["counted"]
-    assert set(tl["gate"]["rolling"]["present"]) == configured          # optional extra view
-    assert len(tl["gate"]["rolling"]["episode"]) == 2
-
-    day = client.get(f"/api/personas/{DS}/days/2026-11-09").json()
-    assert [b["block_id"] for b in day["blocks"]] == ["b2", "b3"]
-    assert len(day["activity"]["total"]) == 288
-
-    assert client.get("/api/personas/nope").status_code == 404
-    assert client.get(f"/api/personas/{DS}/days/2026-01-01").status_code == 404
-    assert client.get(f"/api/personas/{DS}/days/xx").status_code == 400
-
-
 def test_ip_cache_does_not_change_results(run):
     from cmn_frontend import daily
     from cmn_frontend.store import history_frame

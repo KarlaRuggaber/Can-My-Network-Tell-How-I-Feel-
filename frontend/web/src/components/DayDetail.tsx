@@ -1,21 +1,25 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import type { Block, Config, CritKey, Day, DayDetail as DD } from "../api";
+import type { Block, Config, CritKey, Day, DayDetail as DD, PhaseKey } from "../api";
 import { api, CRIT_KEYS } from "../api";
 import { fmtDay, fmtNum, fmtTime, minutesInDay } from "../lib/format";
 import { C, deviceColor, deviceRole } from "../theme";
 import { Chart } from "./Chart";
 
-type Props = { dataset: string; day: Day; cfg: Config; present: Partial<Record<CritKey, boolean[]>>; dayIndex: number };
+type Props = {
+  profileId: string; day: Day; cfg: Config; present: Partial<Record<CritKey, boolean[]>>; dayIndex: number;
+  phaseLabels: Record<PhaseKey, string>;
+};
 
-export function DayDetail({ dataset, day, cfg, present, dayIndex }: Props) {
+export function DayDetail({ profileId, day, cfg, present, dayIndex, phaseLabels }: Props) {
   const [detail, setDetail] = useState<DD | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [onlyClinical, setOnlyClinical] = useState(false);
+  const gt = day.ground_truth;
 
   useEffect(() => {
     setDetail(null); setErr(null);
-    api.day(dataset, day.date).then(setDetail).catch((e) => setErr(String(e.message ?? e)));
-  }, [dataset, day.date]);
+    api.day(profileId, day.date).then(setDetail).catch((e) => setErr(String(e.message ?? e)));
+  }, [profileId, day.date]);
 
   const devices = useMemo(() => {
     const fromBlocks = (detail?.blocks ?? []).map((b) => b.device);
@@ -31,11 +35,11 @@ export function DayDetail({ dataset, day, cfg, present, dayIndex }: Props) {
       const m = i * binMin;
       return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
     });
-    const series = devices.filter((d) => detail.activity!.devices[d]).map((d) => ({
+    const series = devices.filter((d) => detail.activity!.devices[d]).map((d, i) => ({
       name: deviceRole(d), type: "line", step: "middle", symbol: "none",
-      data: detail.activity!.devices[d], lineStyle: { width: 1.5, color: deviceColor(d) },
-      itemStyle: { color: deviceColor(d) },
-      areaStyle: { color: deviceColor(d), opacity: 0.12 },
+      data: detail.activity!.devices[d], lineStyle: { width: 1.5, color: deviceColor(d, i) },
+      itemStyle: { color: deviceColor(d, i) },
+      areaStyle: { color: deviceColor(d, i), opacity: 0.12 },
     }));
     return {
       animation: false,
@@ -61,9 +65,9 @@ export function DayDetail({ dataset, day, cfg, present, dayIndex }: Props) {
   return (
     <section className="card">
       <div className="card-head">
-        <h2><span className="step">4</span>{day.weekday} {fmtDay(day.date)} <span className={`pill ${day.phase === "clinical" ? "pill-red" : "pill-beige"}`}>{day.phase}</span>
+        <h2><span className="step">4</span>{day.weekday} {fmtDay(day.date)} <span className={`pill ${day.phase === "current" ? "pill-red" : "pill-beige"}`}>{(day.phase === "current" || day.phase === "baseline" ? phaseLabels[day.phase as PhaseKey] : day.phase).toLowerCase()}</span>
           {!day.complete && <span className="pill pill-outline">still being recorded</span>}</h2>
-        <p className="sub">What the persona was scripted to do, and the traffic the gateway saw.</p>
+        <p className="sub">{gt ? "What the persona was scripted to do, and the traffic the gateway saw." : "The traffic of this person's devices over the day."}</p>
         <details className="howto">
           <summary>Notes</summary>
           <p>
@@ -76,10 +80,11 @@ export function DayDetail({ dataset, day, cfg, present, dayIndex }: Props) {
 
       <div className="kpis">
         <Kpi label="Packets" value={fmtNum(day.packets_kept)} />
-        <Kpi label="Scripted blocks" value={fmtNum(day.ground_truth.n_blocks)} />
-        <Kpi label="of them clinical" value={fmtNum(day.ground_truth.n_profile_blocks)} />
-        {day.ground_truth.n_sensitive > 0 && <Kpi label="Sensitive blocks" value={fmtNum(day.ground_truth.n_sensitive)} warn />}
-        {day.ground_truth.n_failed > 0 && <Kpi label="Failed blocks" value={fmtNum(day.ground_truth.n_failed)} warn />}
+        {gt && <Kpi label="Scripted blocks" value={fmtNum(gt.n_blocks)} />}
+        {gt && <Kpi label="of them clinical" value={fmtNum(gt.n_profile_blocks)} />}
+        {gt && gt.n_sensitive > 0 && <Kpi label="Sensitive blocks" value={fmtNum(gt.n_sensitive)} warn />}
+        {gt && gt.n_failed > 0 && <Kpi label="Failed blocks" value={fmtNum(gt.n_failed)} warn />}
+        {day.first_packet && <Kpi label="First – last packet" value={`${fmtTime(day.first_packet)}–${fmtTime(day.last_packet)}`} />}
       </div>
 
       {err && <p className="error">{err}</p>}
@@ -88,7 +93,7 @@ export function DayDetail({ dataset, day, cfg, present, dayIndex }: Props) {
       {detail && activityOption && (
         <>
           <Chart option={activityOption} height={200} ariaLabel="Packets per 5 minutes per device" />
-          <Gantt blocks={detail.blocks} devices={devices} day={day.date} />
+          {gt && <Gantt blocks={detail.blocks} devices={devices} day={day.date} />}
         </>
       )}
 
@@ -96,7 +101,7 @@ export function DayDetail({ dataset, day, cfg, present, dayIndex }: Props) {
         <summary>Score of this day per criterion (L = Σ w · μ)</summary>
         <CriterionBreakdown day={day} cfg={cfg} present={present} dayIndex={dayIndex} />
       </details>
-      <details className="fold">
+      {gt && <details className="fold">
         <summary>All scripted blocks of this day ({blocks.length})</summary>
         <div className="row-between">
           <span />
@@ -105,7 +110,7 @@ export function DayDetail({ dataset, day, cfg, present, dayIndex }: Props) {
           </label>
         </div>
         <BlockTable blocks={blocks} />
-      </details>
+      </details>}
     </section>
   );
 }

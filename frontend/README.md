@@ -1,10 +1,28 @@
-# Results frontend
+# Results portal
 
-A cleaner view of the thesis app's results for the three simulated personas (Ben: insomnia,
-Maria: MDD with suicidality overlay, Carl: social anxiety). For each persona it shows:
+A results portal for router-level network metrics → DSM-5 criterion likelihoods, per person. It does
+not depend on where the traffic comes from: a **source** is any folder of Parquet captures in
+`processed_parquet/` — a scripted gateway run (Ben: insomnia, Maria: MDD with suicidality overlay,
+Carl: social anxiety) or live home traffic.
 
-- **Baseline phase vs. clinical phase**: every DSM-5 criterion C1–C9 with the outcome expected in
-  the profile's §9 (`profiles/tier2-clinical/*.md`) and two gate results side by side, each computed
+**Logins and roles** (as the Streamlit app, a login comes first; the portal looks the same for all):
+
+- *Single-profile user* (the person themself): sees only their own profile, no settings.
+- *Multi-profile user* (clinician, parent): chooses between their profiles, can adjust the gate,
+  and under **People and devices** adds people, picks their traffic source, assigns which devices
+  (local IP addresses seen in that source) belong to whom, and sets the baseline period.
+
+**Person profiles**: a name, a source, and either all devices of the source or a device set. With a
+device set, the metrics are computed on that person's traffic only (several people behind one
+router stay apart). Scripted sources bring their plan (baseline and clinical phase, ground truth,
+§9 expectations); live sources use the profile's baseline period (default: the first 14 days with
+data), and every later day is "recent". The three scripted personas are created as profiles on the
+first start, with all devices of their source, so their numbers stay those of the evaluation.
+
+For each profile the portal shows:
+
+- **Baseline vs. clinical (or recent) period**: every scored DSM-5 criterion with, for scripted
+  personas, the outcome expected in the profile's §9 (`profiles/tier2-clinical/*.md`) and two gate results side by side, each computed
   on that phase's own days only: "Baseline (26.10–08.11)" and "Clinical (09.11–22.11)", with the days
   with L ≥ θ (n of the days counted) and present/absent, plus the episode per phase. The warm-up day
   and the day still being ingested are not counted. While the clinical phase has fewer than M days
@@ -14,7 +32,7 @@ Maria: MDD with suicidality overlay, Carl: social anxiety). For each persona it 
   days ≥ θ, "present" according to the DSM gate, number of present criteria and the episode flag.
 - **Metric trends**: for the selected criterion, L over time with θ, and each configured metric with
   its baseline mean ± 1 SD, the membership function's range and μ per day.
-- **Day detail (traceability)**: packets per 5 minutes per device, the scripted plan blocks on a
+- **Day detail (traceability)**: packets per 5 minutes per device; for scripted sources the plan blocks on a
   timeline (baseline vs. clinical-profile, sensitive, away, failed), the block table with block IDs and
   runner status (ok / exit code / late), and the breakdown L = Σ w·μ for every metric of that day.
 
@@ -94,7 +112,24 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-Compute or update the per-day cache (all datasets, three in parallel):
+Create logins (stored in `~/cmn-data/frontend/users.json` with scrypt hashes, not in git; the
+password is asked for). Profile ids are the lowercase names (`ben`, `maria`, `carl`, or the id of a
+person added in the portal):
+
+```bash
+.venv/bin/python -m cmn_frontend.users add anna --role single --profile ben
+```
+
+```bash
+.venv/bin/python -m cmn_frontend.users add dr-meier --role multi --profiles all
+```
+
+`--profiles maria,carl` limits a multi-profile user to some people; `list`, `passwd <name>` and
+`remove <name>` manage existing logins. A multi-profile user who adds a person can see that person.
+
+Compute or update the per-day cache (every source, plus every person with their own device set;
+three in parallel). A new device set is computed once with the full metric code (about an hour for
+three weeks of one person); until then the portal says the data is being prepared:
 
 ```bash
 .venv/bin/python -m cmn_frontend.export --jobs 3
@@ -124,7 +159,7 @@ For the video, build the UI once; the API then serves it at http://127.0.0.1:860
 cd frontend/web && npm run build
 ```
 
-The URL keeps the view: `#/<dataset>/<day>/<criterion>`, e.g. `#/gw_mdd_suicidality_a/2026-11-12/C2`.
+The URL keeps the view: `#/<profile>/<day>/<criterion>`, e.g. `#/maria/2026-11-12/C2`, or `#/settings`.
 
 ### Settings (environment variables)
 
@@ -134,7 +169,8 @@ The URL keeps the view: `#/<dataset>/<day>/<criterion>`, e.g. `#/gw_mdd_suicidal
 | `CMN_PROCESSED` | `$CMN_DATA/processed_parquet` | Parquet partitions |
 | `CMN_RUN` | `$CMN_DATA/run` | Plans (`<dataset>.csv`) and runner logs (`<dataset>.state.jsonl`) |
 | `CMN_DAILY_TABLES` | `$CMN_DATA/eval` | Evaluation's daily metric tables (`<dataset>.daily.csv`), used when present |
-| `CMN_CACHE` | `$CMN_DATA/frontend_cache` | Per-day results of this frontend (separate from Streamlit's `feature_cache`) |
+| `CMN_CACHE` | `$CMN_DATA/frontend_cache` | Per-day results: `<source>/` for all traffic, `<source>/@dev-<hash>/` per device set |
+| `CMN_HOME` | `$CMN_DATA/frontend` | Logins (`users.json`), person profiles (`profiles.json`), session key |
 | `CMN_APP_DIR` | `app_pcap_to_dsm5/app` | Thesis app with `metrics/` and `fasl_config.json` |
 | `CMN_FASL_CONFIG` | `$CMN_APP_DIR/fasl_config.json` | FASL weights, membership functions, θ/N/M |
 | `CMN_DEVICES` | `traffic-runner/config/devices.csv` | IP → device |
@@ -153,8 +189,10 @@ cd frontend/web && npm test && npm run typecheck
 
 Backend: FASL parity with the Streamlit page, the gate cases, ground-truth join (plan + runner state,
 blocks crossing midnight, away/planned/not-run status), export on synthetic partitions with the real
-metric code (cache, incremental update, cascade, import from a daily table) and the API. Web: gate (same cases), formatting,
-and the expected-vs-observed table.
+metric code (cache, incremental update, cascade, import from a daily table), logins and sessions
+(hashing, expiry, forged tokens), roles (a single-profile user sees only their profile and cannot
+configure), a person computed on their own devices only, and the baseline period of live sources.
+Web: gate (same cases), formatting, and the overview for scripted and live profiles.
 
 ## Reading the results
 

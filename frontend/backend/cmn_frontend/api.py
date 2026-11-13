@@ -1,25 +1,33 @@
 """HTTP API for the React UI. Reads the per-day cache only; it never computes metrics itself.
 
     uvicorn cmn_frontend.api:app --host 127.0.0.1 --port 8600
+
+Every /api route except /api/health and /api/login needs a session (cookie set by /api/login).
+A single-profile user sees only their own profile; a multi-profile user (clinician, parent) can
+choose between their profiles and edit them (name, source, devices, baseline period).
 """
 
 from __future__ import annotations
 
 import math
 import statistics
-from datetime import date
+from datetime import date, timedelta
 from functools import lru_cache
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
-from . import fasl
-from .groundtruth import blocks_on_day, day_summary, load_plan, phase_by_day
+from . import auth, fasl
+from .groundtruth import blocks_on_day, day_summary, load_devices, load_plan, phase_by_day
 from .personas import PHASE_LABEL, persona_meta
+from .profiles import Device, Profile, ProfileStore
 from .settings import Settings, load_settings
 from .store import DayStore
+
+DEFAULT_BASELINE_DAYS = 14
 
 
 @lru_cache(maxsize=1)
@@ -31,15 +39,6 @@ def _metric_labels(app_dir: str) -> tuple[dict[str, str], dict[str, str]]:
         return code.labels, code.criterion_of
     except Exception:
         return {}, {}
-
-
-def _phase(day: date, phases: dict[str, str]) -> str:
-    p = phases.get(day.isoformat())
-    if p:
-        return PHASE_LABEL.get(p, p)
-    if phases and day.isoformat() < min(phases):
-        return "pre-run"
-    return "post-run" if phases else "unknown"
 
 
 def _baseline_stats(days: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
@@ -55,13 +54,55 @@ def _baseline_stats(days: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
     return out
 
 
-def build_timeline(dataset: str, settings: Settings, cfg: fasl.FaslConfig) -> dict[str, Any]:
+def _periods(profile: Profile, days: list[date], plan_phases: dict[str, str]) -> tuple[dict[date, str], dict]:
+    """Phase per day ("baseline", "current", or outside) and each phase's planned span.
+
+    Scripted sources take baseline and clinical phase from their plan. Other sources use the
+    profile's baseline period (default: the first 14 days with data); every later day is "current".
+    """
+    if plan_phases:
+        label = {d: PHASE_LABEL.get(p, p) for d, p in plan_phases.items()}
+        first = min(plan_phases)
+        out = {}
+        for d in days:
+            iso = d.isoformat()
+            out[d] = label.get(iso) or ("pre-run" if iso < first else "post-run")
+        spans = {}
+        for ph in ("baseline", "current"):
+            ds = sorted(x for x, p in label.items() if p == ph)
+            spans[ph] = {"planned_first": ds[0] if ds else None, "planned_last": ds[-1] if ds else None,
+                         "planned_days": len(ds)}
+        return out, spans
+    if profile.baseline_first and profile.baseline_last:
+        b0, b1 = date.fromisoformat(profile.baseline_first), date.fromisoformat(profile.baseline_last)
+    elif days:
+        b0 = days[0]
+        b1 = b0 + timedelta(days=DEFAULT_BASELINE_DAYS - 1)
+    else:
+        return {}, {}
+    out = {d: "baseline" if b0 <= d <= b1 else ("current" if d > b1 else "before") for d in days}
+    spans = {
+        "baseline": {"planned_first": b0.isoformat(), "planned_last": b1.isoformat(),
+                     "planned_days": (b1 - b0).days + 1},
+        "current": {"planned_first": (b1 + timedelta(days=1)).isoformat(),
+                    "planned_last": days[-1].isoformat() if days and days[-1] > b1 else None,
+                    "planned_days": max(0, (days[-1] - b1).days) if days else 0},
+    }
+    return out, spans
+
+
+def profile_meta(p: Profile) -> dict[str, Any]:
+    meta = persona_meta(p.persona) if p.persona else persona_meta("")
+    return {**meta, "name": p.name, "id": p.id, "source": p.source,
+            "scripted": bool(p.persona)}
+
+
+def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig) -> dict[str, Any]:
     store = DayStore(settings.cache_dir)
-    records = list(store.days(dataset))
-    if not records:
-        raise KeyError(dataset)
-    blocks = load_plan(settings.run_dir, dataset)
-    phases = phase_by_day(blocks)
+    records = list(store.days(profile.cache_name))
+    blocks = load_plan(settings.run_dir, profile.source)
+    has_plan = bool(blocks)
+    phase_of, spans = _periods(profile, [d for d, _ in records], phase_by_day(blocks))
     scores = fasl.score_days([r["metrics"] for _, r in records], cfg)
 
     days = []
@@ -69,14 +110,14 @@ def build_timeline(dataset: str, settings: Settings, cfg: fasl.FaslConfig) -> di
         days.append({
             "date": day.isoformat(),
             "weekday": day.strftime("%a"),
-            "phase": _phase(day, phases),
+            "phase": phase_of.get(day, "unknown"),
             "complete": i + 1 < len(records),   # a later day has data: the ingest moved on
             "n_partitions": rec.get("n_partitions"),
             "packets_kept": rec.get("packets_kept"),
             "first_packet": rec.get("first_packet"),
             "last_packet": rec.get("last_packet"),
             "computed_at": rec.get("computed_at"),
-            "ground_truth": day_summary(blocks_on_day(blocks, day)),
+            "ground_truth": day_summary(blocks_on_day(blocks, day)) if has_plan else None,
             "metrics": {k: v for k, v in rec["metrics"].items() if k != "Date"},
             "L": sc["L"],
             "parts": sc["parts"],
@@ -85,21 +126,22 @@ def build_timeline(dataset: str, settings: Settings, cfg: fasl.FaslConfig) -> di
     gate = cfg.gate
     configured = [c for c in fasl.CRIT_KEYS if cfg.configured(c)]
     # Default: the gate per phase, each on that phase's complete days only (as the evaluation's
-    # score_phases). The rolling window mixes phases right after the switch; it is an extra view.
+    # score_phases). The rolling window mixes phases; it is an optional extra view.
     by_phase = {}
-    for ph in ("baseline", "clinical"):
+    for ph in ("baseline", "current"):
         sel = [d for d in days if d["phase"] == ph and d["complete"]]
         res = fasl.phase_gate({c: [d["L"][c] for d in sel] for c in configured}, gate)
-        by_phase[ph] = {**res, **_phase_span(phases, ph),
+        by_phase[ph] = {**res, **spans.get(ph, {"planned_first": None, "planned_last": None, "planned_days": 0}),
                         "counted": [d["date"] for d in sel][-gate.window:] if gate.window > 0 else [],
                         "in_progress": [d["date"] for d in days if d["phase"] == ph and not d["complete"]]}
     present = {c: fasl.gate_present_rolling([d["L"][c] for d in days], gate.theta, gate.need_days,
                                             gate.window)
                for c in configured}
-    meta = persona_meta(dataset)
     return {
-        "dataset": dataset,
-        "persona": meta,
+        "profile": {**profile.to_json(), "has_plan": has_plan,
+                    "phase_labels": {"baseline": "Baseline", "current": "Clinical" if has_plan else "Recent"}},
+        "persona": profile_meta(profile),
+        "status": "ready" if records else "pending",
         "days": days,
         "gate": {"params": {"theta": gate.theta, "N": gate.need_days, "M": gate.window,
                             "core": list(gate.core), "min_present": gate.min_present},
@@ -110,68 +152,196 @@ def build_timeline(dataset: str, settings: Settings, cfg: fasl.FaslConfig) -> di
     }
 
 
-def _phase_span(phases: dict[str, str], label: str) -> dict[str, Any]:
-    """Planned first/last day and number of days of a phase, from the scheduler plan."""
-    ds = sorted(d for d, p in phases.items() if PHASE_LABEL.get(p, p) == label)
-    return {"planned_first": ds[0] if ds else None, "planned_last": ds[-1] if ds else None,
-            "planned_days": len(ds)}
+class LoginBody(BaseModel):
+    username: str
+    password: str
+
+
+class DeviceBody(BaseModel):
+    ip: str
+    label: str = ""
+
+
+class ProfileBody(BaseModel):
+    id: str | None = None
+    name: str
+    source: str
+    all_devices: bool = True
+    devices: list[DeviceBody] = []
+    baseline_first: str | None = None
+    baseline_last: str | None = None
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
     app = FastAPI(title="Can My Network Tell How I Feel? – results API")
     app.add_middleware(GZipMiddleware, minimum_size=2048)
+    users = auth.UserStore(settings.home_dir)
+    profiles = ProfileStore(settings)
 
     def config() -> fasl.FaslConfig:
         return fasl.load_config(settings.fasl_config)  # re-read: edits apply without restart
 
+    def current_user(request: Request) -> auth.User:
+        name = auth.read_session(settings.home_dir, request.cookies.get(auth.SESSION_COOKIE))
+        user = users.get(name) if name else None
+        if user is None:
+            raise HTTPException(401, "please log in")
+        return user
+
+    def multi_user(user: auth.User = Depends(current_user)) -> auth.User:
+        if user.role != "multi":
+            raise HTTPException(403, "only for multi-profile users")
+        return user
+
+    def visible(user: auth.User) -> list[Profile]:
+        return [p for p in profiles.all() if user.can_see(p.id)]
+
+    def profile_for(user: auth.User, pid: str) -> Profile:
+        p = profiles.get(pid)
+        if p is None or not user.can_see(pid):
+            raise HTTPException(404, f"no profile {pid}")
+        return p
+
     @app.get("/api/health")
     def health() -> dict[str, Any]:
         return {"ok": True, "cache_dir": str(settings.cache_dir),
-                "datasets": DayStore(settings.cache_dir).datasets()}
+                "datasets": DayStore(settings.cache_dir).datasets(),
+                "has_users": bool(users.all())}
+
+    @app.post("/api/login")
+    def login(body: LoginBody, response: Response) -> dict[str, Any]:
+        user = users.verify(body.username.strip(), body.password)
+        if user is None:
+            raise HTTPException(401, "Invalid login data")
+        response.set_cookie(auth.SESSION_COOKIE, auth.make_session(settings.home_dir, user.username),
+                            max_age=auth.SESSION_SECONDS, httponly=True, samesite="strict")
+        return user.public()
+
+    @app.post("/api/logout")
+    def logout(response: Response) -> dict[str, bool]:
+        response.delete_cookie(auth.SESSION_COOKIE)
+        return {"ok": True}
+
+    @app.get("/api/me")
+    def me(user: auth.User = Depends(current_user)) -> dict[str, Any]:
+        return user.public()
 
     @app.get("/api/config")
-    def get_config() -> dict[str, Any]:
+    def get_config(user: auth.User = Depends(current_user)) -> dict[str, Any]:
         labels, crit_of = _metric_labels(str(settings.app_dir))
         cfg = config()
         return {**cfg.to_json(), "criterion_names": fasl.CRIT_NAMES,
                 "metric_labels": labels, "metric_criterion": crit_of,
                 "fasl_config_path": str(settings.fasl_config)}
 
-    @app.get("/api/personas")
-    def personas() -> list[dict[str, Any]]:
+    @app.get("/api/profiles")
+    def list_profiles(user: auth.User = Depends(current_user)) -> list[dict[str, Any]]:
         store = DayStore(settings.cache_dir)
         out = []
-        for ds in store.datasets():
-            days = [d for d, _ in store.days(ds)]
-            meta = persona_meta(ds)
-            out.append({"dataset": ds, "name": meta["name"], "condition": meta["condition"],
-                        "first_day": days[0].isoformat(), "last_day": days[-1].isoformat(),
-                        "n_days": len(days)})
+        for p in visible(user):
+            days = [d for d, _ in store.days(p.cache_name)]
+            meta = profile_meta(p)
+            out.append({"id": p.id, "name": p.name, "condition": meta["condition"], "source": p.source,
+                        "scripted": meta["scripted"], "n_days": len(days), "config": p.to_json(),
+                        "first_day": days[0].isoformat() if days else None,
+                        "last_day": days[-1].isoformat() if days else None})
         return out
 
-    @app.get("/api/personas/{dataset}")
-    def timeline(dataset: str) -> dict[str, Any]:
-        try:
-            return build_timeline(dataset, settings, config())
-        except KeyError:
-            raise HTTPException(404, f"no cached days for {dataset}; run the export first")
+    @app.get("/api/profiles/{pid}")
+    def timeline(pid: str, user: auth.User = Depends(current_user)) -> dict[str, Any]:
+        return build_timeline(profile_for(user, pid), settings, config())
 
-    @app.get("/api/personas/{dataset}/days/{day}")
-    def day_detail(dataset: str, day: str) -> dict[str, Any]:
+    @app.get("/api/profiles/{pid}/days/{day}")
+    def day_detail(pid: str, day: str, user: auth.User = Depends(current_user)) -> dict[str, Any]:
+        p = profile_for(user, pid)
         try:
             d = date.fromisoformat(day)
         except ValueError:
             raise HTTPException(400, "day must be YYYY-MM-DD")
-        rec = DayStore(settings.cache_dir).load(dataset, d)
+        rec = DayStore(settings.cache_dir).load(p.cache_name, d)
         if rec is None:
-            raise HTTPException(404, f"no cached result for {dataset} {day}")
-        blocks = blocks_on_day(load_plan(settings.run_dir, dataset), d)
-        return {"dataset": dataset, "date": day, "activity": rec.get("activity"),
+            raise HTTPException(404, f"no data for {pid} on {day}")
+        blocks = blocks_on_day(load_plan(settings.run_dir, p.source), d)
+        return {"profile": pid, "date": day, "activity": rec.get("activity"),
                 "blocks": [b.to_json() for b in blocks],
                 "packets_raw": rec.get("packets_raw"), "packets_kept": rec.get("packets_kept"),
                 "n_partitions": rec.get("n_partitions"),
                 "last_partition_start": rec.get("last_partition_start")}
+
+    # ---- configuration (multi-profile users) ----
+
+    @app.get("/api/sources")
+    def sources(user: auth.User = Depends(multi_user)) -> list[dict[str, Any]]:
+        store = DayStore(settings.cache_dir)
+        out = []
+        for src in profiles.sources():
+            days = [d for d, _ in store.days(src)]
+            out.append({"source": src, "n_days": len(days),
+                        "first_day": days[0].isoformat() if days else None,
+                        "last_day": days[-1].isoformat() if days else None,
+                        "has_plan": (settings.run_dir / f"{src}.csv").is_file()})
+        return out
+
+    @app.get("/api/sources/{source}/devices")
+    def source_devices(source: str, user: auth.User = Depends(multi_user)) -> list[dict[str, Any]]:
+        """Local IP addresses seen in a source (from the whole-source day records), with labels."""
+        if source not in profiles.sources():
+            raise HTTPException(404, f"no source {source}")
+        totals: dict[str, int] = {}
+        seen_days: dict[str, int] = {}
+        last_seen: dict[str, str] = {}
+        for day, rec in DayStore(settings.cache_dir).days(source):
+            for ip, n in (rec.get("local_ips") or {}).items():
+                totals[ip] = totals.get(ip, 0) + int(n)
+                seen_days[ip] = seen_days.get(ip, 0) + 1
+                last_seen[ip] = day.isoformat()
+        known = {ip: d for ip, d in load_devices(settings.devices_csv).items()}
+        assigned: dict[str, list[str]] = {}
+        for p in profiles.all():
+            if p.source == source and not p.all_devices:
+                for ip in p.device_ips:
+                    assigned.setdefault(ip, []).append(p.name)
+        labels = {d.ip: d.label for p in profiles.all() if p.source == source for d in p.devices if d.label}
+        ips = sorted(set(totals) | {ip for ip, d in known.items() if d.get("dataset") == source},
+                     key=lambda ip: -totals.get(ip, 0))
+        return [{"ip": ip, "packets": totals.get(ip, 0), "days": seen_days.get(ip, 0),
+                 "last_seen": last_seen.get(ip),
+                 "label": labels.get(ip) or known.get(ip, {}).get("device", ""),
+                 "role": known.get(ip, {}).get("role", ""),
+                 "assigned_to": assigned.get(ip, [])} for ip in ips]
+
+    def _save(body: ProfileBody, pid: str, old: Profile | None) -> dict[str, Any]:
+        p = Profile(id=pid, name=body.name.strip(), source=body.source, all_devices=body.all_devices,
+                    devices=[Device(d.ip.strip(), d.label.strip()) for d in body.devices],
+                    baseline_first=body.baseline_first or None, baseline_last=body.baseline_last or None,
+                    persona=old.persona if old and old.source == body.source else None)
+        try:
+            profiles.upsert(p)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        pending = not any(True for _ in DayStore(settings.cache_dir).days(p.cache_name))
+        return {**p.to_json(), "pending": pending}
+
+    @app.post("/api/profiles")
+    def create_profile(body: ProfileBody, user: auth.User = Depends(multi_user)) -> dict[str, Any]:
+        pid = (body.id or body.name).strip().lower().replace(" ", "-")
+        if profiles.get(pid):
+            raise HTTPException(409, f"profile {pid} exists")
+        out = _save(body, pid, None)
+        if "*" not in user.profiles:      # a parent who adds a person can see that person
+            users.grant(user.username, pid)
+        return out
+
+    @app.put("/api/profiles/{pid}")
+    def update_profile(pid: str, body: ProfileBody, user: auth.User = Depends(multi_user)) -> dict[str, Any]:
+        old = profile_for(user, pid)
+        return _save(body, pid, old)
+
+    @app.delete("/api/profiles/{pid}")
+    def delete_profile(pid: str, user: auth.User = Depends(multi_user)) -> dict[str, bool]:
+        profile_for(user, pid)
+        return {"ok": profiles.delete(pid)}
 
     if settings.web_dist.is_dir():
         app.mount("/", StaticFiles(directory=settings.web_dist, html=True), name="web")

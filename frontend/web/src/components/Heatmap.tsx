@@ -24,7 +24,10 @@ type Props = {
 
 /** Day × criterion grid of daily likelihoods L, with the phase strip and gate state. */
 export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selectedDay, onSelectDay }: Props) {
-  const gateWord = rolling ? `rolling ${M}-day window, mixes phases` : "gate of this day's phase";
+  const gateWord = rolling ? `rolling ${M}-day window, mixes phases` : "gate of this day's period";
+  const labels = tl.profile.phase_labels;
+  const curShort = labels.current === "Clinical" ? "clin" : "recent";
+  const phaseName = (ph: string) => (ph === "current" ? labels.current : ph === "baseline" ? labels.baseline : ph).toLowerCase();
   const crits = CRIT_KEYS.filter((c) => Object.keys(cfg.criteria[c] ?? {}).length > 0);
   const days = tl.days;
   const xs = days.map((d) => `${fmtDay(d.date)}\n${d.weekday.slice(0, 2)}`);
@@ -40,8 +43,8 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
       const ph = d.phase;
       cells.push({
         x: i, y: rowOf("Phase"),
-        fill: ph === "clinical" ? C.clinical : ph === "baseline" ? C.baseline : "#f6f3ef",
-        text: ph === "clinical" ? "clin" : ph === "baseline" ? "base" : "", textFill: ph === "clinical" ? "#fff" : C.ink,
+        fill: ph === "current" ? C.clinical : ph === "baseline" ? C.baseline : "#f6f3ef",
+        text: ph === "current" ? curShort : ph === "baseline" ? "base" : "", textFill: ph === "current" ? "#fff" : C.ink,
       });
       crits.forEach((c) => {
         const L = d.L[c];
@@ -71,8 +74,8 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
           const i = p.data[0];
           const d = days[i];
           const row = rows[p.data[1]];
-          const head = `<b>${d.date} (${d.weekday})</b> · ${d.phase}${d.complete ? "" : " · incomplete"}`;
-          if (row === "Phase") return `${head}<br/>${d.ground_truth.n_blocks} scripted blocks, ${d.ground_truth.n_profile_blocks} clinical-profile`;
+          const head = `<b>${d.date} (${d.weekday})</b> · ${phaseName(d.phase)}${d.complete ? "" : " · incomplete"}`;
+          if (row === "Phase") return d.ground_truth ? `${head}<br/>${d.ground_truth.n_blocks} scripted blocks, ${d.ground_truth.n_profile_blocks} clinical` : head;
           if (row === "Criteria present") return `${head}<br/>${nPresent[i]} criteria present (${gateWord})`;
           if (row === "Episode") return `${head}<br/>episode ${episode[i] ? "likely" : "not likely"} (${gateWord})`;
           const c = row as CritKey;

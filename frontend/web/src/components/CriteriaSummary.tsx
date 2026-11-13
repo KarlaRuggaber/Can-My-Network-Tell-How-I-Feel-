@@ -29,8 +29,6 @@ const EXPECT_LABEL: Record<Expectation, string> = {
   flag: "flag only",
 };
 
-const PHASE_TITLE: Record<PhaseKey, string> = { baseline: "Baseline", clinical: "Clinical" };
-
 /** Does the observed gate state agree with the profile's expectation? */
 export function agreement(expected: Expectation | undefined, observed: boolean | null): "match" | "miss" | "open" {
   if (expected === undefined || observed === null) return "open";
@@ -49,15 +47,15 @@ export function isPreliminary(p: PhaseView, gate: GateParams): boolean {
 
 const presentList = (p: PhaseView, crits: CritKey[]) => crits.filter((c) => p.criteria[c]?.present);
 
-function PhaseTile({ ph, p, crits, cfg, gate }: { ph: PhaseKey; p: PhaseView; crits: CritKey[]; cfg: Config; gate: GateParams }) {
+function PhaseTile({ ph, title, p, crits, cfg, gate }: { ph: PhaseKey; title: string; p: PhaseView; crits: CritKey[]; cfg: Config; gate: GateParams }) {
   const on = presentList(p, crits);
   const prelim = isPreliminary(p, gate);
   return (
     <div className={`phase-tile phase-tile-${ph}`}>
       <div className="phase-tile-head">
-        <span className="phase-tile-title">{PHASE_TITLE[ph]}</span>
+        <span className="phase-tile-title">{title}</span>
         <span className="muted small">{phaseSpan(p)}</span>
-        {ph === "clinical" && prelim && <span className="pill pill-beige">preliminary · day {p.days} of {gate.M}</span>}
+        {ph === "current" && prelim && <span className="pill pill-beige">preliminary · day {p.days} of {gate.M}</span>}
       </div>
       {p.days === 0 ? <p className="muted">No complete days yet.</p> : (
         <>
@@ -78,9 +76,11 @@ function PhaseTile({ ph, p, crits, cfg, gate }: { ph: PhaseKey; p: PhaseView; cr
 }
 
 export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: Props) {
-  const clin = phases.clinical;
+  const clin = phases.current;
   const prelim = isPreliminary(clin, gate);
-  const order: PhaseKey[] = ["baseline", "clinical"];
+  const order: PhaseKey[] = ["baseline", "current"];
+  const title = tl.profile.phase_labels;
+  const hasExpect = Object.keys(tl.persona.expected ?? {}).length > 0;
   const scored = CRIT_KEYS.filter((c) => Object.keys(cfg.criteria[c] ?? {}).length > 0);
   const unscored = CRIT_KEYS.filter((c) => !scored.includes(c));
 
@@ -93,24 +93,24 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
       <div className="card-head">
         <h2><span className="step">1</span>Overview</h2>
         <p className="sub">
-          Which DSM-5 criteria pass the gate in each phase. Each phase is judged on its own days only.
+          Which DSM-5 criteria pass the gate in each period. Each period is judged on its own days only.
         </p>
       </div>
 
       <div className="phase-tiles">
-        {order.map((ph) => <PhaseTile key={ph} ph={ph} p={phases[ph]} crits={scored} cfg={cfg} gate={gate} />)}
-        <div className="phase-tile phase-tile-verdict">
+        {order.map((ph) => <PhaseTile key={ph} ph={ph} title={title[ph]} p={phases[ph]} crits={scored} cfg={cfg} gate={gate} />)}
+        {hasExpect && <div className="phase-tile phase-tile-verdict">
           <div className="phase-tile-head"><span className="phase-tile-title">Expected (profile §9)</span></div>
           <div className="phase-tile-big">
             <b>{matched.length}</b> <span>of {judged.length} expectations met{prelim ? " so far" : ""}</span>
           </div>
           <div className="small">
-            Should be present in the clinical phase: {expectedPresent.length
+            Should be present in the {title.current.toLowerCase()} phase: {expectedPresent.length
               ? expectedPresent.map((c) => <span key={c} className="pill pill-outline">{c}</span>)
               : <span className="muted">none</span>}
           </div>
           <div className="small muted">Episode expected: {tl.persona.episode?.expected ?? "–"}</div>
-        </div>
+        </div>}
       </div>
 
       <div className="table-wrap">
@@ -118,11 +118,11 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
           <thead>
             <tr>
               <th>Criterion</th>
-              <th>Expected</th>
+              {hasExpect && <th>Expected</th>}
               {order.map((ph) => (
-                <th key={ph}>{PHASE_TITLE[ph]} <span className="muted">· days ≥ θ</span></th>
+                <th key={ph}>{title[ph]} <span className="muted">· days ≥ θ</span></th>
               ))}
-              <th>Match</th>
+              {hasExpect && <th>Match</th>}
             </tr>
           </thead>
           <tbody>
@@ -137,7 +137,7 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
                     <b>{c}</b> {cfg.criterion_names[c]}
                     {cfg.core.includes(c) && <span className="pill pill-outline">core</span>}
                   </td>
-                  <td title={exp?.note}>{exp ? EXPECT_LABEL[exp.present] : "–"}</td>
+                  {hasExpect && <td title={exp?.note}>{exp ? EXPECT_LABEL[exp.present] : "–"}</td>}
                   {order.map((ph) => {
                     const p = phases[ph];
                     const r = p.criteria[c];
@@ -149,11 +149,11 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
                       </td>
                     );
                   })}
-                  <td>
+                  {hasExpect && <td>
                     {agr === "match" && <span className="agree">✓ yes</span>}
                     {agr === "miss" && <span className="disagree">✗ no</span>}
                     {agr === "open" && <span className="muted">–</span>}
-                  </td>
+                  </td>}
                 </tr>
               );
             })}
@@ -164,7 +164,7 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
       {unscored.length > 0 && (
         <p className="small muted unscored">
           Not scored by the current configuration: {unscored.map((c) => `${c} ${cfg.criterion_names[c]}`
-            + (tl.persona.expected[c] ? ` (expected ${EXPECT_LABEL[tl.persona.expected[c]!.present]})` : "")).join(" · ")}.
+            + (hasExpect && tl.persona.expected[c] ? ` (expected ${EXPECT_LABEL[tl.persona.expected[c]!.present]})` : "")).join(" · ")}.
         </p>
       )}
 
@@ -172,13 +172,15 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
         <summary>How is this decided?</summary>
         <p>
           Every day gets a likelihood L between 0 and 1 per criterion. A criterion is <b>present</b> in a phase when
-          L ≥ θ = {gate.theta.toFixed(2)} on at least N = {gate.N} of that phase's last M = {gate.M} days. An
+          L ≥ θ = {gate.theta.toFixed(2)} on at least N = {gate.N} of that period's last M = {gate.M} days. An
           <b> episode</b> is likely when at least {gate.minPresent} criteria are present, including a core criterion
-          ({cfg.core.join(", ")}). The warm-up day and today's day (still being recorded
+          ({cfg.core.join(", ")}). {tl.profile.has_plan
+            ? <>The {title.baseline.toLowerCase()} and {title.current.toLowerCase()} phase come from the scripted plan; the warm-up day is not counted.</>
+            : <>The baseline is the person's usual behaviour ({phaseSpan(phases.baseline) || "first 14 days"}, set under People and devices); every later day is “{title.current.toLowerCase()}”.</>}
+          {" "}Today (still being recorded
           {clin.inProgress.length > 0 && `, ${clin.inProgress.map(fmtDay).join(", ")}`}) are not counted.
-          {prelim && clin.days > 0 && <> The clinical phase has {clin.days} of {gate.M} days so far
-            ({clin.plannedDays} planned, until {clin.plannedLast ? fmtDay(clin.plannedLast) : "–"}), so its result can still change.</>}
-          {" "}Expectations come from each profile's §9; "raised, below gate" means the criterion should move but not pass the gate.
+          {prelim && clin.days > 0 && <> The {title.current.toLowerCase()} period has {clin.days} of {gate.M} days so far, so its result can still change.</>}
+          {hasExpect && <> Expectations come from the scripted profile's §9; "raised, below gate" means the criterion should move but not pass the gate.</>}
           Click a criterion to see the metrics behind it.
         </p>
       </details>
