@@ -5,13 +5,13 @@ import { api, type AssistantStatus } from "../api";
 export function AssistantSettings() {
   const [st, setSt] = useState<AssistantStatus | null>(null);
   const [enabled, setEnabled] = useState(false);
-  const [provider, setProvider] = useState("openrouter");
+  const [provider, setProvider] = useState("anthropic");
   const [model, setModel] = useState("");
   const [key, setKey] = useState("");
   const [msg, setMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
   const apply = (s: AssistantStatus) => {
-    setSt(s); setEnabled(s.enabled || false); setProvider(s.provider ?? "openrouter"); setModel(s.model ?? "");
+    setSt(s); setEnabled(s.enabled || false); setProvider(s.provider ?? "anthropic"); setModel(s.model ?? "");
   };
   useEffect(() => { api.assistant().then(apply).catch(() => setSt(null)); }, []);
 

@@ -197,7 +197,7 @@ def test_assistant_explains_from_derived_results_only(portal, scripted, monkeypa
                json={"messages": [{"role": "user", "content": "Why is my sleep marked?"}], "focus": "Sleep"})
     assert r.status_code == 200 and r.text == "Your sleep looks as usual."
     kw = fake.calls[-1]
-    assert kw["model"] == "claude-opus-5-5" and kw["thinking"] == {"type": "adaptive"}
+    assert kw["model"] == "claude-sonnet-5-5" and kw["thinking"] == {"type": "adaptive"}
     assert kw["messages"][-1]["content"].endswith("Why is my sleep marked?")
     system = " ".join(b["text"] for b in kw["system"])
     assert "Do not use\n  DSM-5 criterion names" in system                     # person rules
@@ -224,8 +224,9 @@ def test_assistant_settings_and_openrouter(portal, scripted, monkeypatch):
     import os
 
     import httpx
-    for v in ("CMN_ASSISTANT", "CMN_ASSISTANT_PROVIDER", "CMN_ASSISTANT_MODEL", "OPENROUTER_API_KEY"):
+    for v in ("CMN_ASSISTANT", "CMN_ASSISTANT_PROVIDER", "CMN_ASSISTANT_MODEL", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"):
         monkeypatch.delenv(v, raising=False)
+    monkeypatch.setattr("cmn_frontend.assistant._anthropic_profile", lambda: False)  # no `ant auth login` profile
     seen = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -242,7 +243,7 @@ def test_assistant_settings_and_openrouter(portal, scripted, monkeypatch):
     doc.post("/api/login", json={"username": "doc", "password": "pw-doc"})
     assert person.put("/api/assistant", json={"enabled": True, "provider": "openrouter", "model": "x"}).status_code == 403
     st = doc.get("/api/assistant").json()
-    assert st["provider"] == "openrouter" and st["model"] == "deepseek/deepseek-v4.1-flash-1017"
+    assert st["provider"] == "anthropic" and st["model"] == "claude-sonnet-5-5"     # default: Claude
     assert st["enabled"] is False and st["has_key"] is False
 
     r = doc.put("/api/assistant", json={"enabled": True, "provider": "openrouter",

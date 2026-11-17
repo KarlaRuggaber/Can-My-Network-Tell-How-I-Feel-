@@ -31,9 +31,9 @@ device names and must not diagnose. Persons get everyday language without clinic
 expectations; clinicians get criterion names and, for scripted personas, the script's expectations
 marked as such. A multi-profile user turns it on under **Settings → Assistant** and enters the
 provider, model and API key there (stored in `~/cmn-data/frontend/assistant.json`, owner-only, never
-sent back to a browser; `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` also work). Providers: OpenRouter
-(default for testing: `deepseek/deepseek-v4.1-flash-1017`) and Anthropic (Claude, `claude-opus-5-5`,
-official SDK, with server-side refusal fallback). The question and the derived results go to that
+sent back to a browser; `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` also work). Providers: Anthropic
+(the default: Claude Sonnet 5.5, `claude-sonnet-5-5`, official SDK, with server-side refusal fallback; the project key does not include Opus or Fable) and
+OpenRouter (used for testing before the project had a Claude key: `deepseek/deepseek-v4.1-flash-1017`). The question and the derived results go to that
 provider, so use it with the scripted data, or with live data only where participants agreed.
 
 For multi-profile users the portal shows:

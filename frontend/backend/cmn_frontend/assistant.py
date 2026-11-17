@@ -11,12 +11,12 @@ stored in <home>/assistant.json (readable by the owner only; the key is never se
 browser). Environment variables give the defaults:
 
     CMN_ASSISTANT=1                         # on
-    CMN_ASSISTANT_PROVIDER=openrouter       # or anthropic
-    CMN_ASSISTANT_MODEL=deepseek/deepseek-v4.1-flash-1017
-    OPENROUTER_API_KEY=... / ANTHROPIC_API_KEY=...
+    CMN_ASSISTANT_PROVIDER=anthropic        # default; or openrouter
+    CMN_ASSISTANT_MODEL=claude-sonnet-5-5
+    ANTHROPIC_API_KEY=... / OPENROUTER_API_KEY=...
 
-Providers: "openrouter" (OpenRouter's chat completions API, any model it serves; used for testing)
-and "anthropic" (Claude through the official SDK).
+Providers: "anthropic" (Claude through the official SDK; the default since the project has a Claude
+API key) and "openrouter" (OpenRouter's chat completions API, any model it serves; used for testing).
 
 Single-profile users (the person themself) get a context without expectations or clinical labels and
 answers in everyday language; multi-profile users (clinicians, parents) get the criterion names and,
@@ -37,10 +37,10 @@ from . import fasl
 PROVIDERS = {
     "openrouter": {"label": "OpenRouter", "default_model": "deepseek/deepseek-v4.1-flash-1017",
                    "key_env": "OPENROUTER_API_KEY"},
-    "anthropic": {"label": "Anthropic (Claude)", "default_model": "claude-opus-5-5",
+    "anthropic": {"label": "Anthropic (Claude)", "default_model": "claude-sonnet-5-5",
                   "key_env": "ANTHROPIC_API_KEY"},
 }
-DEFAULT_PROVIDER = "openrouter"
+DEFAULT_PROVIDER = "anthropic"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MAX_TURNS = 20
 
