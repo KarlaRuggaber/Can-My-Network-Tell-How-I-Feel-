@@ -53,6 +53,17 @@ provider, so use it with the scripted data, or with live data only where partici
      switched off look the same from the network.
    - *Day by day*: time in use, use at night, chat sessions, different sites (and crisis or
      self-harm sites), with legend chips to hide or highlight rows.
+   - *Compared with healthy people* (clinicians and parents): every day is also compared with a
+     healthy reference, the pooled days of the other people that count as healthy (by default the
+     scripted personas' baseline weeks, which live a healthy everyday profile from
+     `profiles/tier0-healthy`; healthy volunteers can be added with "Healthy reference: all days"
+     under Settings). The person's own source is never part of it. Its flags ("Later nights than
+     healthy people") use the same rule and work from the first week, before an own baseline exists.
+     With two or three people the reference is small and mixes lifestyles (student vs. office job),
+     so a difference can reflect a lifestyle rather than health; it needs more healthy people of the
+     target age before it is used clinically. The person does not see this comparison.
+     (`gw_student_a` on the gateway is not a healthy reference: its devices run only the runner's
+     background mode, no user; it is useful for tuning the "in use" cutoff instead.)
    "In use" = at least `CMN_ACTIVE_PACKETS` (default 50) packets in 5 minutes. Scripted devices are
    silent between blocks; real phones send background traffic, so tune this on a real device.
 2. **Timeline — day by day**: one card per day, newest first, with the quiet window, a 24-hour strip

@@ -307,3 +307,17 @@ def test_notes_and_seen_flags_for_clinicians_only(portal):
     nid = tl["notes"][0]["id"]
     assert doc.delete(f"/api/profiles/tester/notes/{nid}").json()["notes"] == []
     assert doc.delete(f"/api/profiles/tester/notes/{nid}").status_code == 404
+
+
+def test_healthy_reference_setting(portal):
+    from cmn_frontend.profiles import Profile as P
+    doc = login(portal, "doc", "pw-doc")
+    body = {"name": "Resolver only", "source": DS, "all_devices": False,
+            "devices": [{"ip": RESOLVER_IP, "label": "router"}], "reference": "bogus"}
+    assert doc.put("/api/profiles/dns", json=body).status_code == 422
+    body["reference"] = "all"
+    r = doc.put("/api/profiles/dns", json=body).json()
+    assert r["reference"] == "all" and r["reference_mode"] == "all"
+    assert P("x", "X", "s").reference_mode == "none" and P("x", "X", "s", persona="gw_a").reference_mode == "baseline"
+    body["reference"] = None
+    assert doc.put("/api/profiles/dns", json=body).json()["reference_mode"] == "none"

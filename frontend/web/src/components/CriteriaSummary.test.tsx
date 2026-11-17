@@ -34,7 +34,7 @@ const day = (date: string, phase: string, c4: number): Day => ({
 const tl: Timeline = {
   profile: {
     id: "ben", name: "Ben", source: "gw_x_a", all_devices: true, devices: [], baseline_first: null,
-    baseline_last: null, persona: "gw_x_a", view_key: "all", has_plan: true,
+    baseline_last: null, persona: "gw_x_a", view_key: "all", reference: null, reference_mode: "baseline", has_plan: true,
     phase_labels: { baseline: "Baseline", current: "Clinical" },
   },
   status: "ready",

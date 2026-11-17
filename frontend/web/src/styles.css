@@ -387,3 +387,16 @@ details.script p { max-width: none; }
 .hour-scale { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; font-size: 10px; }
 .flag-seen { opacity: 0.6; }
 .flag-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+
+/* healthy reference */
+.flag-group + .flag-group { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.flag-group-title { margin: 0 0 6px; text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--text); }
+.flag-note { margin: -2px 0 8px; max-width: 900px; }
+.flag-reference { background: #fff; border-style: dashed; }
+.flag-reference .flag-mark { background: #fff; border: 2px solid var(--warn); }
+.pill-ref { border-style: dashed !important; }
+.band-key { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.key-band { display: inline-block; width: 16px; height: 10px; border-radius: 2px; background: rgba(168,112,44,0.18); vertical-align: -1px; margin-right: 4px; }
+.key-band-ref { background: transparent; border: 1px dashed #6f6862; }
+.key-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--critical); vertical-align: 0; margin-right: 4px; }
+.key-dot-ref { background: #fff; border: 2px solid var(--critical); width: 8px; height: 8px; }

@@ -153,7 +153,7 @@ def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig) -
     baseline_stats = _baseline_stats(days)
     labels, _ = _metric_labels(str(settings.app_dir))
     obs = observed.build(days, [rec.get("activity") for _, rec in records], baseline_stats,
-                         lambda k: labels.get(k, k))
+                         lambda k: labels.get(k, k), reference=healthy_reference(settings, profile))
     return {
         "profile": {**profile.to_json(), "has_plan": has_plan,
                     "phase_labels": {"baseline": "Baseline", "current": "Clinical" if has_plan else "Recent"}},
@@ -168,6 +168,53 @@ def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig) -
         "baseline_stats": baseline_stats,
         "observed": obs,
     }
+
+
+_REF_CACHE: dict[tuple, dict[str, list[float]]] = {}
+
+
+def _reference_values(p: Profile, settings: Settings) -> dict[str, list[float]]:
+    """Observed track values of one person's days that count as healthy reference (cached)."""
+    folder = settings.cache_dir / p.cache_name
+    files = sorted(folder.glob("*.json")) if folder.is_dir() else []
+    key = (p.cache_name, p.reference_mode, p.baseline_first, p.baseline_last, observed.active_packets(),
+           len(files), max((f.stat().st_mtime for f in files), default=0.0))
+    if key in _REF_CACHE:
+        return _REF_CACHE[key]
+    records = list(DayStore(settings.cache_dir).days(p.cache_name))
+    phase_of, _ = _periods(p, [d for d, _ in records], phase_by_day(load_plan(settings.run_dir, p.source)))
+    days = [{"date": day.isoformat(), "phase": phase_of.get(day, "unknown"), "complete": i + 1 < len(records),
+             "packets_kept": rec.get("packets_kept"), "metrics": rec.get("metrics", {})}
+            for i, (day, rec) in enumerate(records)]
+    observed.build(days, [rec.get("activity") for _, rec in records], {})
+    mode = p.reference_mode
+    vals = observed.track_values(
+        days, lambda d: d["complete"] and d["observed"]["has_data"] and (mode == "all" or d["phase"] == "baseline"))
+    _REF_CACHE[key] = vals
+    return vals
+
+
+def healthy_reference(settings: Settings, viewed: Profile) -> dict[str, Any] | None:
+    """Pooled days of the other people that count as healthy (never the viewed person's own source).
+
+    By default the scripted personas' baseline days: they live a healthy everyday profile
+    (profiles/tier0-healthy) before their clinical phase. Healthy volunteers can be added by
+    setting a person's healthy reference to "all days".
+    """
+    pooled: dict[str, list[float]] = {}
+    people, n_days = [], 0
+    for p in ProfileStore(settings).all():
+        if p.reference_mode == "none" or p.source == viewed.source:
+            continue
+        vals = _reference_values(p, settings)
+        if not vals:
+            continue
+        people.append(p.name)
+        n_days += max(len(v) for v in vals.values())
+        for k, v in vals.items():
+            pooled.setdefault(k, []).extend(v)
+    stats = observed.reference_stats(pooled)
+    return {"stats": stats, "n_days": n_days, "people": people} if stats else None
 
 
 def for_person(tl: dict[str, Any]) -> dict[str, Any]:
@@ -239,6 +286,7 @@ class ProfileBody(BaseModel):
     devices: list[DeviceBody] = []
     baseline_first: str | None = None
     baseline_last: str | None = None
+    reference: str | None = None       # healthy reference: none | baseline | all
 
 
 def create_app(settings: Settings | None = None, llm_client: Any = None, http_client: Any = None) -> FastAPI:
@@ -477,7 +525,8 @@ def create_app(settings: Settings | None = None, llm_client: Any = None, http_cl
         p = Profile(id=pid, name=body.name.strip(), source=body.source, all_devices=body.all_devices,
                     devices=[Device(d.ip.strip(), d.label.strip()) for d in body.devices],
                     baseline_first=body.baseline_first or None, baseline_last=body.baseline_last or None,
-                    persona=old.persona if old and old.source == body.source else None)
+                    persona=old.persona if old and old.source == body.source else None,
+                    reference=body.reference or None)
         try:
             profiles.upsert(p)
         except ValueError as e:

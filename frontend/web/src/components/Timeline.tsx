@@ -26,11 +26,14 @@ const WORDS: Record<string, [string, string]> = {
   sites: ["More different sites", "Fewer different sites"],
 };
 
-export function differences(tl: TL, d: Day): { text: string; risk: boolean }[] {
+export type Difference = { text: string; risk: boolean; reference?: boolean };
+
+/** Clear differences of a day: from the person's usual range, then (clinicians, parents) from healthy people. */
+export function differences(tl: TL, d: Day): Difference[] {
   const o = d.observed;
   if (!o) return [];
   const z = tl.observed?.params.deviation_z ?? 1.5;
-  const out: { text: string; risk: boolean }[] = [];
+  const out: Difference[] = [];
   for (const t of tl.observed?.tracks ?? []) {
     const dev = o.deviation?.[t.key];
     if (dev === null || dev === undefined || Math.abs(dev) < z || !WORDS[t.key]) continue;
@@ -38,6 +41,12 @@ export function differences(tl: TL, d: Day): { text: string; risk: boolean }[] {
     out.push({ text: WORDS[t.key][sign > 0 ? 0 : 1], risk: t.risk.includes(sign) });
   }
   for (const s of o.sensitive ?? []) out.push({ text: s.label, risk: true });
+  for (const t of tl.observed?.tracks ?? []) {
+    const dev = o.deviation_ref?.[t.key];
+    if (dev === null || dev === undefined || Math.abs(dev) < z || !WORDS[t.key]) continue;
+    const sign = dev > 0 ? 1 : -1;
+    out.push({ text: `${WORDS[t.key][sign > 0 ? 0 : 1]} than healthy people`, risk: t.risk.includes(sign), reference: true });
+  }
   return out;
 }
 
@@ -92,7 +101,7 @@ export function Timeline({ tl, person, notes, onNotes, selectedDay, onSelectDay,
           const phase = d.phase === "current" ? labels.current : d.phase === "baseline" ? labels.baseline : d.phase;
           return (
             <li key={d.date} className={`tl-day ${d.date === selectedDay ? "tl-selected" : ""}`}>
-              <div className="tl-rail" aria-hidden="true"><span className={`tl-dot ${diff.some((x) => x.risk) ? "tl-dot-risk" : diff.length ? "tl-dot-diff" : ""}`} /></div>
+              <div className="tl-rail" aria-hidden="true"><span className={`tl-dot ${diff.some((x) => x.risk && !x.reference) ? "tl-dot-risk" : diff.length ? "tl-dot-diff" : ""}`} /></div>
               <div className="tl-body">
                 <div className="tl-head">
                   <button className="tl-date" onClick={() => onSelectDay(d.date)}>{d.weekday} {fmtDay(d.date)}</button>
@@ -113,7 +122,7 @@ export function Timeline({ tl, person, notes, onNotes, selectedDay, onSelectDay,
                     <HourStrip hourly={o.active_hourly} />
                     {diff.length > 0 && (
                       <div className="tl-diff">
-                        {diff.map((x) => <span key={x.text} className={`pill ${x.risk ? "pill-risk" : "pill-grey"}`}>{x.text}</span>)}
+                        {diff.map((x) => <span key={x.text} className={`pill ${x.risk ? "pill-risk" : "pill-grey"} ${x.reference ? "pill-ref" : ""}`}>{x.text}</span>)}
                       </div>
                     )}
                   </>

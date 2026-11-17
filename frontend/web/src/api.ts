@@ -30,6 +30,7 @@ export interface DeviceRef { ip: string; label: string }
 export interface Profile {
   id: string; name: string; source: string; all_devices: boolean; devices: DeviceRef[];
   baseline_first: string | null; baseline_last: string | null; persona: string | null; view_key: string;
+  reference: "none" | "baseline" | "all" | null; reference_mode: "none" | "baseline" | "all";
 }
 
 export interface Source { source: string; n_days: number; first_day: string | null; last_day: string | null; has_plan: boolean }
@@ -42,6 +43,7 @@ export interface SourceDevice {
 export interface ProfileBody {
   id?: string; name: string; source: string; all_devices: boolean; devices: DeviceRef[];
   baseline_first: string | null; baseline_last: string | null;
+  reference?: "none" | "baseline" | "all" | null;
 }
 
 export type Expectation = "present" | "no" | "elevated" | "borderline" | "flag";
@@ -89,7 +91,8 @@ export interface DayObserved {
   chat_sessions: number | null; sites: number | null;
   active_hourly: number[] | null;     // minutes in use per hour
   has_data: boolean;
-  deviation: Record<string, number | null>;   // z against the usual range
+  deviation: Record<string, number | null>;   // z against the person's usual range
+  deviation_ref?: Record<string, number | null>;   // z against the healthy reference (clinicians and parents)
   sensitive?: { metric: string; label: string; value: number | null }[];   // clinicians and parents only
   sensitive_days?: number;
 }
@@ -101,10 +104,12 @@ export interface ObservedTrack {
 export interface RiskFlag {
   id: string; title: string; track: string; direction: number; days: string[]; count: number;
   window: number; unit: string; phrase: string; text: string; sensitive: boolean; names?: string[];
+  basis: "own" | "reference";     // compared with the person's usual weeks, or with healthy people
 }
 export interface Observed {
   tracks: ObservedTrack[];
   usual: Record<string, { mean: number; sd: number; n: number }>;
+  reference: { stats: Record<string, { mean: number; sd: number; n: number }>; n_days: number; people: string[] } | null;
   flags: RiskFlag[];
   params: { active_packets: number; deviation_z: number; flag_days: number; flag_window: number;
     sensitive_window: number; night_from_hour: number; night_to_hour: number };

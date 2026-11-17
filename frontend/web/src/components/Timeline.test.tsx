@@ -22,4 +22,8 @@ describe("differences", () => {
       { text: "Crisis-line domain hits", risk: true },
     ]);
   });
+  it("adds differences from healthy people after the person's own", () => {
+    const d = { observed: { deviation: { quiet_start: 0.2 }, deviation_ref: { night_minutes: 2.4 } } } as unknown as Day;
+    expect(differences(tl, d)).toEqual([{ text: "More use at night than healthy people", risk: true, reference: true }]);
+  });
 });

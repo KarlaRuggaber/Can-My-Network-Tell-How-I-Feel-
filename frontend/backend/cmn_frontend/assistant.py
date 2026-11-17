@@ -254,8 +254,16 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
                      "00:00-06:00, chat sessions, different sites. 'usual' = mean and SD over the baseline "
                      "days. A flag names a risk over the recent days, not a single day."),
             "usual": {k: {"mean": _r(v["mean"]), "sd": _r(v["sd"])} for k, v in obs.get("usual", {}).items()},
-            "flags": [{"title": f["title"], "days": f["days"], "count": f["count"], "of_last": f["window"],
+            "flags": [{"title": f["title"], "compared_with": "healthy people" if f.get("basis") == "reference" else "own usual weeks",
+                       "days": f["days"], "count": f["count"], "of_last": f["window"],
                        **({"what": f.get("names")} if f.get("names") else {})} for f in obs.get("flags", [])],
+            **({"healthy_reference": {
+                "note": ("pooled healthy days of other people (scripted personas' baseline weeks = healthy "
+                         "everyday profiles, or healthy volunteers); small and mixed lifestyles, so a "
+                         "difference can reflect lifestyle rather than health"),
+                "people": obs["reference"]["people"], "days": obs["reference"]["n_days"],
+                "mean_sd": {k: {"mean": _r(v["mean"]), "sd": _r(v["sd"])} for k, v in obs["reference"]["stats"].items()},
+            }} if obs.get("reference") else {}),
             "days": {
                 d["date"]: {
                     "went_quiet": clock(o.get("quiet_start")), "back_online": clock(o.get("quiet_end")),

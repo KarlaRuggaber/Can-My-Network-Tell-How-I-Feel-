@@ -14,6 +14,9 @@ type Props = {
   onSeen?: (flagId: string, lastDay: string | null) => void;
 };
 
+/** Healthy reference: a dashed outline, no fill, so it reads differently from the person's own band. */
+const REF_BAND = { color: "rgba(0,0,0,0)", borderColor: "#6f6862", borderWidth: 1, borderType: "dashed" as const };
+
 const RANGES: [RangeKey, string][] = [["7", "Last 7 days"], ["14", "Last 14 days"], ["30", "Last 30 days"], ["all", "All"]];
 
 /** Track rows below the quiet-window chart (the quiet window itself has its own chart). */
@@ -50,6 +53,31 @@ export function Overview({ tl, person, selectedDay, onSelectDay, seen, onSeen }:
   // seen until a new day joins the flag
   const isSeen = (f: RiskFlag) => !!seen?.[f.id] && seen[f.id].last_day >= lastDay(f);
 
+  const renderFlag = (f: RiskFlag) => (
+    <li key={f.id} className={`flag ${f.sensitive ? "flag-sensitive" : ""} ${f.basis === "reference" ? "flag-reference" : ""} ${isSeen(f) ? "flag-seen" : ""}`}>
+      <span className="flag-mark" aria-hidden="true" />
+      <div>
+        <div className="flag-title">{f.title}</div>
+        <div className="flag-text">{flagSentence(f, who)}</div>
+        <div className="flag-days">
+          {f.days.map((d) => (
+            <button key={d} className={`chip ${d === selectedDay ? "chip-on" : ""}`} onClick={() => onSelectDay(d)}>{fmtDay(d)}</button>
+          ))}
+        </div>
+        {onSeen && (
+          <div className="flag-actions">
+            {isSeen(f)
+              ? <span className="muted small">Seen by {seen![f.id].by} on {fmtDay(seen![f.id].at.slice(0, 10))} ·{" "}
+                  <button className="link small" onClick={() => onSeen(f.id, null)}>undo</button></span>
+              : <button className="btn small" onClick={() => onSeen(f.id, lastDay(f))}>Mark as seen</button>}
+            {seen?.[f.id] && !isSeen(f) && <span className="muted small">new days since it was marked as seen</span>}
+          </div>
+        )}
+      </div>
+    </li>
+  );
+  const sortSeen = (fs: RiskFlag[]) => [...fs].sort((a, b) => Number(isSeen(a)) - Number(isSeen(b)));
+
   return (
     <>
       {person && (
@@ -67,38 +95,25 @@ export function Overview({ tl, person, selectedDay, onSelectDay, seen, onSeen }:
           <p className="sub">{person
             ? "Shown when several of the recent days differ clearly from your usual weeks. Single different days are normal."
             : `A risk is shown when at least ${obs.params.flag_days} of the last ${obs.params.flag_window} days differ clearly
-              (more than ${obs.params.deviation_z} SD) from the usual weeks in that direction; crisis or self-harm sites as soon as they rise above the usual level.`}</p>
+              (more than ${obs.params.deviation_z} SD) in that direction, from ${tl.persona.name}'s usual weeks or from healthy people;
+              crisis or self-harm sites as soon as they rise above the usual level.`}</p>
         </div>
-        {currentDays === 0 ? (
-          <p className="muted">The comparison starts after the {labels.baseline.toLowerCase()} ({person ? "your first" : "the first"} 14 days).</p>
-        ) : obs.flags.length === 0 ? (
-          <p className="calm">Nothing stands out: the recent days are within {person ? "your" : `${tl.persona.name}'s`} usual range.</p>
-        ) : (
-          <ul className="flags">
-            {[...obs.flags].sort((a, b) => Number(isSeen(a)) - Number(isSeen(b))).map((f) => (
-              <li key={f.id} className={`flag ${f.sensitive ? "flag-sensitive" : ""} ${isSeen(f) ? "flag-seen" : ""}`}>
-                <span className="flag-mark" aria-hidden="true" />
-                <div>
-                  <div className="flag-title">{f.title}</div>
-                  <div className="flag-text">{flagSentence(f, who)}</div>
-                  <div className="flag-days">
-                    {f.days.map((d) => (
-                      <button key={d} className={`chip ${d === selectedDay ? "chip-on" : ""}`} onClick={() => onSelectDay(d)}>{fmtDay(d)}</button>
-                    ))}
-                  </div>
-                  {onSeen && (
-                    <div className="flag-actions">
-                      {isSeen(f)
-                        ? <span className="muted small">Seen by {seen![f.id].by} on {fmtDay(seen![f.id].at.slice(0, 10))} ·{" "}
-                            <button className="link small" onClick={() => onSeen(f.id, null)}>undo</button></span>
-                        : <button className="btn small" onClick={() => onSeen(f.id, lastDay(f))}>Mark as seen</button>}
-                      {seen?.[f.id] && !isSeen(f) && <span className="muted small">new days since it was marked as seen</span>}
-                    </div>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+        <FlagGroup title={person ? null : `Compared with ${tl.persona.name}'s usual weeks`}
+          flags={obs.flags.filter((f) => f.basis !== "reference")}
+          empty={currentDays === 0
+            ? `The comparison starts after the ${labels.baseline.toLowerCase()} (${person ? "your first" : "the first"} 14 days).`
+            : null}
+          calm={`Nothing stands out: the recent days are within ${person ? "your" : `${tl.persona.name}'s`} usual range.`}
+          renderFlag={renderFlag} sort={sortSeen} />
+        {obs.reference && (
+          <FlagGroup title="Compared with healthy people"
+            note={<>Healthy reference: {obs.reference.n_days} healthy days of {obs.reference.people.join(" and ")} (their everyday weeks, without
+              {" "}{tl.persona.name}). A small reference that mixes lifestyles: a difference can reflect a lifestyle (student vs. office job)
+              rather than health. Works from the first week, before {tl.persona.name}'s own baseline exists.</>}
+            flags={obs.flags.filter((f) => f.basis === "reference")}
+            empty={null}
+            calm={`Nothing stands out: the recent days are within the healthy range.`}
+            renderFlag={renderFlag} sort={sortSeen} />
         )}
       </section>
 
@@ -124,11 +139,17 @@ export function Overview({ tl, person, selectedDay, onSelectDay, seen, onSeen }:
 
         <h3 className="chart-title">Quiet window at night</h3>
         <p className="sub">When the devices went quiet and came back online{person ? "" : " (longest stretch without use overlapping 00:00–06:00; a short check at night does not end it)"}.
-          Dots mark use during the night. The bands show the usual times.</p>
+          Dots mark use during the night. The bands show the usual times{obs.reference ? "; dashed: healthy people" : ""}.</p>
         <QuietWindows tl={tl} days={days} flagged={new Set((flagsByTrack.get("quiet_start") ?? []).concat(flagsByTrack.get("quiet_end") ?? [], flagsByTrack.get("quiet_hours") ?? []).flatMap((f) => f.days))}
           selectedDay={selectedDay} onSelectDay={onSelectDay} />
 
         <h3 className="chart-title">Day by day</h3>
+        <p className="sub band-key">
+          <span><i className="key-band" /> {person ? "your" : `${tl.persona.name}'s`} usual range</span>
+          {obs.reference && <span><i className="key-band key-band-ref" /> healthy people</span>}
+          <span><i className="key-dot" /> clearly different{obs.reference ? " from the usual range" : ""}</span>
+          {obs.reference && <span><i className="key-dot key-dot-ref" /> clearly different from healthy people only</span>}
+        </p>
         <div className="chips legend-chips" role="group" aria-label="Show or hide rows">
           {rows.map((t) => (
             <button key={t.key} className={`chip ${hidden.has(t.key) ? "chip-off" : "chip-on-soft"} ${flagsByTrack.has(t.key) ? "chip-flag" : ""}`}
@@ -145,6 +166,7 @@ export function Overview({ tl, person, selectedDay, onSelectDay, seen, onSeen }:
               <div className="track-head">
                 <span className="track-name">{t.label}</span>
                 {obs.usual[t.key] && <span className="muted small">usual {fmtValue(t.key, obs.usual[t.key].mean)} ± {fmtValue(t.key, obs.usual[t.key].sd)}</span>}
+                {obs.reference?.stats[t.key] && <span className="muted small">· healthy {fmtValue(t.key, obs.reference.stats[t.key].mean)} ± {fmtValue(t.key, obs.reference.stats[t.key].sd)}</span>}
                 {(flagsByTrack.get(t.key) ?? []).map((f) => <span key={f.id} className="pill pill-red">{f.title}</span>)}
               </div>
               <TrackChart tl={tl} days={days} track={t.key} group={group} selectedDay={selectedDay} onSelectDay={onSelectDay} />
@@ -231,6 +253,9 @@ function QuietWindows({ tl, days, flagged, selectedDay, onSelectDay }: {
     });
     const band = (k: string, color: string) => usual[k]
       ? [[{ yAxis: usual[k].mean - usual[k].sd, itemStyle: { color } }, { yAxis: usual[k].mean + usual[k].sd }]] : [];
+    const ref = tl.observed?.reference?.stats ?? {};
+    const refBand = (k: string) => ref[k]
+      ? [[{ yAxis: ref[k].mean - ref[k].sd, itemStyle: REF_BAND }, { yAxis: ref[k].mean + ref[k].sd }]] : [];
     const sel = selectedIndex(days, selectedDay);
     return {
       animation: false,
@@ -270,7 +295,11 @@ function QuietWindows({ tl, days, flagged, selectedDay, onSelectDay }: {
               },
             };
           },
-          markArea: { silent: true, data: [...band("quiet_start", "rgba(168,112,44,0.12)"), ...band("quiet_end", "rgba(168,112,44,0.12)")] },
+          markArea: {
+            silent: true,
+            data: [...band("quiet_start", "rgba(168,112,44,0.12)"), ...band("quiet_end", "rgba(168,112,44,0.12)"),
+              ...refBand("quiet_start"), ...refBand("quiet_end")],
+          },
         },
         { type: "scatter", data: dots, symbolSize: 5, itemStyle: { color: C.critical }, tooltip: { show: false }, silent: true },
       ],
@@ -292,12 +321,21 @@ function TrackChart({ tl, days, track, group, selectedDay, onSelectDay }: {
     const cur = days.map((d, i) => (d.phase === "current" ? i : -1)).filter((i) => i >= 0);
     const sel = selectedIndex(days, selectedDay);
     const risk = tl.observed?.tracks.find((t) => t.key === track)?.risk ?? [];
-    // red: clearly different in the risk direction; larger neutral point: clearly different the other way
+    const ref = tl.observed?.reference?.stats[track];
+    const riskBeyond = (dev: number | null | undefined) => dev !== null && dev !== undefined && risk.some((r) => dev * r >= z);
+    // filled red: clearly different from the usual range in the risk direction; hollow red: only from
+    // healthy people; larger grey point: clearly different from the usual range the other way
     const data = vals.map((v, i) => {
-      const dev = days[i].observed?.deviation?.[track];
+      const o = days[i].observed;
+      const dev = o?.deviation?.[track];
       const strong = dev !== null && dev !== undefined && Math.abs(dev) >= z;
-      const red = sensitive ? !!v : strong && risk.some((r) => (dev as number) * r >= z);
-      return { value: v, itemStyle: { color: red ? C.critical : strong ? C.text2 : C.ink }, symbolSize: red || strong ? 8 : 5 };
+      const red = sensitive ? !!v : riskBeyond(dev);
+      const refOnly = !sensitive && !red && riskBeyond(o?.deviation_ref?.[track]);
+      return {
+        value: v, symbolSize: red || strong || refOnly ? 8 : 5,
+        itemStyle: refOnly ? { color: "#fff", borderColor: C.critical, borderWidth: 2 }
+          : { color: red ? C.critical : strong ? C.text2 : C.ink },
+      };
     });
     return {
       animation: false,
@@ -313,7 +351,10 @@ function TrackChart({ tl, days, track, group, selectedDay, onSelectDay }: {
             return `<b>${d.weekday} ${fmtDay(d.date)}</b><br/>${s.length ? s.map((x) => `${x.label}: ${fmtNum(x.value)}`).join("<br/>") : "nothing above the usual level"}`;
           }
           const dev = d.observed?.deviation?.[track];
-          return `<b>${d.weekday} ${fmtDay(d.date)}</b><br/>${fmtValue(track, v)}${dev !== null && dev !== undefined && Math.abs(dev) >= z ? " · <b>different from usual</b>" : ""}`;
+          const dref = d.observed?.deviation_ref?.[track];
+          return `<b>${d.weekday} ${fmtDay(d.date)}</b><br/>${fmtValue(track, v)}`
+            + (dev !== null && dev !== undefined && Math.abs(dev) >= z ? "<br/><b>different from the usual range</b>" : "")
+            + (dref !== null && dref !== undefined && Math.abs(dref) >= z ? "<br/><b>different from healthy people</b>" : "");
         },
       },
       xAxis: { type: "category", data: days.map((d) => fmtDay(d.date)), axisLabel: { color: C.text2, fontSize: 9 }, axisTick: { show: false }, axisLine: { lineStyle: { color: C.grid } } },
@@ -321,12 +362,13 @@ function TrackChart({ tl, days, track, group, selectedDay, onSelectDay }: {
         ? { type: "value", min: 0, max: 1, show: false }
         : { type: "value", scale: true, splitNumber: 3, axisLabel: { color: C.text2, fontSize: 9, formatter: (v: number) => (track === "online_hours" ? `${v} h` : fmtNum(v, 0)) }, splitLine: { lineStyle: { color: C.grid } } },
       series: [{
-        type: sensitive ? "bar" : "line", data, barWidth: "40%", connectNulls: false,
+        type: sensitive ? "bar" : "line", data, barWidth: "40%", connectNulls: false, symbol: "circle",
         lineStyle: { width: 1.5, color: C.ink },
         markArea: {
           silent: true,
           data: [
             ...(usual ? [[{ yAxis: usual.mean - usual.sd, itemStyle: { color: C.baselineBand } }, { yAxis: usual.mean + usual.sd }]] : []),
+            ...(ref ? [[{ yAxis: ref.mean - ref.sd, itemStyle: REF_BAND }, { yAxis: ref.mean + ref.sd }]] : []),
             ...(cur.length ? [[{ xAxis: cur[0], itemStyle: { color: C.clinicalTint } }, { xAxis: cur[cur.length - 1] }]] : []),
           ],
         },
@@ -336,4 +378,19 @@ function TrackChart({ tl, days, track, group, selectedDay, onSelectDay }: {
   }, [tl, days, track, selectedDay]);
   return <Chart option={option} height={track === "sensitive_days" ? 70 : 110} group={group} ariaLabel={`Daily values: ${track}`}
     onClick={(p) => days[p.dataIndex] && onSelectDay(days[p.dataIndex].date)} />;
+}
+
+function FlagGroup({ title, note, flags, empty, calm, renderFlag, sort }: {
+  title: string | null; note?: React.ReactNode; flags: RiskFlag[]; empty: string | null; calm: string;
+  renderFlag: (f: RiskFlag) => React.ReactNode; sort: (fs: RiskFlag[]) => RiskFlag[];
+}) {
+  return (
+    <div className="flag-group">
+      {title && <h3 className="flag-group-title">{title}</h3>}
+      {note && <p className="muted small flag-note">{note}</p>}
+      {empty ? <p className="muted">{empty}</p>
+        : flags.length === 0 ? <p className="calm">{calm}</p>
+          : <ul className="flags">{sort(flags).map(renderFlag)}</ul>}
+    </div>
+  );
 }

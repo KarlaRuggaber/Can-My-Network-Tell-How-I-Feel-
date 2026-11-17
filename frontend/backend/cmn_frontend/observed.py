@@ -32,6 +32,7 @@ DEVIATION_Z = 1.5             # a day counts as different from usual beyond 1.5 
 FLAG_DAYS = 3                 # a risk is flagged when at least 3 ...
 FLAG_WINDOW = 7               # ... of the last 7 days with data deviate in its direction
 SENSITIVE_WINDOW = 14         # sensitive sites: any signal in the last 14 days
+MIN_REFERENCE_DAYS = 7        # a healthy reference needs at least 7 days of other people
 
 
 def active_packets() -> int:
@@ -171,13 +172,59 @@ def _stats(vals: list[float]) -> dict[str, float] | None:
     return {"mean": statistics.fmean(vals), "sd": statistics.stdev(vals), "n": len(vals)}
 
 
+def reference_stats(values: dict[str, list[float]]) -> dict[str, dict[str, float]]:
+    """Healthy reference per track from pooled days of other people (mean, SD, n)."""
+    out = {}
+    for t in TRACKS:
+        if t.sensitive:
+            continue
+        s = _stats(values.get(t.key, []))
+        if s and s["n"] >= MIN_REFERENCE_DAYS:
+            out[t.key] = s
+    return out
+
+
+def track_values(days: list[dict[str, Any]], select: Callable[[dict[str, Any]], bool]) -> dict[str, list[float]]:
+    """Values per track of the selected days (for pooling a reference)."""
+    out: dict[str, list[float]] = {}
+    for d in days:
+        if not select(d) or not d.get("observed"):
+            continue
+        for t in TRACKS:
+            v = d["observed"].get(t.key)
+            if not t.sensitive and v is not None:
+                out.setdefault(t.key, []).append(v)
+    return out
+
+
+def _risk_flags(days: list[dict[str, Any]], dev_key: str, basis: str) -> list[dict[str, Any]]:
+    flags = []
+    for r in RISKS:
+        window = [d for d in days if d["observed"].get(r.track) is not None][-FLAG_WINDOW:]
+        hit = [d["date"] for d in window if (zz := (d["observed"].get(dev_key) or {}).get(r.track)) is not None
+               and zz * r.direction >= DEVIATION_Z]
+        if len(window) >= FLAG_DAYS and len(hit) >= FLAG_DAYS:
+            unit = "nights" if r.track.startswith("quiet") or r.track == "night_minutes" else "days"
+            phrase = r.text if basis == "own" else r.text.replace("than usual", "than healthy people usually do")
+            flags.append({"id": r.id if basis == "own" else f"ref_{r.id}", "basis": basis,
+                          "title": r.title if basis == "own" else f"{r.title} than healthy people",
+                          "track": r.track, "direction": r.direction,
+                          "days": hit, "count": len(hit), "window": len(window), "unit": unit, "phrase": phrase,
+                          "text": f"On {len(hit)} of the last {len(window)} {unit} the person {phrase}.",
+                          "sensitive": False})
+    return flags
+
+
 def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
           metric_baseline: dict[str, dict[str, float]], labels: Callable[[str], str] | None = None,
-          ) -> dict[str, Any]:
+          reference: dict[str, Any] | None = None) -> dict[str, Any]:
     """Observed tracks per day, usual range from the complete baseline days, and risk flags.
 
     `days` are the timeline days (date, phase, complete, metrics) in date order; `activity` the
     matching day records' 5-minute activity. Adds `observed` to each day and returns the summary.
+    `reference` ({"stats": per-track mean/SD of healthy people's days, ...}) adds a second
+    comparison: every day against the healthy reference, and flags over the last days with data
+    (these work from the first week, without waiting for the person's own baseline).
     """
     cutoff = active_packets()
     by_date = {d["date"]: i for i, d in enumerate(days)}
@@ -225,23 +272,31 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
             for t in TRACKS if not t.sensitive
         }
 
+    ref_stats = (reference or {}).get("stats") or {}
+
+    def zref(track: str, v: float | None) -> float | None:
+        s = ref_stats.get(track)
+        if s is None or v is None:
+            return None
+        return (v - s["mean"]) / max(s["sd"], TRACK_BY_KEY[track].sd_floor)
+
+    for d in days:
+        if ref_stats:
+            d["observed"]["deviation_ref"] = {
+                t.key: (round(zz, 2) if (zz := zref(t.key, d["observed"].get(t.key))) is not None else None)
+                for t in TRACKS if not t.sensitive
+            }
+
     current = [d for d in days if d["phase"] == "current" and d["complete"]]
-    flags = []
-    for r in RISKS:
-        window = [d for d in current if d["observed"].get(r.track) is not None][-FLAG_WINDOW:]
-        hit = [d["date"] for d in window if (zz := d["observed"]["deviation"].get(r.track)) is not None
-               and zz * r.direction >= DEVIATION_Z]
-        if len(window) >= FLAG_DAYS and len(hit) >= FLAG_DAYS:
-            unit = "nights" if r.track.startswith("quiet") or r.track == "night_minutes" else "days"
-            flags.append({"id": r.id, "title": r.title, "track": r.track, "direction": r.direction,
-                          "days": hit, "count": len(hit), "window": len(window), "unit": unit, "phrase": r.text,
-                          "text": f"On {len(hit)} of the last {len(window)} {unit} the person {r.text}.",
-                          "sensitive": False})
+    flags = _risk_flags(current, "deviation", "own")
+    if ref_stats:
+        recent = [d for d in days if d["complete"] and d["observed"]["has_data"]]
+        flags += _risk_flags(recent, "deviation_ref", "reference")
     recent = [d for d in current if d["observed"]["has_data"]][-SENSITIVE_WINDOW:]
     sens_days = [d for d in recent if d["observed"]["sensitive"]]
     if sens_days:
         names = sorted({s["label"] for d in sens_days for s in d["observed"]["sensitive"]})
-        flags.append({"id": "sensitive_sites", "title": "Crisis or self-harm sites", "track": "sensitive_days",
+        flags.append({"id": "sensitive_sites", "basis": "own", "title": "Crisis or self-harm sites", "track": "sensitive_days",
                       "direction": 1, "days": [d["date"] for d in sens_days], "count": len(sens_days),
                       "window": len(recent), "unit": "days", "phrase": "", "names": names,
                       "text": f"Visits above the person's usual level on {len(sens_days)} of the last "
@@ -253,6 +308,8 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
                     "risk": sorted({r.direction for r in RISKS if r.track == t.key}) or ([1] if t.sensitive else [])}
                    for t in TRACKS],
         "usual": usual,
+        "reference": ({"stats": ref_stats, "n_days": (reference or {}).get("n_days", 0),
+                       "people": (reference or {}).get("people", [])} if ref_stats else None),
         "flags": flags,
         "params": {"active_packets": cutoff, "deviation_z": DEVIATION_Z, "flag_days": FLAG_DAYS,
                    "flag_window": FLAG_WINDOW, "sensitive_window": SENSITIVE_WINDOW,
@@ -261,10 +318,16 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
 
 
 def for_person(observed: dict[str, Any], days: list[dict[str, Any]]) -> None:
-    """Remove sensitive-site tracks and flags (the person never sees them)."""
+    """Remove sensitive-site tracks and flags, and the healthy-reference comparison.
+
+    The person never sees crisis or self-harm sites. The comparison with healthy people is for
+    clinicians and parents: told to the person it could frame them (expectation effect).
+    """
     observed["tracks"] = [t for t in observed["tracks"] if not t["sensitive"]]
-    observed["flags"] = [f for f in observed["flags"] if not f["sensitive"]]
+    observed["flags"] = [f for f in observed["flags"] if not f["sensitive"] and f.get("basis") != "reference"]
+    observed["reference"] = None
     for d in days:
-        if "observed" in d:
+        if d.get("observed"):
             d["observed"].pop("sensitive", None)
             d["observed"].pop("sensitive_days", None)
+            d["observed"].pop("deviation_ref", None)

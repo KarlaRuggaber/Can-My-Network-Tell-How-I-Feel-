@@ -5,7 +5,7 @@ import { fmtNum } from "../lib/format";
 type Props = { onChanged: (id?: string) => void; onClose: () => void };
 
 const empty = (source: string): ProfileBody => ({
-  name: "", source, all_devices: false, devices: [], baseline_first: null, baseline_last: null,
+  name: "", source, all_devices: false, devices: [], baseline_first: null, baseline_last: null, reference: null,
 });
 
 /** Multi-profile users: people, their traffic source, which devices belong to them, baseline period. */
@@ -38,7 +38,7 @@ export function ProfileSettings({ onChanged, onClose }: Props) {
   const startEdit = (p: Profile) => {
     setEditing(p.id); setMsg(null);
     setForm({ name: p.name, source: p.source, all_devices: p.all_devices, devices: p.devices,
-      baseline_first: p.baseline_first, baseline_last: p.baseline_last });
+      baseline_first: p.baseline_first, baseline_last: p.baseline_last, reference: p.reference ?? p.reference_mode });
   };
   const startNew = () => { setEditing("new"); setMsg(null); setForm(empty(sources[0]?.source ?? "")); };
 
@@ -190,6 +190,20 @@ export function ProfileSettings({ onChanged, onClose }: Props) {
                   </div>
                 </>
               )}
+          </fieldset>
+
+          <fieldset className="fieldset">
+            <legend>Healthy reference</legend>
+            <p className="muted small">Whether this person's days count as "healthy people" when the others are compared.
+              Scripted personas count with their baseline weeks (a healthy everyday profile); add healthy volunteers with all their days.</p>
+            <label className="field">Counts as healthy reference
+              <select value={form.reference ?? (editing !== "new" && profiles?.find((p) => p.id === editing)?.persona ? "baseline" : "none")}
+                onChange={(e) => setForm({ ...form, reference: e.target.value as "none" | "baseline" | "all" })}>
+                <option value="none">Not used</option>
+                <option value="baseline">Baseline days only</option>
+                <option value="all">All days (healthy volunteer)</option>
+              </select>
+            </label>
           </fieldset>
 
           <div className="row-actions">

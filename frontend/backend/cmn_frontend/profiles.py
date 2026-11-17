@@ -27,6 +27,7 @@ from .partitions import list_datasets
 from .personas import PERSONAS
 from .settings import Settings
 
+REFERENCE_MODES = ("none", "baseline", "all")
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 
 
@@ -46,6 +47,18 @@ class Profile:
     baseline_first: str | None = None    # YYYY-MM-DD; used when the source has no plan
     baseline_last: str | None = None
     persona: str | None = None           # key of the scripted persona (expectations), if any
+    reference: str | None = None         # healthy reference: "none" | "baseline" | "all" (None: default)
+
+    @property
+    def reference_mode(self) -> str:
+        """Which of this person's days count as healthy reference for the others.
+
+        Default: a scripted persona's baseline days (they live a healthy everyday profile from
+        profiles/tier0-healthy before the clinical phase); nobody else's.
+        """
+        if self.reference in REFERENCE_MODES:
+            return self.reference
+        return "baseline" if self.persona else "none"
 
     @property
     def device_ips(self) -> list[str]:
@@ -66,6 +79,7 @@ class Profile:
     def to_json(self) -> dict[str, Any]:
         d = asdict(self)
         d["view_key"] = self.view_key
+        d["reference_mode"] = self.reference_mode
         return d
 
     @classmethod
@@ -74,7 +88,7 @@ class Profile:
         return cls(id=d["id"], name=d.get("name") or d["id"], source=d["source"],
                    all_devices=bool(d.get("all_devices", True)), devices=devs,
                    baseline_first=d.get("baseline_first"), baseline_last=d.get("baseline_last"),
-                   persona=d.get("persona"))
+                   persona=d.get("persona"), reference=d.get("reference"))
 
 
 def validate(p: Profile, sources: list[str]) -> None:
@@ -89,6 +103,8 @@ def validate(p: Profile, sources: list[str]) -> None:
     for d in p.devices:
         if not re.match(r"^[0-9a-fA-F:.]+$", d.ip):
             raise ValueError(f"not an IP address: {d.ip!r}")
+    if p.reference is not None and p.reference not in REFERENCE_MODES:
+        raise ValueError(f"reference must be one of {', '.join(REFERENCE_MODES)}")
     if bool(p.baseline_first) != bool(p.baseline_last):
         raise ValueError("baseline needs a first and a last day")
     if p.baseline_first and p.baseline_last and p.baseline_first > p.baseline_last:

@@ -102,3 +102,21 @@ def test_person_never_gets_sensitive_tracks_or_flags():
     ob.for_person(out, days)
     assert all(not f["sensitive"] for f in out["flags"]) and all(not t["sensitive"] for t in out["tracks"])
     assert all("sensitive" not in d["observed"] for d in days)
+
+
+def test_healthy_reference_compares_and_flags_from_the_first_week():
+    days, acts = _days(10, 7, late_cur=4)
+    healthy = {"quiet_start": [-60.0 + i for i in range(14)], "night_minutes": [0.0] * 14}
+    ref = {"stats": ob.reference_stats(healthy), "n_days": 14, "people": ["Ben"]}
+    out = ob.build(days, acts, {}, reference=ref)
+    assert out["reference"]["people"] == ["Ben"] and "quiet_start" in out["reference"]["stats"]
+    assert all("deviation_ref" in d["observed"] for d in days)
+    ref_flags = [f for f in out["flags"] if f["basis"] == "reference"]
+    assert any(f["id"] == "ref_later_nights" and f["title"] == "Later nights than healthy people" for f in ref_flags)
+    assert "than healthy people usually do" in ref_flags[0]["phrase"]
+    # too few healthy days: no reference
+    assert ob.reference_stats({"quiet_start": [0.0] * 5}) == {}
+    # the person gets neither the reference nor its flags
+    ob.for_person(out, days)
+    assert out["reference"] is None and all(f["basis"] != "reference" for f in out["flags"])
+    assert all("deviation_ref" not in d["observed"] for d in days)
