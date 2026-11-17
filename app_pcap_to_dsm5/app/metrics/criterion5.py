@@ -8,6 +8,7 @@ import pandas as pd
 
 from .base import make_metric, thresholds_text
 from .common import (
+    dhcp_mask, outbound_mask,
     chat_mask,
     sessions_from_timestamps,
     is_inbound,
@@ -140,7 +141,7 @@ def _is_dhcp_row(row) -> bool:
 def _dhcp_reassoc_per_hour(df: pd.DataFrame) -> Tuple[float, Dict[str, Any]]:
     if df is None or df.empty or "Timestamp" not in df.columns:
         return (np.nan, {})
-    d = df.loc[df.apply(_is_dhcp_row, axis=1)].sort_values("Timestamp")
+    d = df.loc[dhcp_mask(df)].sort_values("Timestamp")
     events_total = int(d.shape[0])
     if df["Timestamp"].notna().any():
         span_h = (df["Timestamp"].max() - df["Timestamp"].min()).total_seconds() / 3600.0
@@ -151,7 +152,7 @@ def _dhcp_reassoc_per_hour(df: pd.DataFrame) -> Tuple[float, Dict[str, Any]]:
     return (val, {"events_total": events_total, "hours_considered": hours_considered})
 
 def _mean_wifi_dwell_min(df: pd.DataFrame) -> Tuple[float, Dict[str, Any]]:
-    d = df.loc[df.apply(_is_dhcp_row, axis=1)].sort_values("Timestamp")
+    d = df.loc[dhcp_mask(df)].sort_values("Timestamp")
     n = int(d.shape[0])
     if n < 2:
         return (np.nan, {})
@@ -164,7 +165,7 @@ def _chat_outbound_ts(df: pd.DataFrame) -> pd.Series:
     chat = df.loc[chat_mask(df)]
     if chat.empty or (not {"Source IP", "Destination IP"}.issubset(chat.columns)):
         return pd.Series([], dtype="datetime64[ns]")
-    chat = chat.loc[chat.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1)]
+    chat = chat.loc[outbound_mask(chat)]
     return chat["Timestamp"].sort_values()
 
 def _median_iks_sec(df: pd.DataFrame) -> Tuple[float, Dict[str, Any]]:
@@ -190,7 +191,7 @@ def _iks_std_sec(df: pd.DataFrame) -> Tuple[float, Dict[str, Any]]:
 def _sub30s_session_count(df: pd.DataFrame, gap_sec: int = 300) -> Tuple[float, Dict[str, Any]]:
     if df is None or df.empty or "Timestamp" not in df.columns:
         return (0.0, {"n_sessions_short": 0, "n_sessions_total": 0})
-    L = sessions_from_timestamps(df.sort_values("Timestamp"), gap_sec=gap_sec)
+    L = sessions_from_timestamps(df[["Timestamp"]], gap_sec=gap_sec)
     if not L:
         return (0.0, {"n_sessions_short": 0, "n_sessions_total": 0})
     durations = np.array([(b - a).total_seconds() for a, b in L], dtype=float)
@@ -200,7 +201,7 @@ def _sub30s_session_count(df: pd.DataFrame, gap_sec: int = 300) -> Tuple[float, 
 def _session_fano(df: pd.DataFrame, gap_sec: int = 300) -> Tuple[float, Dict[str, Any]]:
     if df is None or df.empty or "Timestamp" not in df.columns:
         return (np.nan, {})
-    L = sessions_from_timestamps(df.sort_values("Timestamp"), gap_sec=gap_sec)
+    L = sessions_from_timestamps(df[["Timestamp"]], gap_sec=gap_sec)
     n_sessions = len(L)
     if n_sessions < 3:
         return (np.nan, {"n_sessions": n_sessions})

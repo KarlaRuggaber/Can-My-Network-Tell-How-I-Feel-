@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from .common import (
+    outbound_mask, private_ip_mask, dhcp_mask,
     SOCIAL_SLDS,
     PRODUCTIVITY_SLDS,
     productivity_mask,
@@ -68,7 +69,7 @@ def _chat_outbound_ts(df: pd.DataFrame) -> pd.Series:
     chat = df.loc[chat_mask(df)]
     if chat.empty or (not {"Source IP","Destination IP"}.issubset(chat.columns)):
         return pd.Series([], dtype="datetime64[ns]")
-    chat = chat.loc[chat.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1)]
+    chat = chat.loc[outbound_mask(chat)]
     return chat["Timestamp"].sort_values()
 
 # ------------------------------ main builder ----------------------------------
@@ -126,9 +127,14 @@ def compute_daily_base_record(df_d: pd.DataFrame) -> dict:
         return rec
 
     # --- canonicalize time & convenience columns
-    d = df_d.copy()
+    # Shallow copy (pandas copy-on-write: changes below never reach the caller's frame) and
+    # sort only when needed: a full copy plus a sorted copy of a 7 M-row day cost ~2 GB.
+    d = df_d.copy(deep=False)
     d["Timestamp"] = pd.to_datetime(d["Timestamp"], errors="coerce")
-    d = d.dropna(subset=["Timestamp"]).sort_values("Timestamp")
+    if d["Timestamp"].isna().any():
+        d = d.dropna(subset=["Timestamp"])
+    if not d["Timestamp"].is_monotonic_increasing:
+        d = d.sort_values("Timestamp")
     d["Hour"] = d["Timestamp"].dt.hour
 
     total_packets = int(d.shape[0])
@@ -142,12 +148,12 @@ def compute_daily_base_record(df_d: pd.DataFrame) -> dict:
     if {"Length", "Destination IP", "Source IP"}.issubset(d.columns):
         try:
             down_bytes = d[
-                d["Destination IP"].apply(lambda x: is_private_ip(x) if pd.notna(x) else False)
-                & (~d["Source IP"].apply(lambda x: is_private_ip(x) if pd.notna(x) else False))
+                private_ip_mask(d["Destination IP"])
+                & (~private_ip_mask(d["Source IP"]))
             ]["Length"].sum()
             up_bytes = d[
-                d["Source IP"].apply(lambda x: is_private_ip(x) if pd.notna(x) else False)
-                & (~d["Destination IP"].apply(lambda x: is_private_ip(x) if pd.notna(x) else False))
+                private_ip_mask(d["Source IP"])
+                & (~private_ip_mask(d["Destination IP"]))
             ]["Length"].sum()
         except Exception:
             down_bytes = np.nan
@@ -240,7 +246,7 @@ def compute_daily_base_record(df_d: pd.DataFrame) -> dict:
         rows_scale = d[d["SLD"].isin(SMART_SCALE_SLDS)].copy()
         if not rows_scale.empty:
             if {"Source IP","Destination IP"}.issubset(rows_scale.columns):
-                rows_scale = rows_scale[rows_scale.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1)]
+                rows_scale = rows_scale[outbound_mask(rows_scale)]
             if not rows_scale.empty:
                 sess_scale = sessions_from_timestamps(rows_scale, gap_sec=600)
                 rec["C3_F6_SmartScaleUploads"] = float(len(sess_scale))
@@ -253,7 +259,7 @@ def compute_daily_base_record(df_d: pd.DataFrame) -> dict:
     # ── C5: Psychomotor agitation / retardation --------------------------------
     # F1: DHCP per hour
     if "Timestamp" in d.columns:
-        d_dhcp = d.loc[d.apply(_is_dhcp_row, axis=1)].sort_values("Timestamp")
+        d_dhcp = d.loc[dhcp_mask(d)].sort_values("Timestamp")
         events_total = int(d_dhcp.shape[0])
         if d["Timestamp"].notna().any():
             span_h = (d["Timestamp"].max() - d["Timestamp"].min()).total_seconds() / 3600.0
@@ -279,7 +285,7 @@ def compute_daily_base_record(df_d: pd.DataFrame) -> dict:
 
     # F5: sub‑30s sessions with 5‑min idle segmentation
     if "Timestamp" in d.columns:
-        sess_all = sessions_from_timestamps(d.sort_values("Timestamp"), gap_sec=300)
+        sess_all = sessions_from_timestamps(d[["Timestamp"]], gap_sec=300)
         if sess_all:
             durations = np.array([(b - a).total_seconds() for a, b in sess_all], dtype=float)
             rec["C5_F5_Sub30sSessions"] = float((durations < 30.0).sum())

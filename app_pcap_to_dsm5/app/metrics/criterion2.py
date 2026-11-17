@@ -8,6 +8,7 @@ import pandas as pd
 
 from .base import make_metric, thresholds_text
 from .common import (
+    outbound_mask, inbound_mask,
     SOCIAL_SLDS,
     PRODUCTIVITY_SLDS,
     productivity_mask,
@@ -131,8 +132,8 @@ def _median_reply_latency_sec(df: pd.DataFrame) -> Tuple[float, Dict[str, Any]]:
     d = df.loc[chat_mask(df), req].dropna().sort_values("Timestamp")
     if d.empty:
         return (np.nan, {})
-    d["inb"]  = d.apply(lambda r: is_inbound(r["Source IP"], r["Destination IP"]), axis=1)
-    d["outb"] = d.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1)
+    d["inb"]  = inbound_mask(d)
+    d["outb"] = outbound_mask(d)
     ts = d["Timestamp"].values; inn = d["inb"].values; out = d["outb"].values
     gaps = []
     for i in range(len(d) - 1):
@@ -166,7 +167,7 @@ def _mean_upstream_rate_bps(df: pd.DataFrame, gap_sec: int = 300) -> Tuple[float
         if win.empty:
             continue
         dur = max(1.0, (b - a).total_seconds())
-        up_b = float(win.loc[win.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1), "Length"].sum())
+        up_b = float(win.loc[outbound_mask(win), "Length"].sum())
         rates.append(up_b / dur)
     return (float(np.mean(rates)) if rates else np.nan, {"sessions_n": len(sess)})
 
@@ -178,7 +179,7 @@ def _passive_active_byte_ratio(df: pd.DataFrame) -> Tuple[float, Dict[str, Any]]
     Bp = float(df.loc[streaming_inbound_mask(df), "Length"].sum())
     # Active: outbound chat bytes
     chat = df.loc[chat_mask(df)]
-    Ba = float(chat.loc[chat.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1), "Length"].sum()) if not chat.empty else 0.0
+    Ba = float(chat.loc[outbound_mask(chat), "Length"].sum()) if not chat.empty else 0.0
     if Ba > 0.0:
         return (Bp / Ba, {"Bp": int(Bp), "Ba": int(Ba)})
     return (np.inf if Bp > 0.0 else np.nan, {"Bp": int(Bp), "Ba": int(Ba)})
@@ -199,8 +200,8 @@ def _social_outgoing_share_up(df: pd.DataFrame) -> Tuple[float, Dict[str, Any]]:
             return (np.nan, {})
     up = 0.0; down = 0.0
     if {"Source IP", "Destination IP", "Length"}.issubset(soc.columns):
-        up   = float(soc.loc[soc.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1), "Length"].sum())
-        down = float(soc.loc[soc.apply(lambda r: is_inbound(r["Source IP"], r["Destination IP"]), axis=1), "Length"].sum())
+        up   = float(soc.loc[outbound_mask(soc), "Length"].sum())
+        down = float(soc.loc[inbound_mask(soc), "Length"].sum())
     else:
         # if bytes are missing, fall back to counts
         up   = float(len(soc))  # proxy

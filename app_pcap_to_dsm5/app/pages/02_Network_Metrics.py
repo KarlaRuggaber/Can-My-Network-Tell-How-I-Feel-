@@ -20,7 +20,7 @@ import streamlit as st
 import pyarrow as pa
 import pyarrow.parquet as pq
 from utils.acronyms import render_acronyms_helper_in_sidebar
-from utils.partitions import dataset_signature, newest_partition_mtime
+from utils.partitions import dataset_signature
 
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -62,6 +62,7 @@ from metrics.common import (
     TRACKER_BURST_THRESHOLD,
 )
 from metrics.base_features import compute_daily_base_record
+from metrics.daily_cache import cache_path, update_feature_cache
 
 # Status ordering used for sorting KPI tiles in the grid (lower=earlier)
 STATUS_ORDER = {"OK": 0, "Caution": 1, "N/A": 2}
@@ -647,7 +648,7 @@ def partition_counts_by_date(base_names: list[str]) -> dict[pd.Timestamp, int]:
                 counts[pd.to_datetime(dt.date())] += 1
     return dict(sorted(counts.items(), key=lambda kv: kv[0]))
 
-def load_day_dataframe(base_name: str, day) -> pd.DataFrame:
+def load_day_dataframe(base_name: str, day, cache: bool = True) -> pd.DataFrame:
     day = pd.to_datetime(day).normalize()
     next_day = day + pd.Timedelta(days=1)
     file_sigs = []
@@ -658,10 +659,18 @@ def load_day_dataframe(base_name: str, day) -> pd.DataFrame:
                 file_sigs.append((p, os.path.getmtime(p)))
             except OSError:
                 continue
-    return _load_day_dataframe_cached(base_name, day, tuple(file_sigs))
+    loader = _load_day_dataframe_cached if cache else _read_day_dataframe
+    return loader(base_name, day, tuple(file_sigs))
 
-@st.cache_data(show_spinner=False)
+# Memory: the all-days loop reads each day uncached (cache=False), and the cache for the selected
+# day keeps one entry. An unbounded cache kept every day of the loop in memory, so a 21-day
+# dataset grew past 4 GB until the kernel killed the app.
+@st.cache_data(show_spinner=False, max_entries=1)
 def _load_day_dataframe_cached(base_name: str, day, file_sigs: tuple[tuple[str, float], ...]) -> pd.DataFrame:
+    return _read_day_dataframe(base_name, day, file_sigs)
+
+
+def _read_day_dataframe(base_name: str, day, file_sigs: tuple[tuple[str, float], ...]) -> pd.DataFrame:
     """Load one day's partitions; keyed on their mtimes so rewritten partitions are re-read."""
     next_day = day + pd.Timedelta(days=1)
     chosen = [p for p, _ in file_sigs]
@@ -701,138 +710,25 @@ def _load_day_dataframe_cached(base_name: str, day, file_sigs: tuple[tuple[str, 
     df["Dataset"] = base_name
     return df
 
-def cache_key_for_selection(base_names: list[str]) -> str:
-    return hashlib.md5("|".join(sorted(base_names)).encode("utf-8")).hexdigest()
-
-def cache_path_for_selection(base_names: list[str]) -> str:
-    return os.path.join(FEATURE_CACHE_DIR, f"features_{cache_key_for_selection(base_names)}.csv")
-
-def fingerprint_for_day(base_names: list[str], day) -> str:
-    """Fingerprint a calendar day from all 5‑min parquet files (name|size|mtime)."""
-    day = pd.to_datetime(day).normalize()
-    next_day = day + pd.Timedelta(days=1)
-    parts: list[str] = []
-    for bn in base_names:
-        for p in list_partition_files_cached(bn):
-            dt = partition_file_to_start_dt(p)
-            if dt and (day <= pd.to_datetime(dt) < next_day):
-                try:
-                    st_stat = os.stat(p)
-                    parts.append(f"{os.path.basename(p)}|{st_stat.st_size}|{int(st_stat.st_mtime)}")
-                except OSError:
-                    continue
-    return hashlib.md5("|".join(sorted(parts)).encode("utf-8")).hexdigest()
-
 @st.cache_data(show_spinner=False)
 def compute_or_load_all_days_features(
     base_names: list[str], all_days_list: list[pd.Timestamp], force: bool = False, data_sig: str = ""
 ) -> pd.DataFrame:
-    # data_sig only keys the memo cache, so partitions added by the live ingest trigger a re-run.
-    cpath = cache_path_for_selection(base_names)
-    existing: dict[datetime, pd.Series] = {}
-    if os.path.isfile(cpath):
-        try:
-            prev = pd.read_csv(cpath, parse_dates=["Date"])
-            existing = {pd.to_datetime(r.Date).date(): r for _, r in prev.iterrows()}
-        except Exception:
-            prev = pd.DataFrame()
-    else:
-        prev = pd.DataFrame()
-
-    # If cache exists (regardless of Fingerprint), and we are not forcing recompute,
-    # and the cache covers the requested days, load directly from CSV.
-    # Skipped when a partition is newer than the CSV (live ingest); the per-day
-    # fingerprints below then recompute only the days that changed.
-    csv_is_fresh = os.path.isfile(cpath) and os.path.getmtime(cpath) >= newest_partition_mtime(PROCESSED_DIR, base_names)
-    if (not force) and csv_is_fresh and ("prev" in locals()) and (not prev.empty):
-        df_loaded = prev.copy()
-        if all_days_list:
-            wanted = set(pd.to_datetime(all_days_list).normalize())
-            have = set(df_loaded["Date"].dt.normalize())
-            if wanted.issubset(have):
-                with st.status("Loading all-days metrics from CSV cache…", expanded=False) as s:
-                    df_loaded = df_loaded[df_loaded["Date"].dt.normalize().isin(wanted)]
-                    df_loaded = df_loaded.sort_values("Date")
-                    s.update(label=f"Loaded {len(df_loaded)} day(s) from cache.", state="complete")
-                return df_loaded
-
-    # Determine if any day actually needs recomputation
-    fingerprints: dict[date, str] = {}
-    needs_compute = False
-    for d in sorted(all_days_list):
-        day_date = pd.to_datetime(d).date()
-        fp = fingerprint_for_day(base_names, d)
-        fingerprints[day_date] = fp
-        if force or (day_date not in existing) or (str(existing[day_date].get("Fingerprint", "")) != fp):
-            needs_compute = True
-
-    if not needs_compute:
-        with st.status("Loading all-days metrics from CSV cache…", expanded=False) as s:
-            rows = [existing[pd.to_datetime(d).date()].to_dict() for d in sorted(all_days_list) if pd.to_datetime(d).date() in existing]
-            df_loaded = pd.DataFrame(rows).sort_values("Date") if rows else pd.DataFrame(columns=["Date"])
-            s.update(label=f"Loaded {len(df_loaded)} day(s) from cache.", state="complete")
-            return df_loaded
-
-    rows: list[dict] = []
-    with st.status(
-        f"Building all-days metrics cache for {len(all_days_list)} day(s)…", expanded=False
-    ) as cache_stat:
-        for d in sorted(all_days_list):
-            day_date = pd.to_datetime(d).date()
-            fp = fingerprints[day_date]
-            if (not force) and (day_date in existing) and (str(existing[day_date].get("Fingerprint", "")) == fp):
-                rows.append(existing[day_date].to_dict())
-                continue
-
-            cache_stat.write(f"Computing base features: {pd.to_datetime(d).date()}")
-            day_frames = []
-            for bn in base_names:
-                df_b = load_day_dataframe(bn, d)
-                if not df_b.empty:
-                    day_frames.append(df_b)
-            if not day_frames:
-                continue
-            df_day_full = pd.concat(day_frames, ignore_index=True)
-            df_day_full["Timestamp"] = pd.to_datetime(df_day_full["Timestamp"], errors="coerce")
-            df_day_full = drop_background(enrich_with_hostnames(df_day_full))
-
-            rec = compute_daily_base_record(df_day_full)
-            rec["Date"] = pd.to_datetime(d)
-            rec["Fingerprint"] = fp
-
-            aux_ctx = dict(today_row=rec, ALL_DAILY=pd.DataFrame(rows))
-            crit_instances = [
-                Criterion1(),
-                Criterion2(),
-                Criterion3(),
-                Criterion4(),
-                Criterion5(),
-                Criterion6(),
-                Criterion7(),
-                Criterion8(),
-                Criterion9(),
-            ]
-            for inst in crit_instances:
-                try:
-                    metrics = inst.compute(df_day_full, rec, aux_ctx, pd.DataFrame(rows))
-                    for m in metrics:
-                        dc = m.get("dist_col")
-                        if dc:
-                            rec[dc] = m.get("value")
-                except Exception:
-                    continue
-
-            rows.append(rec)
-
-        cache_stat.update(label="Writing CSV cache…", state="running")
-        if rows:
-            df_all = pd.DataFrame(rows).sort_values("Date")
-            df_all.to_csv(cpath, index=False)
-            cache_stat.update(label=f"All-days metrics cached → {os.path.basename(cpath)}", state="complete")
-            return df_all
-        else:
+    """ALL_DAILY for the selection: metrics.daily_cache computes missing or changed days, each in
+    its own short process (memory), and saves the cache file after every day. data_sig only keys
+    the memo cache, so partitions added by the live ingest trigger a re-check."""
+    with st.status("Checking the all-days metrics cache…", expanded=False) as cache_stat:
+        df_all = update_feature_cache(
+            PROCESSED_DIR, FEATURE_CACHE_DIR, base_names, all_days_list, force=force,
+            progress=lambda msg: cache_stat.update(label=msg, state="running"),
+        )
+        if df_all.empty:
             cache_stat.update(label="No rows computed for cache.", state="error")
             return pd.DataFrame(columns=["Date"])
+        cache_stat.update(
+            label=f"{len(df_all)} day(s) ready → {cache_path(FEATURE_CACHE_DIR, base_names).name}", state="complete"
+        )
+        return df_all
 
 # =============================== Sidebar: selection ===========================
 
@@ -869,7 +765,9 @@ with st.sidebar:
     selected_group_tokens = st.multiselect(
         "Select dataset groups (prefix match)",
         options=group_display_options,
-        default=["[ALL OTHER]"],
+        # Nothing by default: a dataset is one person, and all of them together would be added up
+        # as one person (and need several GB). Pick one gw_* dataset.
+        default=[],
         key="group_tokens",
     )
 
@@ -899,8 +797,8 @@ selected_base_names = sorted(set(selected_individual) | set(auto_selected_from_g
 
 if not selected_base_names:
     st.info(
-        "Use the **sidebar** to pick dataset type(s), groups or individual datasets. "
-        "Once selected, choose a day to load the dashboards."
+        "Use the **sidebar** to pick **one person**: one dataset (e.g. `gw_insomnia_a`) under "
+        "groups or individual datasets. Then choose a day to load the dashboards."
     )
     st.stop()
 

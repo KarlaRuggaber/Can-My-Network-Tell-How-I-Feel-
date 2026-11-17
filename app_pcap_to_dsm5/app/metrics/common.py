@@ -342,7 +342,10 @@ def enrich_with_hostnames(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return df
 
-    out = df.copy()
+    # Shallow copy: only new columns are added below, so the caller's frame stays unchanged
+    # without copying a multi-GB day. A frame that already has ResolvedHost (enriched twice)
+    # gets a real copy, since .loc fills that column in place (pandas 2 has no copy-on-write).
+    out = df.copy(deep="ResolvedHost" in df.columns)
     if "Destination IP" not in out.columns:
         # Nothing to map; still try to create empty columns to keep callers happy
         if "ResolvedHost" not in out.columns:
@@ -363,7 +366,8 @@ def enrich_with_hostnames(df: pd.DataFrame) -> pd.DataFrame:
         remote = out["Destination IP"]
         inbound = None
         if "Source IP" in out.columns:
-            ips = pd.unique(pd.concat([out["Source IP"], out["Destination IP"]]).dropna())
+            # distinct addresses of both columns (no concatenated copy of both columns)
+            ips = pd.unique(np.concatenate([pd.unique(out["Source IP"].dropna()), pd.unique(out["Destination IP"].dropna())]))
             private = {ip: is_private_ip(ip) for ip in ips}
             src_priv = out["Source IP"].map(private).fillna(False).astype(bool)
             dst_priv = out["Destination IP"].map(private).fillna(False).astype(bool)
@@ -427,6 +431,45 @@ def is_outbound(src: str, dst: str) -> bool:
 def is_inbound(src: str, dst: str) -> bool:
     return (not is_private_ip(src)) and is_private_ip(dst)
 
+# Vectorized forms of the row-wise checks above. A day has millions of rows but only a few
+# thousand distinct addresses, so each distinct value is checked once and the result mapped
+# back. Same results as df.apply(lambda r: is_outbound(...), axis=1), without building a
+# Python object per row (that took several GB and minutes per day).
+
+def private_ip_mask(ips: pd.Series) -> pd.Series:
+    """is_private_ip for every row (missing values are not private)."""
+    if ips is None or len(ips) == 0:
+        return pd.Series(False, index=getattr(ips, "index", None), dtype=bool)
+    keys = ips.astype(object).where(ips.notna(), "")
+    verdict = {v: is_private_ip(v) for v in pd.unique(keys)}
+    return keys.map(verdict).astype(bool)
+
+
+def outbound_mask(df: pd.DataFrame) -> pd.Series:
+    """Rows from a private to a public address (is_outbound per row)."""
+    if df is None or df.empty:
+        return pd.Series(False, index=getattr(df, "index", None), dtype=bool)
+    return private_ip_mask(df["Source IP"]) & ~private_ip_mask(df["Destination IP"])
+
+
+def inbound_mask(df: pd.DataFrame) -> pd.Series:
+    """Rows from a public to a private address (is_inbound per row)."""
+    if df is None or df.empty:
+        return pd.Series(False, index=getattr(df, "index", None), dtype=bool)
+    return ~private_ip_mask(df["Source IP"]) & private_ip_mask(df["Destination IP"])
+
+
+def dhcp_mask(df: pd.DataFrame, ports: set[int] = frozenset({67, 68, 546, 547})) -> pd.Series:
+    """UDP rows with a DHCPv4/v6 port on either side (_is_dhcp_row per row)."""
+    if df is None or df.empty or "Protocol" not in df.columns:
+        return pd.Series(False, index=getattr(df, "index", None), dtype=bool)
+    udp = df["Protocol"].astype(str).str.upper().eq("UDP")
+    hit = pd.Series(False, index=df.index)
+    for col in ("Source Port", "Destination Port"):
+        if col in df.columns:
+            hit |= pd.to_numeric(df[col], errors="coerce").isin(sorted(ports))
+    return (udp & hit).astype(bool)
+
 def interarrival_seconds(df: pd.DataFrame) -> np.ndarray:
     if df.empty or "Timestamp" not in df.columns:
         return np.array([], dtype=int)
@@ -436,20 +479,21 @@ def interarrival_seconds(df: pd.DataFrame) -> np.ndarray:
     return np.diff(ts).astype("timedelta64[s]").astype(int)
 
 def sessions_from_timestamps(df: pd.DataFrame, gap_sec: int = 300) -> List[Tuple[pd.Timestamp, pd.Timestamp]]:
-    """Split sorted timestamps into sessions separated by > gap_sec seconds."""
+    """Split sorted timestamps into sessions separated by > gap_sec seconds.
+
+    Vectorized (numpy on the timestamp column): the earlier version turned every packet's
+    timestamp into a Python object and looped over them, ~1 GB and a minute for a 9 M-row day.
+    Same sessions as before; only the Timestamp column is read, so callers need not sort or copy.
+    """
     if df.empty or "Timestamp" not in df.columns:
         return []
-    times = sorted(pd.to_datetime(df["Timestamp"]).tolist())
-    if not times:
+    times = np.sort(pd.to_datetime(df["Timestamp"]).dropna().to_numpy())
+    if times.size == 0:
         return []
-    sessions: List[Tuple[pd.Timestamp, pd.Timestamp]] = []
-    start = times[0]
-    for i in range(1, len(times)):
-        if (times[i] - times[i-1]).total_seconds() > gap_sec:
-            sessions.append((start, times[i-1]))
-            start = times[i]
-    sessions.append((start, times[-1]))
-    return sessions
+    breaks = np.flatnonzero(np.diff(times) > np.timedelta64(int(gap_sec), "s"))
+    starts = np.concatenate(([0], breaks + 1))
+    ends = np.concatenate((breaks, [times.size - 1]))
+    return [(pd.Timestamp(times[s]), pd.Timestamp(times[e])) for s, e in zip(starts, ends)]
 
 def coef_variation(x: np.ndarray | List[float]) -> float | None:
     x = np.asarray(x, dtype=float)
@@ -489,7 +533,7 @@ def streaming_inbound_mask(df: pd.DataFrame) -> pd.Series:
     if "SLD" in df.columns:
         mask |= df["SLD"].isin(STREAMING_SLDS)
     if {"Source IP","Destination IP"}.issubset(df.columns):
-        mask &= df.apply(lambda r: is_inbound(r["Source IP"], r["Destination IP"]), axis=1)
+        mask &= inbound_mask(df)
     return mask
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -726,8 +770,8 @@ def _fn_median_reply_latency_sec(df: pd.DataFrame, *_):
     d = df[chat_mask(df)][req].sort_values("Timestamp").copy()
     if d.empty:
         return (np.nan, {})
-    d["inb"]  = d.apply(lambda r: is_inbound(r["Source IP"], r["Destination IP"]), axis=1)
-    d["outb"] = d.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1)
+    d["inb"]  = inbound_mask(d)
+    d["outb"] = outbound_mask(d)
     ts = d["Timestamp"].values; inn = d["inb"].values; out = d["outb"].values
     gaps = []
     for i in range(len(d) - 1):
@@ -754,7 +798,7 @@ def _fn_mean_upstream_rate_bps(df: pd.DataFrame, *_):
         if win.empty:
             continue
         dur = max(1.0, (b-a).total_seconds())
-        up_b = win[win.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1)]["Length"].sum()
+        up_b = win[outbound_mask(win)]["Length"].sum()
         rates.append(float(up_b)/dur)
     return (float(np.mean(rates)) if rates else np.nan, {"sessions_n": len(sess)})
 
@@ -764,7 +808,7 @@ def _fn_passive_active_byte_ratio(df: pd.DataFrame, *_):
         return (np.nan, {})
     Bp = float(df.loc[streaming_inbound_mask(df), "Length"].sum())
     chat = df[chat_mask(df)]
-    Ba = float(chat.loc[chat.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1), "Length"].sum()) if not chat.empty else 0.0
+    Ba = float(chat.loc[outbound_mask(chat), "Length"].sum()) if not chat.empty else 0.0
     if Ba > 0:
         return (Bp/Ba, {"Bp": int(Bp), "Ba": int(Ba)})
     return (np.inf if Bp > 0 else np.nan, {"Bp": int(Bp), "Ba": int(Ba)})
@@ -828,7 +872,7 @@ def _fn_smart_scale_upload_events(df: pd.DataFrame, *_):
         return (np.nan, {})
     rows = df[df["SLD"].isin(SMART_SCALE_SLDS)].copy()
     if {"Source IP","Destination IP"}.issubset(rows.columns):
-        rows = rows[rows.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1)]
+        rows = rows[outbound_mask(rows)]
     if rows.empty:
         return (0.0, {"uploads": 0})
     sess = sessions_from_timestamps(rows, gap_sec=600)
@@ -978,7 +1022,7 @@ def _is_dhcp_row(row) -> bool:
 def _fn_dhcp_reassoc_per_hour(df: pd.DataFrame, *_):
     if df.empty or "Timestamp" not in df.columns:
         return (np.nan, {})
-    d = df.loc[df.apply(_is_dhcp_row, axis=1)].sort_values("Timestamp")
+    d = df.loc[dhcp_mask(df)].sort_values("Timestamp")
     events_total = int(d.shape[0])
     if df["Timestamp"].notna().any():
         span_h = (df["Timestamp"].max() - df["Timestamp"].min()).total_seconds()/3600.0
@@ -989,7 +1033,7 @@ def _fn_dhcp_reassoc_per_hour(df: pd.DataFrame, *_):
     return (val, {"events_total": events_total, "hours_considered": hours_considered})
 
 def _fn_mean_wifi_dwell_minutes(df: pd.DataFrame, *_):
-    d = df.loc[df.apply(_is_dhcp_row, axis=1)].sort_values("Timestamp")
+    d = df.loc[dhcp_mask(df)].sort_values("Timestamp")
     n = int(d.shape[0])
     if n < 2:
         return (np.nan, {})
@@ -1003,7 +1047,7 @@ def _chat_outbound_timestamps(df: pd.DataFrame) -> pd.Series:
     chat = df.loc[m]
     if chat.empty or (not {"Source IP","Destination IP"}.issubset(chat.columns)):
         return pd.Series([], dtype="datetime64[ns]")
-    chat = chat.loc[chat.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1)]
+    chat = chat.loc[outbound_mask(chat)]
     return chat["Timestamp"].sort_values()
 
 def _fn_median_iks_sec(df: pd.DataFrame, *_):
@@ -1057,7 +1101,7 @@ def _fn_upstream_bps_per_active_hour(df: pd.DataFrame, *_):
     req = {"Timestamp","Source IP","Destination IP","Length"}
     if not req.issubset(df.columns):
         return (np.nan, {})
-    up_mask = df.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1)
+    up_mask = outbound_mask(df)
     up_bytes = float(df.loc[up_mask, "Length"].sum())
     per_min = df.set_index("Timestamp").assign(cnt=1)["cnt"].resample("1Min").sum()
     per_h = per_min.resample("1h").sum()
@@ -1069,7 +1113,7 @@ def _fn_upstream_bps_per_active_hour(df: pd.DataFrame, *_):
 def _fn_post_chat_count(df: pd.DataFrame, *_):
     if not {"Timestamp","Source IP","Destination IP","Length"}.issubset(df.columns):
         return (np.nan, {})
-    up_mask = df.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1)
+    up_mask = outbound_mask(df)
     small = (df["Length"].fillna(0) <= 300)
     msgp = df["Destination Port"].isin(MSG_PORTS) if "Destination Port" in df.columns else False
     sldp = df["SLD"].isin(SOCIAL_SLDS) if "SLD" in df.columns else False
@@ -1079,7 +1123,7 @@ def _fn_post_chat_count(df: pd.DataFrame, *_):
 def _fn_median_inter_req_sec(df: pd.DataFrame, *_):
     if not {"Timestamp","Source IP","Destination IP","Length"}.issubset(df.columns):
         return (np.nan, {})
-    up_mask = df.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1)
+    up_mask = outbound_mask(df)
     small = (df["Length"].fillna(0) <= 300)
     req_ts = df.loc[up_mask & small, "Timestamp"].sort_values()
     if req_ts.shape[0] < 2:
@@ -1090,7 +1134,7 @@ def _fn_median_inter_req_sec(df: pd.DataFrame, *_):
 def _fn_inter_req_fano(df: pd.DataFrame, *_):
     if not {"Timestamp","Source IP","Destination IP","Length"}.issubset(df.columns):
         return (np.nan, {})
-    up_mask = df.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1)
+    up_mask = outbound_mask(df)
     small = (df["Length"].fillna(0) <= 300)
     req_ts = df.loc[up_mask & small, "Timestamp"].sort_values()
     if req_ts.shape[0] < 3:
@@ -1165,8 +1209,8 @@ def _fn_social_outgoing_share_upstream(df: pd.DataFrame, *_):
     if soc.empty:
         return (np.nan, {})
     if {"Source IP","Destination IP","Length"}.issubset(soc.columns):
-        up = float(soc.loc[soc.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1), "Length"].sum())
-        down = float(soc.loc[soc.apply(lambda r: is_inbound(r["Source IP"], r["Destination IP"]), axis=1), "Length"].sum())
+        up = float(soc.loc[outbound_mask(soc), "Length"].sum())
+        down = float(soc.loc[inbound_mask(soc), "Length"].sum())
     else:
         up = float(len(soc)); down = 0.0
     den = up + down
@@ -1201,7 +1245,7 @@ def _fn_cloud_upload_bytes_today(df: pd.DataFrame, *_):
     if rows.empty:
         return (0.0, {"up_bytes": 0})
     if {"Source IP","Destination IP","Length"}.issubset(rows.columns):
-        up = rows.loc[rows.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1), "Length"].sum()
+        up = rows.loc[outbound_mask(rows), "Length"].sum()
         return (float(up), {"up_bytes": int(up)})
     # Fall back to counts if byte lengths are missing
     return (float(len(rows)), {"events": int(len(rows))})
@@ -1239,8 +1283,8 @@ def _fn_notification_micro_sessions_count(df: pd.DataFrame, *_):
         win = df[(df["Timestamp"]>=a) & (df["Timestamp"]<=b)]
         if win.empty:
             continue
-        has_in = bool(win.apply(lambda r: is_inbound(r["Source IP"], r["Destination IP"]), axis=1).any())
-        has_out= bool(win.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1).any())
+        has_in = bool(inbound_mask(win).any())
+        has_out= bool(outbound_mask(win).any())
         if has_in and has_out:
             count += 1
     return (float(count), {"micro_sessions": count})
@@ -1290,7 +1334,7 @@ def _fn_self_harm_forum_up_bytes(df: pd.DataFrame, *_):
     rows = df.loc[mask]
     if rows.empty:
         return (0.0, {})
-    up = rows.loc[rows.apply(lambda r: is_outbound(r["Source IP"], r["Destination IP"]), axis=1), "Length"].sum()
+    up = rows.loc[outbound_mask(rows), "Length"].sum()
     return (float(up), {"up_bytes": int(up)})
 
 def _fn_self_harm_forum_mean_session_len_sec(df: pd.DataFrame, *_):
