@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Config, CritKey, Me, Note, PhaseKey, ProfileListItem, SeenMarks, Timeline } from "./api";
+import type { Care, Config, CritKey, Me, Note, PhaseKey, ProfileListItem, SeenMarks, Timeline } from "./api";
 import { api, CRIT_KEYS, setUnauthorizedHandler } from "./api";
 import { CriteriaSummary, type PhaseView } from "./components/CriteriaSummary";
 import { DayDetail } from "./components/DayDetail";
 import { Heatmap } from "./components/Heatmap";
 import { HourlyHeatmap } from "./components/HourlyHeatmap";
 import { UnscoredMetrics } from "./components/UnscoredMetrics";
-import { Assistant } from "./components/Assistant";
+import { Assistant, type AskRequest } from "./components/Assistant";
+import { CarePlan } from "./components/CarePlan";
+import { MyWeek, Onboarding } from "./components/Onboarding";
+import { ObservabilityCard } from "./components/ObservabilityCard";
 import { AssistantSettings } from "./components/AssistantSettings";
 import { Login } from "./components/Login";
 import { Overview } from "./components/Overview";
@@ -17,8 +20,9 @@ import { episodeFlags, gatePresentRolling, phaseGate, type GateParams } from "./
 
 const PHASES: PhaseKey[] = ["baseline", "current"];
 
-export type Tab = "overview" | "timeline" | "details";
-const TABS: Tab[] = ["overview", "timeline", "details"];
+export type Tab = "overview" | "timeline" | "details" | "care";
+const TABS: Tab[] = ["overview", "timeline", "details", "care"];
+const MULTI_ONLY: Tab[] = ["details", "care"];
 
 // URL state: #/<profile>/<day>/<criterion>/<tab>, or #/settings, so a view can be bookmarked.
 function readHash(): { pid?: string; day?: string; crit?: CritKey; tab?: Tab; settings: boolean } {
@@ -79,9 +83,26 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [crit, setCrit] = useState<CritKey | null>(init.crit ?? null);
   const [gate, setGate] = useState<GateParams | null>(null);
   const [rolling, setRolling] = useState(false);   // optional extra view; mixes phases
-  const [tab, setTab] = useState<Tab>(init.tab && (multi || init.tab !== "details") ? init.tab : "overview");
+  const [tab, setTab] = useState<Tab>(init.tab && (multi || !MULTI_ONLY.includes(init.tab)) ? init.tab : "overview");
+  const [askReq, setAskReq] = useState<AskRequest | null>(null);
+  const [assistantOn, setAssistantOn] = useState(false);
+  const [myWeek, setMyWeek] = useState(false);                       // the person's "My week" page
+  const [skipOnboarding, setSkipOnboarding] = useState(() => {
+    try { return window.sessionStorage.getItem("cmn.skipOnboarding") === "1"; } catch { return false; }
+  });
+  useEffect(() => { api.assistant().then((a) => setAssistantOn(a.enabled)).catch(() => setAssistantOn(false)); }, []);
   const [notes, setNotes] = useState<Note[]>([]);
   const [seen, setSeen] = useState<SeenMarks>({});
+  // "Explain this" anywhere on the page: open the assistant with the question
+  const ask = useCallback((question: string, focus: string) => {
+    setAssistantOpen(true);
+    setAskReq({ id: Date.now(), question, focus });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // the care plan changes day types, flags and usual ranges: reload the timeline after saving
+  const onCareSaved = useCallback((_care: Care) => {
+    if (!pid) return;
+    api.timeline(pid).then((t) => setTl(t)).catch(() => undefined);
+  }, [pid]);
   const onSeen = useCallback((flag: string, lastDay: string | null) => {
     if (!pid) return;
     (lastDay ? api.markSeen(pid, flag, lastDay) : api.unmarkSeen(pid, flag)).then((r) => setSeen(r.seen)).catch(() => undefined);
@@ -126,7 +147,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
       if (h.pid) setPid(h.pid);
       if (h.day) setDay(h.day);   // a link without a day keeps the current one
       setCrit(h.crit ?? null);
-      if (h.tab && (multi || h.tab !== "details")) setTab(h.tab);
+      if (h.tab && (multi || !MULTI_ONLY.includes(h.tab))) setTab(h.tab);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -176,6 +197,11 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   if (error) return <div className="page"><p className="error">Could not load data: {error}. Is the API running and has the export been run?</p></div>;
   if (!cfg || !profiles || !gate) return <div className="page"><p className="muted">Loading…</p></div>;
 
+  const setupMissing = !tl?.care ? [] : [
+    ...(!tl.care.routine ? ["the patient's routine"] : []),
+    ...((tl.care.routine?.devices ?? []).some((d) => !d.ip) ? ["device links"] : []),
+    ...(!tl.care.clinical ? ["history and focus"] : []),
+  ];
   const activeCrit: CritKey = crit && configured.includes(crit) ? crit : configured[0];
   const dayIndex = tl ? tl.days.findIndex((d) => d.date === day) : -1;
   const isDefault = gate.theta === cfg.theta && gate.N === cfg.N && gate.M === cfg.M;
@@ -204,6 +230,9 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
               <button className={`btn ${settings ? "btn-active" : ""}`} onClick={() => setSettings(!settings)}>
                 Settings
               </button>
+            )}
+            {!multi && tl?.care?.routine && (
+              <button className={`btn ${myWeek ? "btn-active" : ""}`} onClick={() => setMyWeek(!myWeek)}>My week</button>
             )}
             <button className="btn btn-quiet" onClick={onLogout}>Log out</button>
           </div>
@@ -292,6 +321,12 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                       Details <span className="tab-sub">DSM-5 model, metrics, days</span>
                     </button>
                   )}
+                  {multi && (
+                    <button role="tab" aria-selected={tab === "care"} className={tab === "care" ? "active" : ""} onClick={() => setTab("care")}>
+                      Care plan {setupMissing.length > 0 && <span className="tab-dot" aria-label="incomplete" />}
+                      <span className="tab-sub">routine, devices, focus, normals</span>
+                    </button>
+                  )}
                 </nav>
               )}
 
@@ -305,20 +340,40 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
               {tl.status === "ready" && phases && !multi && (
                 <>
-                  {tab === "timeline"
-                    ? <TimelineView tl={tl} person notes={[]} onNotes={() => undefined} selectedDay={day} onSelectDay={setDay} />
-                    : <Overview tl={tl} person selectedDay={day} onSelectDay={setDay} />}
-                  <Assistant open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person focus={null} />
+                  {!tl.care?.routine && !skipOnboarding ? (
+                    <Onboarding profileId={tl.profile.id} name={tl.persona.name} care={tl.care} assistant={assistantOn}
+                      onDone={onCareSaved}
+                      onSkip={() => { setSkipOnboarding(true); try { window.sessionStorage.setItem("cmn.skipOnboarding", "1"); } catch { /* ignore */ } }} />
+                  ) : myWeek ? (
+                    <MyWeek profileId={tl.profile.id} care={tl.care} assistant={assistantOn} onSaved={onCareSaved} onClose={() => setMyWeek(false)} />
+                  ) : tab === "timeline"
+                    ? <TimelineView tl={tl} person notes={[]} onNotes={() => undefined} selectedDay={day} onSelectDay={setDay} onAsk={ask} />
+                    : <Overview tl={tl} person selectedDay={day} onSelectDay={setDay} onAsk={ask} />}
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person focus={null} />
                 </>
               )}
 
-              {tl.status === "ready" && phases && multi && tab !== "details" && (
+              {tl.status === "ready" && multi && tab === "care" && (
                 <>
+                  <CarePlan tl={tl} cfg={cfg} assistant={assistantOn} onSaved={onCareSaved} onAsk={ask} />
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false} focus="care plan" />
+                </>
+              )}
+
+              {tl.status === "ready" && phases && multi && (tab === "overview" || tab === "timeline") && (
+                <>
+                  {setupMissing.length > 0 && (
+                    <p className="notice setup-notice">Care plan incomplete: {setupMissing.join(", ")}.{" "}
+                      <button className="link" onClick={() => setTab("care")}>Open the care plan</button></p>
+                  )}
+                  {(tl.care?.clinical?.criteria.length ?? 0) > 0 && (
+                    <p className="focus-line muted small">Focus: {tl.care!.clinical!.criteria.map((c) => <span key={c} className="tag">{c} {cfg.criterion_names[c]}</span>)}</p>
+                  )}
                   {tab === "timeline"
                     ? <TimelineView tl={tl} person={false} notes={notes} onNotes={setNotes} selectedDay={day} onSelectDay={setDay}
-                        onOpenDetails={(d) => { setDay(d); setTab("details"); }} />
-                    : <Overview tl={tl} person={false} selectedDay={day} onSelectDay={setDay} seen={seen} onSeen={onSeen} />}
-                  <Assistant open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false}
+                        onOpenDetails={(d) => { setDay(d); setTab("details"); }} onAsk={ask} />
+                    : <Overview tl={tl} person={false} selectedDay={day} onSelectDay={setDay} seen={seen} onSeen={onSeen} onAsk={ask} />}
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false}
                     focus={`${tab}${day ? `, day ${day}` : ""}`} />
                 </>
               )}
@@ -328,19 +383,20 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                   <CriteriaSummary tl={tl} cfg={cfg} phases={phases} gate={gate}
                     selected={activeCrit} onSelect={setCrit} />
                   <Heatmap tl={tl} cfg={cfg} present={present} episode={episode} theta={gate.theta}
-                    rolling={rolling} M={gate.M} selectedDay={day} onSelectDay={setDay} />
+                    rolling={rolling} M={gate.M} selectedDay={day} onSelectDay={setDay} onAsk={ask} />
                   <HourlyHeatmap tl={tl} selectedDay={day} onSelectDay={setDay} step={3} />
                   {activeCrit && (
                     <MetricTrends tl={tl} cfg={cfg} crit={activeCrit} theta={gate.theta}
                       present={present[activeCrit] ?? []} presentLabel={rolling ? `present (rolling ${gate.M} days, mixes phases)` : "present in this phase"}
                       selectedDay={day} onSelectDay={setDay} />
                   )}
-                  <UnscoredMetrics tl={tl} cfg={cfg} selectedDay={day} onSelectDay={setDay} step={5} />
+                  <UnscoredMetrics tl={tl} cfg={cfg} selectedDay={day} onSelectDay={setDay} step={5} onAsk={ask} />
                   {dayIndex >= 0 && (
                     <DayDetail profileId={tl.profile.id} day={tl.days[dayIndex]} cfg={cfg} present={present}
-                      dayIndex={dayIndex} phaseLabels={labels} />
+                      dayIndex={dayIndex} phaseLabels={labels} onAsk={ask} />
                   )}
-                  <Assistant open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false}
+                  <ObservabilityCard cfg={cfg} focus={tl.care?.clinical?.criteria ?? []} onAsk={ask} step={7} />
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false}
                     focus={[day && `day ${day}`, activeCrit && `${activeCrit} ${cfg.criterion_names[activeCrit]}`].filter(Boolean).join(", ") || null} />
                 </>
               )}

@@ -3,7 +3,11 @@ import { createPortal } from "react-dom";
 import { api, type AssistantStatus, type ChatTurn } from "../api";
 import { Markdown } from "./Markdown";
 
+/** A question asked from elsewhere on the page ("explain this value"), sent once per id. */
+export type AskRequest = { id: number; question: string; focus?: string | null };
+
 type Props = {
+  request?: AskRequest | null;
   open: boolean;
   onToggle: (open: boolean) => void;
   profileId: string;
@@ -39,7 +43,7 @@ function storedWidth(): number {
 }
 
 /** Explanation layer: natural-language questions about the results shown, answered from the data. */
-export function Assistant({ open, onToggle, profileId, person, focus }: Props) {
+export function Assistant({ request, open, onToggle, profileId, person, focus }: Props) {
   const [status, setStatus] = useState<AssistantStatus | null>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
@@ -90,14 +94,14 @@ export function Assistant({ open, onToggle, profileId, person, focus }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onToggle]);
 
-  const send = async (q: string) => {
+  const send = async (q: string, f: string | null = focus) => {
     const question = q.trim();
     if (!question || busy) return;
     const history: ChatTurn[] = [...turns, { role: "user", content: question }];
     setTurns([...history, { role: "assistant", content: "" }]);
     setInput(""); setBusy(true); setError(null);
     try {
-      await api.ask(profileId, history, focus, (t) =>
+      await api.ask(profileId, history, f, (t) =>
         setTurns((cur) => {
           const next = cur.slice();
           const last = next[next.length - 1];
@@ -114,6 +118,15 @@ export function Assistant({ open, onToggle, profileId, person, focus }: Props) {
   };
 
   if (person && status && !status.enabled) return null;   // nothing to offer the person
+
+  // "Explain this" from elsewhere: open the panel and send the question once
+  const lastRequest = useRef<number | null>(null);
+  useEffect(() => {
+    if (!request || request.id === lastRequest.current || status === null) return;
+    lastRequest.current = request.id;
+    onToggle(true);
+    if (status.enabled) send(request.question, request.focus ?? focus);
+  }, [request, status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Panel and tab stay mounted so opening and closing can slide; the closed panel is inert.
   // Rendered into <body>: the page gets a transform while it glides, and a transformed ancestor

@@ -274,6 +274,29 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
                 for d in tl["days"] if (o := d.get("observed"))
             },
         }
+    care = tl.get("care") or {}
+    if care.get("routine"):
+        r = care["routine"]
+        ctx["routine_stated_by_the_person"] = {
+            "week": r.get("week"), "away_from": r.get("away_from"), "away_to": r.get("away_to"),
+            "bedtime": r.get("bedtime"), "wake": r.get("wake"), "bedtime_free_days": r.get("bedtime_free"),
+            "wake_free_days": r.get("wake_free"), "devices": [d["name"] for d in r.get("devices", [])],
+            "note": r.get("note"),
+            "how_it_is_used": "usual ranges are learned per day type (away, home, free) once there are 5 baseline days of a type",
+        }
+    if care.get("away_periods"):
+        ctx["away_periods"] = [{"from": p["from"], "to": p["to"], "reason": p.get("reason")} for p in care["away_periods"]]
+    if not person_view and care.get("clinical"):
+        c = care["clinical"]
+        ctx["care_plan_by_clinicians"] = {
+            "history": c.get("history"), "concerns": c.get("concerns"), "treatment": c.get("treatment"),
+            "criteria_in_focus": c.get("criteria"), "risk_settings": c.get("focus"),
+            "normal_ranges_set_by_clinician": c.get("normals"),
+        }
+    if not person_view:
+        from .observability import OBSERVABILITY
+        ctx["what_the_network_can_tell_per_criterion"] = {
+            k: {"level": v["level"], "observes": v["observes"], "cannot": v["cannot"]} for k, v in OBSERVABILITY.items()}
     if not person_view and tl.get("notes"):
         ctx["notes_by_clinicians_and_parents"] = [{"date": n["date"], "text": n["text"]} for n in tl["notes"]]
     if not person_view:

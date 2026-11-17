@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { Config, CritKey, Timeline } from "../api";
 import { CRIT_KEYS } from "../api";
 import { fmtDay } from "../lib/format";
@@ -21,10 +21,12 @@ type Props = {
   M: number;
   selectedDay: string | null;
   onSelectDay: (d: string) => void;
+  onAsk?: (question: string, focus: string) => void;
 };
 
 /** Day × criterion grid of daily likelihoods L, with the phase strip and gate state. */
-export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selectedDay, onSelectDay }: Props) {
+export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selectedDay, onSelectDay, onAsk }: Props) {
+  const [pop, setPop] = useState<{ x: number; y: number; i: number; row: string } | null>(null);
   const gateWord = rolling ? `rolling ${M}-day window, mixes phases` : "gate of this day's period";
   const labels = tl.profile.phase_labels;
   const curShort = labels.current === "Clinical" ? "clin" : "recent";
@@ -146,12 +148,50 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
           {c9 > 0 && <> <span className="key"><i className="dot" style={{ background: C.critical }} /> C9 signal (outside the gate)</span>.</>}
         </p>
       </div>
-      <Chart option={option} height={height}
-        ariaLabel="Heatmap of daily criterion likelihoods per day"
-        onClick={(p) => {
-          const i = (p.data as number[])[0];
-          if (days[i]) onSelectDay(days[i].date);
-        }} />
+      <div className="pop-host">
+        <Chart option={option} height={height}
+          ariaLabel="Heatmap of daily criterion likelihoods per day"
+          onClick={(p) => {
+            const [i, y] = p.data as number[];
+            if (!days[i]) return;
+            onSelectDay(days[i].date);
+            const ev = p.event as unknown as { offsetX: number; offsetY: number } | undefined;
+            if (onAsk && ev) setPop({ x: ev.offsetX, y: ev.offsetY, i, row: rows[y] });
+          }} />
+        {pop && onAsk && days[pop.i] && (
+          <ExplainPop x={pop.x} y={pop.y} onClose={() => setPop(null)}
+            title={`${days[pop.i].weekday} ${days[pop.i].date} · ${pop.row}`}
+            actions={[
+              ...(/^C\d$/.test(pop.row) && days[pop.i].L[pop.row as CritKey] != null ? [{
+                label: `Explain L = ${days[pop.i].L[pop.row as CritKey]!.toFixed(2)}`,
+                run: () => onAsk(`Explain why ${pop.row} ${cfg.criterion_names[pop.row as CritKey]} has a likelihood of ${days[pop.i].L[pop.row as CritKey]!.toFixed(2)} on ${days[pop.i].date}: which metrics and values drove it, how they compare with the usual range, and how much this can be trusted from network data.`, `heatmap, ${pop.row}, day ${days[pop.i].date}`),
+              }] : []),
+              ...(pop.row === "C9 signal" ? [{
+                label: "How do these hits come about?",
+                run: () => onAsk(`How do the C9 signals on ${days[pop.i].date} come about? Which metric counted what (domain hits, not content), how does it compare with the baseline, and what else could cause it?`, `C9 signal, day ${days[pop.i].date}`),
+              }] : []),
+              ...(pop.row === "Criteria present" || pop.row === "Episode" ? [{
+                label: "Explain the gate on this day",
+                run: () => onAsk(`Explain the gate state on ${days[pop.i].date}: which criteria count as present, why, and why an episode is or is not likely.`, `heatmap, gate, day ${days[pop.i].date}`),
+              }] : []),
+            ]} />
+        )}
+      </div>
     </section>
+  );
+}
+
+/** Small menu at the clicked cell: explain the value with the assistant. */
+export function ExplainPop({ x, y, title, actions, onClose }: {
+  x: number; y: number; title: string; actions: { label: string; run: () => void }[]; onClose: () => void;
+}) {
+  if (!actions.length) return null;
+  return (
+    <div className="explain-pop" style={{ left: Math.max(8, x - 40), top: y + 12 }} role="dialog" aria-label="Explain">
+      <div className="explain-pop-head"><span>{title}</span><button className="link small" onClick={onClose} aria-label="Close">×</button></div>
+      {actions.map((a) => (
+        <button key={a.label} className="btn small explain-btn" onClick={() => { a.run(); onClose(); }}>✦ {a.label}</button>
+      ))}
+    </div>
   );
 }

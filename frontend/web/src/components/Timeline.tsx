@@ -13,6 +13,7 @@ type Props = {
   selectedDay: string | null;
   onSelectDay: (d: string) => void;
   onOpenDetails?: (d: string) => void;      // clinicians and parents: jump to the day in Details
+  onAsk?: (question: string, focus: string) => void;
 };
 
 /** Everyday wording for "clearly different from usual", by track and direction. */
@@ -51,7 +52,7 @@ export function differences(tl: TL, d: Day): Difference[] {
 }
 
 /** Robin Z-style timeline: one card per day, newest first, with what was different and the notes. */
-export function Timeline({ tl, person, notes, onNotes, selectedDay, onSelectDay, onOpenDetails }: Props) {
+export function Timeline({ tl, person, notes, onNotes, selectedDay, onSelectDay, onOpenDetails, onAsk }: Props) {
   const [onlyDifferent, setOnlyDifferent] = useState(false);
   const [draft, setDraft] = useState<{ day: string; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +123,10 @@ export function Timeline({ tl, person, notes, onNotes, selectedDay, onSelectDay,
                     <HourStrip hourly={o.active_hourly} />
                     {diff.length > 0 && (
                       <div className="tl-diff">
-                        {diff.map((x) => <span key={x.text} className={`pill ${x.risk ? "pill-risk" : "pill-grey"} ${x.reference ? "pill-ref" : ""}`}>{x.text}</span>)}
+                        {diff.map((x) => onAsk
+                          ? <button key={x.text} className={`pill pill-btn ${x.risk ? "pill-risk" : "pill-grey"} ${x.reference ? "pill-ref" : ""}`} title="Explain with the assistant"
+                              onClick={() => onAsk(`Why does ${d.weekday} ${d.date} show "${x.text}"? Which value, compared with which range, and what could explain it?`, `timeline, day ${d.date}`)}>{x.text} ✦</button>
+                          : <span key={x.text} className={`pill ${x.risk ? "pill-risk" : "pill-grey"} ${x.reference ? "pill-ref" : ""}`}>{x.text}</span>)}
                       </div>
                     )}
                   </>

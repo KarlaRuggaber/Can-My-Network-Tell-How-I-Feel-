@@ -33,6 +33,8 @@ FLAG_DAYS = 3                 # a risk is flagged when at least 3 ...
 FLAG_WINDOW = 7               # ... of the last 7 days with data deviate in its direction
 SENSITIVE_WINDOW = 14         # sensitive sites: any signal in the last 14 days
 MIN_REFERENCE_DAYS = 7        # a healthy reference needs at least 7 days of other people
+MIN_TYPE_DAYS = 5             # usual range per day type (away / home / free) from 5 baseline days of it
+OUTSIDE_NORMAL = 3.0          # a value outside the clinician's normal range counts as clearly different
 
 
 def active_packets() -> int:
@@ -197,13 +199,29 @@ def track_values(days: list[dict[str, Any]], select: Callable[[dict[str, Any]], 
     return out
 
 
-def _risk_flags(days: list[dict[str, Any]], dev_key: str, basis: str) -> list[dict[str, Any]]:
+SENSITIVITY = {"strict": (1.0, 2), "standard": (DEVIATION_Z, FLAG_DAYS), "relaxed": (2.0, 4)}
+
+
+def risk_setting(focus: dict[str, Any] | None, risk_id: str) -> tuple[bool, float, int, str]:
+    """(enabled, deviation in SD, days needed among the last 7, sensitivity) for a risk."""
+    f = (focus or {}).get(risk_id) or {}
+    sens = f.get("sensitivity", "standard")
+    z, need = SENSITIVITY.get(sens, SENSITIVITY["standard"])
+    return bool(f.get("enabled", True)), z, need, sens
+
+
+def _risk_flags(days: list[dict[str, Any]], dev_key: str, basis: str,
+                focus: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     flags = []
+    days = [d for d in days if d["observed"].get("day_type") != "away_period"]
     for r in RISKS:
+        enabled, z_need, need, sens = risk_setting(focus, r.id)
+        if not enabled:
+            continue
         window = [d for d in days if d["observed"].get(r.track) is not None][-FLAG_WINDOW:]
         hit = [d["date"] for d in window if (zz := (d["observed"].get(dev_key) or {}).get(r.track)) is not None
-               and zz * r.direction >= DEVIATION_Z]
-        if len(window) >= FLAG_DAYS and len(hit) >= FLAG_DAYS:
+               and zz * r.direction >= z_need]
+        if len(window) >= need and len(hit) >= need:
             unit = "nights" if r.track.startswith("quiet") or r.track == "night_minutes" else "days"
             phrase = r.text if basis == "own" else r.text.replace("than usual", "than healthy people usually do")
             flags.append({"id": r.id if basis == "own" else f"ref_{r.id}", "basis": basis,
@@ -211,13 +229,15 @@ def _risk_flags(days: list[dict[str, Any]], dev_key: str, basis: str) -> list[di
                           "track": r.track, "direction": r.direction,
                           "days": hit, "count": len(hit), "window": len(window), "unit": unit, "phrase": phrase,
                           "text": f"On {len(hit)} of the last {len(window)} {unit} the person {phrase}.",
-                          "sensitive": False})
+                          "sensitive": False, "sensitivity": sens})
     return flags
 
 
 def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
           metric_baseline: dict[str, dict[str, float]], labels: Callable[[str], str] | None = None,
-          reference: dict[str, Any] | None = None) -> dict[str, Any]:
+          reference: dict[str, Any] | None = None, day_types: dict[str, str | None] | None = None,
+          focus: dict[str, Any] | None = None, normals: dict[str, dict[str, float | None]] | None = None,
+          ) -> dict[str, Any]:
     """Observed tracks per day, usual range from the complete baseline days, and risk flags.
 
     `days` are the timeline days (date, phase, complete, metrics) in date order; `activity` the
@@ -225,6 +245,12 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
     `reference` ({"stats": per-track mean/SD of healthy people's days, ...}) adds a second
     comparison: every day against the healthy reference, and flags over the last days with data
     (these work from the first week, without waiting for the person's own baseline).
+
+    From the care plan: `day_types` (date -> "away" | "home" | "free" | "away_period") gives usual
+    ranges per day type once there are MIN_TYPE_DAYS baseline days of a type, and leaves away periods
+    out of the usual ranges and the flags; `focus` (risk -> enabled, sensitivity) chooses which risks
+    are flagged and how sensitively; `normals` (track -> min, max) replaces the learned usual range
+    with the clinician's: a day outside it counts as clearly different.
     """
     cutoff = active_packets()
     by_date = {d["date"]: i for i, d in enumerate(days)}
@@ -251,24 +277,46 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
         obs["sensitive_days"] = 1.0 if sens else 0.0
         d["observed"] = obs
 
-    base = [d for d in days if d["phase"] == "baseline" and d["complete"]]
-    usual = {}
+    day_types = day_types or {}
+    normals = {k: v for k, v in (normals or {}).items() if k in TRACK_BY_KEY and v}
+    for d in days:
+        d["observed"]["day_type"] = day_types.get(d["date"])
+    base = [d for d in days if d["phase"] == "baseline" and d["complete"]
+            and d["observed"]["day_type"] != "away_period"]
+    usual: dict[str, dict[str, float]] = {}
+    usual_by_type: dict[str, dict[str, dict[str, float]]] = {}
     for t in TRACKS:
         if t.sensitive:
             continue
         s = _stats([v for d in base if (v := d["observed"].get(t.key)) is not None])
         if s:
             usual[t.key] = s
+        for typ in ("away", "home", "free"):
+            st = _stats([v for d in base if d["observed"]["day_type"] == typ and (v := d["observed"].get(t.key)) is not None])
+            if st and st["n"] >= MIN_TYPE_DAYS:
+                usual_by_type.setdefault(typ, {})[t.key] = st
 
-    def z(track: str, v: float | None) -> float | None:
-        s = usual.get(track)
-        if s is None or v is None:
+    def z(track: str, v: float | None, typ: str | None) -> float | None:
+        if v is None:
+            return None
+        n = normals.get(track)
+        if n:   # the clinician's normal range: inside is usual, outside is clearly different
+            lo, hi = n.get("min"), n.get("max")
+            scale = max((usual.get(track) or {}).get("sd", 0.0), TRACK_BY_KEY[track].sd_floor)
+            if hi is not None and v > hi:
+                return OUTSIDE_NORMAL + (v - hi) / scale
+            if lo is not None and v < lo:
+                return -(OUTSIDE_NORMAL + (lo - v) / scale)
+            return 0.0
+        s = (usual_by_type.get(typ or "") or {}).get(track) or usual.get(track)
+        if s is None:
             return None
         return (v - s["mean"]) / max(s["sd"], TRACK_BY_KEY[track].sd_floor)
 
     for d in days:
+        typ = d["observed"]["day_type"]
         d["observed"]["deviation"] = {
-            t.key: (round(zz, 2) if (zz := z(t.key, d["observed"].get(t.key))) is not None else None)
+            t.key: (round(zz, 2) if (zz := z(t.key, d["observed"].get(t.key), typ)) is not None else None)
             for t in TRACKS if not t.sensitive
         }
 
@@ -288,13 +336,14 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
             }
 
     current = [d for d in days if d["phase"] == "current" and d["complete"]]
-    flags = _risk_flags(current, "deviation", "own")
+    flags = _risk_flags(current, "deviation", "own", focus)
     if ref_stats:
         recent = [d for d in days if d["complete"] and d["observed"]["has_data"]]
-        flags += _risk_flags(recent, "deviation_ref", "reference")
-    recent = [d for d in current if d["observed"]["has_data"]][-SENSITIVE_WINDOW:]
+        flags += _risk_flags(recent, "deviation_ref", "reference", focus)
+    recent = [d for d in current if d["observed"]["has_data"]
+              and d["observed"]["day_type"] != "away_period"][-SENSITIVE_WINDOW:]
     sens_days = [d for d in recent if d["observed"]["sensitive"]]
-    if sens_days:
+    if sens_days and risk_setting(focus, "sensitive_sites")[0]:
         names = sorted({s["label"] for d in sens_days for s in d["observed"]["sensitive"]})
         flags.append({"id": "sensitive_sites", "basis": "own", "title": "Crisis or self-harm sites", "track": "sensitive_days",
                       "direction": 1, "days": [d["date"] for d in sens_days], "count": len(sens_days),
@@ -308,6 +357,10 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
                     "risk": sorted({r.direction for r in RISKS if r.track == t.key}) or ([1] if t.sensitive else [])}
                    for t in TRACKS],
         "usual": usual,
+        "usual_by_type": usual_by_type,
+        "normals": normals,
+        "focus": {r: {"enabled": e, "sensitivity": sv} for r in [x.id for x in RISKS] + ["sensitive_sites"]
+                  for e, _, _, sv in [risk_setting(focus, r)]},
         "reference": ({"stats": ref_stats, "n_days": (reference or {}).get("n_days", 0),
                        "people": (reference or {}).get("people", [])} if ref_stats else None),
         "flags": flags,

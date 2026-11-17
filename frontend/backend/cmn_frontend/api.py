@@ -22,7 +22,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import assistant, auth, fasl, observed
+from . import assistant, auth, care as care_mod, fasl, observability, observed, setup_assist
 from .notes import NoteStore
 from .groundtruth import blocks_on_day, day_summary, load_devices, load_plan, phase_by_day
 from .personas import PHASE_LABEL, persona_meta
@@ -110,6 +110,8 @@ def profile_meta(p: Profile) -> dict[str, Any]:
 
 
 def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig) -> dict[str, Any]:
+    care = care_mod.CareStore(settings.home_dir).get(profile.id)
+    clinical = care.get("clinical") or {}
     store = DayStore(settings.cache_dir)
     records = list(store.days(profile.cache_name))
     blocks = load_plan(settings.run_dir, profile.source)
@@ -152,8 +154,11 @@ def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig) -
                for c in configured}
     baseline_stats = _baseline_stats(days)
     labels, _ = _metric_labels(str(settings.app_dir))
+    day_types = {d["date"]: care_mod.day_type(care.get("routine"), care.get("away_periods") or [], d["date"])
+                 for d in days}
     obs = observed.build(days, [rec.get("activity") for _, rec in records], baseline_stats,
-                         lambda k: labels.get(k, k), reference=healthy_reference(settings, profile))
+                         lambda k: labels.get(k, k), reference=healthy_reference(settings, profile),
+                         day_types=day_types, focus=clinical.get("focus"), normals=clinical.get("normals"))
     return {
         "profile": {**profile.to_json(), "has_plan": has_plan,
                     "phase_labels": {"baseline": "Baseline", "current": "Clinical" if has_plan else "Recent"}},
@@ -167,6 +172,7 @@ def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig) -
                              "note": "rolling window over the last M days; mixes phases"}},
         "baseline_stats": baseline_stats,
         "observed": obs,
+        "care": care,
     }
 
 
@@ -237,8 +243,11 @@ def for_person(tl: dict[str, Any]) -> dict[str, Any]:
     unscored = ("C3_", "C5_", "C6_", "C7_", "C9_")
     tl["baseline_stats"] = {k: v for k, v in tl.get("baseline_stats", {}).items() if not k.startswith(unscored)}
     if "observed" in tl:
-        tl["observed"] = {**tl["observed"], "flags": list(tl["observed"]["flags"])}
+        tl["observed"] = {**tl["observed"], "flags": list(tl["observed"]["flags"]), "focus": {}}
         observed.for_person(tl["observed"], tl["days"])
+    if "care" in tl:     # the person sees their own routine and away periods, not the clinical setup
+        tl["care"] = {"routine": tl["care"].get("routine"), "away_periods": tl["care"].get("away_periods", []),
+                      "clinical": None, "updated": {k: v for k, v in tl["care"].get("updated", {}).items() if k != "clinical"}}
     return tl
 
 
@@ -254,6 +263,23 @@ class NoteBody(BaseModel):
 
 class SeenBody(BaseModel):
     last_day: str
+
+
+class RoutineBody(BaseModel):
+    routine: dict[str, Any]
+
+
+class AwayBody(BaseModel):
+    away_periods: list[dict[str, Any]]
+
+
+class ClinicalBody(BaseModel):
+    clinical: dict[str, Any]
+
+
+class SuggestBody(BaseModel):
+    kind: str                       # "routine" | "focus"
+    text: str = ""
 
 
 class AssistantBody(BaseModel):
@@ -297,6 +323,7 @@ def create_app(settings: Settings | None = None, llm_client: Any = None, http_cl
     users = auth.UserStore(settings.home_dir)
     profiles = ProfileStore(settings)
     notes = NoteStore(settings.home_dir)
+    carestore = care_mod.CareStore(settings.home_dir)
 
     def config() -> fasl.FaslConfig:
         return fasl.load_config(settings.fasl_config)  # re-read: edits apply without restart
@@ -351,7 +378,13 @@ def create_app(settings: Settings | None = None, llm_client: Any = None, http_cl
     def get_config(user: auth.User = Depends(current_user)) -> dict[str, Any]:
         labels, crit_of = _metric_labels(str(settings.app_dir))
         cfg = config()
-        return {**cfg.to_json(), "criterion_names": fasl.CRIT_NAMES,
+        configured = [c for c in fasl.CRIT_KEYS if cfg.configured(c)]
+        extra = {} if user.role == "single" else {
+            "observability": observability.table(configured), "risk_criteria": observability.RISK_CRITERIA,
+            "risks": [{"id": r.id, "title": r.title, "track": r.track} for r in observed.RISKS]
+                     + [{"id": "sensitive_sites", "title": "Crisis or self-harm sites", "track": "sensitive_days"}],
+        }
+        return {**cfg.to_json(), **extra, "criterion_names": fasl.CRIT_NAMES,
                 "metric_labels": labels, "metric_criterion": crit_of,
                 "fasl_config_path": str(settings.fasl_config)}
 
@@ -379,6 +412,69 @@ def create_app(settings: Settings | None = None, llm_client: Any = None, http_cl
         if user.role == "single":
             return for_person(tl)
         return {**tl, "notes": notes.notes(pid), "seen": notes.seen(pid)}
+
+    # ---- onboarding and care plan ----
+
+    def _care_out(user: auth.User, pid: str) -> dict[str, Any]:
+        c = carestore.get(pid)
+        return c if user.role == "multi" else {**c, "clinical": None}
+
+    @app.put("/api/profiles/{pid}/care/routine")
+    def put_routine(pid: str, body: RoutineBody, user: auth.User = Depends(current_user)) -> dict[str, Any]:
+        profile_for(user, pid)       # the person edits their own routine; links stay with clinicians
+        try:
+            carestore.set_routine(pid, body.routine, user.username, keep_links=user.role == "single")
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        return _care_out(user, pid)
+
+    @app.put("/api/profiles/{pid}/care/away")
+    def put_away(pid: str, body: AwayBody, user: auth.User = Depends(current_user)) -> dict[str, Any]:
+        profile_for(user, pid)
+        try:
+            carestore.set_away(pid, body.away_periods, user.username)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        return _care_out(user, pid)
+
+    @app.put("/api/profiles/{pid}/care/clinical")
+    def put_clinical(pid: str, body: ClinicalBody, user: auth.User = Depends(multi_user)) -> dict[str, Any]:
+        profile_for(user, pid)
+        try:
+            carestore.set_clinical(pid, body.clinical, user.username,
+                                   [r.id for r in observed.RISKS] + ["sensitive_sites"],
+                                   [t.key for t in observed.TRACKS])
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        return _care_out(user, pid)
+
+    @app.post("/api/profiles/{pid}/setup-suggestion")
+    def setup_suggestion(pid: str, body: SuggestBody, user: auth.User = Depends(current_user)) -> dict[str, Any]:
+        profile_for(user, pid)
+        st = assistant_cfg.load()
+        if not st["enabled"]:
+            raise HTTPException(503, "The assistant is turned off (Settings → Assistant).")
+        clients = {"anthropic_client": llm_client, "http_client": http_client}
+        try:
+            if body.kind == "routine":
+                if not body.text.strip():
+                    raise ValueError("describe the week first")
+                return {"routine": setup_assist.suggest_routine(st, body.text[:4000], **clients)}
+            if body.kind == "focus":
+                if user.role != "multi":
+                    raise HTTPException(403, "only for clinicians and parents")
+                c = carestore.get(pid)
+                notes_text = {k: (c.get("clinical") or {}).get(k, "") for k in ("history", "concerns", "treatment")}
+                if body.text.strip():
+                    notes_text["additional"] = body.text[:4000]
+                if not any(v.strip() for v in notes_text.values()):
+                    raise ValueError("enter the history or concerns first")
+                risks = [{"id": r.id, "title": r.title} for r in observed.RISKS] + \
+                        [{"id": "sensitive_sites", "title": "Crisis or self-harm sites"}]
+                return {"focus": setup_assist.suggest_focus(st, notes_text, c.get("routine"), risks, **clients)}
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        raise HTTPException(400, "kind must be routine or focus")
 
     # ---- notes and flags marked as seen (clinicians and parents) ----
 

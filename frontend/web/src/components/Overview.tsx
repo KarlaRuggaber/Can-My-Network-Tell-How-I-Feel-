@@ -12,6 +12,7 @@ type Props = {
   onSelectDay: (d: string) => void;
   seen?: SeenMarks;                                         // clinicians and parents
   onSeen?: (flagId: string, lastDay: string | null) => void;
+  onAsk?: (question: string, focus: string) => void;
 };
 
 /** Healthy reference: a dashed outline, no fill, so it reads differently from the person's own band. */
@@ -29,7 +30,7 @@ const fmtValue = (key: string, v: number | null | undefined): string =>
         : key.startsWith("quiet") ? fmtClock(v) : fmtNum(v, 0);
 
 /** Layer 1: what the network observed, in real units, against the person's usual range. */
-export function Overview({ tl, person, selectedDay, onSelectDay, seen, onSeen }: Props) {
+export function Overview({ tl, person, selectedDay, onSelectDay, seen, onSeen, onAsk }: Props) {
   const obs = tl.observed;
   const [range, setRange] = useState<RangeKey>("all");
   const [from, setFrom] = useState("");
@@ -63,6 +64,10 @@ export function Overview({ tl, person, selectedDay, onSelectDay, seen, onSeen }:
           {f.days.map((d) => (
             <button key={d} className={`chip ${d === selectedDay ? "chip-on" : ""}`} onClick={() => onSelectDay(d)}>{fmtDay(d)}</button>
           ))}
+          {onAsk && <button className="link small explain-link" onClick={() => onAsk(person
+            ? `Explain "${f.title}": which of my days and values led to it, and what could be behind it besides how I feel?`
+            : `Explain the flag "${f.title}" (${f.basis === "reference" ? "compared with healthy people" : "compared with the usual weeks"}): which days and values led to it, against which range, and what else could explain it (routine, away periods, notes)?`,
+            `flag ${f.id}`)}>✦ explain</button>}
         </div>
         {onSeen && (
           <div className="flag-actions">

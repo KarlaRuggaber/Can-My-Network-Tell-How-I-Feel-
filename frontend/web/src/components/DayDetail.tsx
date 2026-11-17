@@ -6,11 +6,12 @@ import { C, deviceColor, deviceRole } from "../theme";
 import { Chart } from "./Chart";
 
 type Props = {
+  onAsk?: (question: string, focus: string) => void;
   profileId: string; day: Day; cfg: Config; present: Partial<Record<CritKey, boolean[]>>; dayIndex: number;
   phaseLabels: Record<PhaseKey, string>;
 };
 
-export function DayDetail({ profileId, day, cfg, present, dayIndex, phaseLabels }: Props) {
+export function DayDetail({ onAsk, profileId, day, cfg, present, dayIndex, phaseLabels }: Props) {
   const [detail, setDetail] = useState<DD | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [onlyClinical, setOnlyClinical] = useState(false);
@@ -99,7 +100,7 @@ export function DayDetail({ profileId, day, cfg, present, dayIndex, phaseLabels 
 
       <details className="fold">
         <summary>Score of this day per criterion (L = Σ w · μ)</summary>
-        <CriterionBreakdown day={day} cfg={cfg} present={present} dayIndex={dayIndex} />
+        <CriterionBreakdown day={day} cfg={cfg} present={present} dayIndex={dayIndex} onAsk={onAsk} />
       </details>
       {gt && <details className="fold">
         <summary>All scripted blocks of this day ({blocks.length})</summary>
@@ -184,7 +185,7 @@ function BlockTable({ blocks }: { blocks: Block[] }) {
   );
 }
 
-function CriterionBreakdown({ day, cfg, present, dayIndex }: { day: Day; cfg: Config; present: Partial<Record<CritKey, boolean[]>>; dayIndex: number }) {
+function CriterionBreakdown({ day, cfg, present, dayIndex, onAsk }: { day: Day; cfg: Config; present: Partial<Record<CritKey, boolean[]>>; dayIndex: number; onAsk?: (q: string, f: string) => void }) {
   const crits = CRIT_KEYS.filter((c) => day.parts[c]);
   return (
     <div className="table-wrap">
@@ -194,7 +195,8 @@ function CriterionBreakdown({ day, cfg, present, dayIndex }: { day: Day; cfg: Co
           {crits.map((c) => (
             <Fragment key={c}>
               <tr className="crit-row">
-                <td><b>{c}</b> {cfg.criterion_names[c]}</td>
+                <td><b>{c}</b> {cfg.criterion_names[c]}
+                  {onAsk && <button className="link small explain-link" onClick={() => onAsk(`Explain the ${c} ${cfg.criterion_names[c]} score of ${fmtNum(day.L[c])} on ${day.date}, metric by metric (value, μ, weight), and what could explain it besides the criterion.`, `day ${day.date}, ${c}`)}>✦ explain</button>}</td>
                 <td />
                 <td />
                 <td className="num"><b>{fmtNum(day.L[c])}</b>{present[c]?.[dayIndex] && <span className="status status-on"> ●</span>}</td>

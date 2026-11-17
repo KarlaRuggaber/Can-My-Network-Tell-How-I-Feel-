@@ -5,7 +5,8 @@ import { fmtDay, fmtNum } from "../lib/format";
 import { C } from "../theme";
 import { Chart } from "./Chart";
 
-type Props = { tl: Timeline; cfg: Config; selectedDay: string | null; onSelectDay: (d: string) => void; step: number };
+type Props = { tl: Timeline; cfg: Config; selectedDay: string | null; onSelectDay: (d: string) => void; step: number;
+  onAsk?: (question: string, focus: string) => void };
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
@@ -32,7 +33,7 @@ export function c9Days(tl: Timeline): { date: string; metrics: string[] }[] {
 }
 
 /** Metrics the thesis code computes for criteria the configuration does not score (no likelihood). */
-export function UnscoredMetrics({ tl, cfg, selectedDay, onSelectDay, step }: Props) {
+export function UnscoredMetrics({ tl, cfg, selectedDay, onSelectDay, step, onAsk }: Props) {
   const unscored = CRIT_KEYS.filter((c) => Object.keys(cfg.criteria[c] ?? {}).length === 0);
   const byCrit = useMemo(() => {
     const out: Partial<Record<CritKey, string[]>> = {};
@@ -67,7 +68,8 @@ export function UnscoredMetrics({ tl, cfg, selectedDay, onSelectDay, step }: Pro
           <b>C9 {cfg.criterion_names.C9}: signal on {flags.length} day{flags.length === 1 ? "" : "s"}</b>{" "}
           (above the baseline, outside the gate): {flags.map((f, i) => (
             <span key={f.date}>{i > 0 && ", "}<button className="link" onClick={() => onSelectDay(f.date)}>{fmtDay(f.date)}</button>
-              {" "}({f.metrics.map((m) => cfg.metric_labels[m] ?? m).join(", ")})</span>
+              {" "}({f.metrics.map((m) => cfg.metric_labels[m] ?? m).join(", ")})
+              {onAsk && <button className="link small explain-link" onClick={() => onAsk(`How do the ${f.metrics.map((m) => cfg.metric_labels[m] ?? m).join(" and ")} on ${f.date} come about? What exactly was counted (hostnames, packets), how does it compare with the baseline, and what else could cause it?`, `C9, day ${f.date}`)}>✦ how do these hits come about?</button>}</span>
           ))}
         </div>
       )}

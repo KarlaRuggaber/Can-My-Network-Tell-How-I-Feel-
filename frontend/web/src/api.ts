@@ -13,6 +13,10 @@ export interface Config {
   metric_labels: Record<string, string>;
   metric_criterion: Record<string, CritKey>;
   fasl_config_path: string;
+  // clinicians and parents only:
+  observability?: Record<CritKey, Observability>;
+  risk_criteria?: Record<string, CritKey[]>;
+  risks?: { id: string; title: string; track: string }[];
 }
 
 export type Role = "single" | "multi";
@@ -116,6 +120,36 @@ export interface Observed {
 }
 
 export interface Note { id: string; date: string; text: string; author: string; created: string }
+
+export type DayType = "away" | "home" | "free";
+export const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+export type Weekday = typeof WEEKDAYS[number];
+export interface NamedDevice { id?: string; name: string; kind: string; shared: boolean; ip?: string | null }
+/** The patient's routine (onboarding, changeable later). */
+export interface Routine {
+  week: Record<Weekday, DayType>;
+  away_from: string | null; away_to: string | null;
+  bedtime: string | null; wake: string | null; bedtime_free: string | null; wake_free: string | null;
+  devices: NamedDevice[]; note: string;
+}
+export interface AwayPeriod { id?: string; from: string; to: string; reason: string }
+export type Sensitivity = "strict" | "standard" | "relaxed";
+/** The clinician's setup (clinicians and parents only). */
+export interface Clinical {
+  history: string; concerns: string; treatment: string; criteria: CritKey[];
+  focus: Record<string, { enabled: boolean; sensitivity: Sensitivity }>;
+  normals: Record<string, { min: number | null; max: number | null }>;
+}
+export interface Care {
+  routine: Routine | null; away_periods: AwayPeriod[]; clinical: Clinical | null;
+  updated: Record<string, { by: string; at: string }>;
+}
+export interface FocusSuggestion {
+  criteria: { criterion: CritKey; priority: "high" | "medium" | "low"; reason: string }[];
+  risks: { id: string; enabled: boolean; sensitivity: Sensitivity; reason: string }[];
+  caveats: string[];
+}
+export interface Observability { level: "good" | "partial" | "none"; observes: string; cannot: string; caveats: string[]; scored: boolean }
 export type SeenMarks = Record<string, { last_day: string; by: string; at: string }>;
 
 export interface Timeline {
@@ -133,6 +167,7 @@ export interface Timeline {
   baseline_stats: Record<string, { mean: number; sd: number; n: number }>;
   observed?: Observed;
   notes?: Note[];            // clinicians and parents only
+  care?: Care;
   seen?: SeenMarks;          // flags marked as seen (clinicians and parents only)
 }
 
@@ -219,6 +254,11 @@ export const api = {
   day: (id: string, day: string) => get<DayDetail>(`/api/profiles/${enc(id)}/days/${day}`),
   sources: () => get<Source[]>("/api/sources"),
   sourceDevices: (source: string) => get<SourceDevice[]>(`/api/sources/${enc(source)}/devices`),
+  putRoutine: (id: string, routine: Routine) => call<Care>("PUT", `/api/profiles/${enc(id)}/care/routine`, { routine }),
+  putAway: (id: string, away_periods: AwayPeriod[]) => call<Care>("PUT", `/api/profiles/${enc(id)}/care/away`, { away_periods }),
+  putClinical: (id: string, clinical: Clinical) => call<Care>("PUT", `/api/profiles/${enc(id)}/care/clinical`, { clinical }),
+  suggestRoutine: (id: string, text: string) => call<{ routine: Routine }>("POST", `/api/profiles/${enc(id)}/setup-suggestion`, { kind: "routine", text }),
+  suggestFocus: (id: string, text: string) => call<{ focus: FocusSuggestion }>("POST", `/api/profiles/${enc(id)}/setup-suggestion`, { kind: "focus", text }),
   addNote: (id: string, date: string, text: string) => call<{ notes: Note[] }>("POST", `/api/profiles/${enc(id)}/notes`, { date, text }),
   deleteNote: (id: string, noteId: string) => call<{ notes: Note[] }>("DELETE", `/api/profiles/${enc(id)}/notes/${enc(noteId)}`),
   markSeen: (id: string, flag: string, lastDay: string) => call<{ seen: SeenMarks }>("PUT", `/api/profiles/${enc(id)}/flags/${enc(flag)}/seen`, { last_day: lastDay }),

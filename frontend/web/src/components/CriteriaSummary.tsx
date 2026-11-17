@@ -151,6 +151,8 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
                   <td>
                     <b>{c}</b> {cfg.criterion_names[c]}
                     {cfg.core.includes(c) && <span className="pill pill-outline">core</span>}
+                    {cfg.observability?.[c] && <span className={`obs obs-${cfg.observability[c].level}`} title={`Network sees: ${cfg.observability[c].observes}`}>{cfg.observability[c].level === "none" ? "barely" : cfg.observability[c].level} observable</span>}
+                    {tl.care?.clinical?.criteria.includes(c) && <span className="tag">focus</span>}
                   </td>
                   {hasExpect && <td title={exp?.note}>{exp ? EXPECT_LABEL[exp.present] : "–"}</td>}
                   {order.map((ph) => {

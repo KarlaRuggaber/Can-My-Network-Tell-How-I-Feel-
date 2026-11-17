@@ -69,7 +69,31 @@ provider, so use it with the scripted data, or with live data only where partici
 2. **Timeline — day by day**: one card per day, newest first, with the quiet window, a 24-hour strip
    of use and what was clearly different from usual; clinicians and parents add notes (holidays,
    exams, a move to outpatient care), stored in `notes.json` and also given to their assistant.
-3. **Details — the model** (clinicians and parents), the previous view:
+3. **Details — the model** (clinicians and parents), the previous view, plus *What the network can
+   tell*: how well each criterion C1–C9 can be observed (good / partial / barely), what the network
+   sees and cannot see, from `profiles/symptom-network-mapping.md` §3 and §8 (`observability.py`).
+4. **Care plan** (clinicians and parents) and **onboarding** (the patient), stored in `care.json`:
+   - At first login the patient goes through a short onboarding: what is and is not measured, their
+     week (per weekday away / at home / free, usual times), their devices in plain words, anything
+     else and away periods. They can change it later under **My week**. The assistant can fill the
+     form from a description in their own words.
+   - The care plan shows the setup status, lets clinicians and parents complete the routine, link
+     each named device to an address seen on the network, add away periods, write the history,
+     concerns and treatment, choose the **criteria in focus** (with their observability), the risks
+     to flag with a **sensitivity** (strict: 2 of 7 days beyond 1 SD; standard: 3 of 7 beyond 1.5 SD;
+     relaxed: 4 of 7 beyond 2 SD) and **normal ranges** that replace the learned ones. The assistant
+     can suggest the focus from the notes; it never switches off the crisis or self-harm sites flag.
+     Suggestions only fill the forms; nothing is saved until a person saves.
+   - Effect on the analysis: usual ranges per day type (away, at home, free) once there are 5
+     baseline days of a type; away periods are left out of usual ranges and flags; flags follow the
+     focus and sensitivity; a normal range set by the clinician decides what counts as different.
+   - The patient never sees the clinical setup. The assistant (clinicians and parents) gets the
+     care plan including the history, which is sent to the configured provider.
+5. **Explain with the assistant**: click a value in the daily grid (likelihood, C9 signal, gate), a
+   flag, a timeline chip, a C9 hit or a day's criterion score, and the assistant panel opens with a
+   question about exactly that value.
+
+For clinicians and parents the Details tab shows:
 
 For multi-profile users the Details tab shows:
 

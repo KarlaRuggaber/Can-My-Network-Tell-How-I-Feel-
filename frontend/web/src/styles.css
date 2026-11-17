@@ -400,3 +400,61 @@ details.script p { max-width: none; }
 .key-band-ref { background: transparent; border: 1px dashed #6f6862; }
 .key-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--critical); vertical-align: 0; margin-right: 4px; }
 .key-dot-ref { background: #fff; border: 2px solid var(--critical); width: 8px; height: 8px; }
+
+/* onboarding and routine */
+.onboarding { max-width: 920px; }
+.steps { list-style: none; display: flex; gap: 6px; padding: 0; margin: 0 0 14px; flex-wrap: wrap; counter-reset: step; }
+.steps li { counter-increment: step; font-size: 12.5px; padding: 4px 12px; border-radius: 99px; border: 1px solid var(--border); color: var(--muted); }
+.steps li::before { content: counter(step) ". "; }
+.steps li.active { border-color: var(--ink); background: var(--ink); color: #fff; }
+.steps li.done { border-color: var(--beige); background: var(--beige-soft); color: var(--ink); }
+.ob-body h2 { margin-bottom: 8px; }
+.ob-body p { max-width: 760px; }
+.ob-actions { justify-content: flex-end; margin-top: 14px; }
+.routine { display: flex; flex-direction: column; gap: 12px; }
+.describe textarea, .field textarea { font: inherit; font-size: 13.5px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; resize: vertical; }
+.describe .row-actions { flex-wrap: wrap; }
+.week-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 18px; }
+.week-day { display: flex; align-items: center; gap: 6px; }
+.week-name { width: 36px; font-weight: 700; font-size: 13px; }
+.device-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.device-row select, .away-add input[type="date"], .normals-table input { font: inherit; font-size: 12.5px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.away-list { margin: 0; padding-left: 18px; font-size: 13px; }
+.away-list .link { margin-left: 8px; }
+.away-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+/* care plan */
+.status-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.status-list .ok { color: var(--good); }
+.status-list .todo { color: var(--warn); }
+.suggestion-box { border: 1px dashed var(--ink); border-radius: 12px; padding: 10px 14px; margin: 12px 0; background: var(--beige-faint); }
+.suggestion-box ul { margin: 4px 0 8px; padding-left: 18px; }
+.suggestion-box li { margin: 4px 0; }
+.crit-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 6px; margin: 6px 0 12px; }
+.crit-option { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-size: 13px; }
+.crit-option.on { border-color: var(--ink); background: var(--beige-faint); }
+.crit-option .link { margin-left: auto; }
+.obs { display: inline-block; padding: 0 8px; border-radius: 99px; font-size: 11px; white-space: nowrap; margin-left: 6px; }
+.obs-good { background: #e6f2e7; color: #1f5f24; }
+.obs-partial { background: #fdf1d8; color: #7a5310; }
+.obs-none { background: #f1ede8; color: var(--muted); }
+.risk-table td, .normals-table td { vertical-align: middle; }
+.risk-table .seg { margin: 0; }
+.seg button:disabled { opacity: 0.4; cursor: default; }
+.normals-table input { width: 110px; }
+.obs-table td { font-size: 12.5px; }
+.tab-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--red); margin-left: 6px; vertical-align: 2px; }
+.setup-notice { margin: 0; }
+.focus-line { margin: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.focus-line .tag { margin-left: 0; }
+
+/* explain with the assistant */
+.pop-host { position: relative; }
+.explain-pop { position: absolute; z-index: 5; background: #fff; border: 1px solid var(--ink); border-radius: 12px; padding: 8px 10px;
+  box-shadow: 0 8px 24px rgba(38,38,38,0.14); display: flex; flex-direction: column; gap: 6px; min-width: 220px; max-width: 320px; }
+.explain-pop-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text2); }
+.explain-btn { text-align: left; }
+.explain-link { margin-left: 8px; color: var(--red-text); text-decoration: none; }
+.explain-link:hover { text-decoration: underline; }
+button.pill-btn { font: inherit; font-size: 12px; cursor: pointer; }
+button.pill-btn:hover { box-shadow: 0 0 0 1px var(--ink); }
