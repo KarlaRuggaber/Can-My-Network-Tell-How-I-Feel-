@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import assistant, auth, fasl, observed
+from .notes import NoteStore
 from .groundtruth import blocks_on_day, day_summary, load_devices, load_plan, phase_by_day
 from .personas import PHASE_LABEL, persona_meta
 from .profiles import Device, Profile, ProfileStore
@@ -199,6 +200,15 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class NoteBody(BaseModel):
+    date: str
+    text: str
+
+
+class SeenBody(BaseModel):
+    last_day: str
+
+
 class AssistantBody(BaseModel):
     messages: list[ChatMessage]
     focus: str | None = None
@@ -238,6 +248,7 @@ def create_app(settings: Settings | None = None, llm_client: Any = None, http_cl
     app.add_middleware(GZipMiddleware, minimum_size=2048)
     users = auth.UserStore(settings.home_dir)
     profiles = ProfileStore(settings)
+    notes = NoteStore(settings.home_dir)
 
     def config() -> fasl.FaslConfig:
         return fasl.load_config(settings.fasl_config)  # re-read: edits apply without restart
@@ -317,7 +328,45 @@ def create_app(settings: Settings | None = None, llm_client: Any = None, http_cl
     @app.get("/api/profiles/{pid}")
     def timeline(pid: str, user: auth.User = Depends(current_user)) -> dict[str, Any]:
         tl = build_timeline(profile_for(user, pid), settings, config())
-        return for_person(tl) if user.role == "single" else tl
+        if user.role == "single":
+            return for_person(tl)
+        return {**tl, "notes": notes.notes(pid), "seen": notes.seen(pid)}
+
+    # ---- notes and flags marked as seen (clinicians and parents) ----
+
+    def _valid_day(day: str) -> str:
+        try:
+            return date.fromisoformat(day).isoformat()
+        except ValueError:
+            raise HTTPException(400, "day must be YYYY-MM-DD")
+
+    @app.post("/api/profiles/{pid}/notes")
+    def add_note(pid: str, body: NoteBody, user: auth.User = Depends(multi_user)) -> dict[str, Any]:
+        profile_for(user, pid)
+        try:
+            notes.add(pid, _valid_day(body.date), body.text, user.username)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        return {"notes": notes.notes(pid)}
+
+    @app.delete("/api/profiles/{pid}/notes/{note_id}")
+    def delete_note(pid: str, note_id: str, user: auth.User = Depends(multi_user)) -> dict[str, Any]:
+        profile_for(user, pid)
+        if not notes.delete(pid, note_id):
+            raise HTTPException(404, "no such note")
+        return {"notes": notes.notes(pid)}
+
+    @app.put("/api/profiles/{pid}/flags/{flag_id}/seen")
+    def mark_seen(pid: str, flag_id: str, body: SeenBody, user: auth.User = Depends(multi_user)) -> dict[str, Any]:
+        profile_for(user, pid)
+        notes.mark_seen(pid, flag_id[:40], _valid_day(body.last_day), user.username)
+        return {"seen": notes.seen(pid)}
+
+    @app.delete("/api/profiles/{pid}/flags/{flag_id}/seen")
+    def unmark_seen(pid: str, flag_id: str, user: auth.User = Depends(multi_user)) -> dict[str, Any]:
+        profile_for(user, pid)
+        notes.unmark_seen(pid, flag_id[:40])
+        return {"seen": notes.seen(pid)}
 
     @app.get("/api/profiles/{pid}/days/{day}")
     def day_detail(pid: str, day: str, user: auth.User = Depends(current_user)) -> dict[str, Any]:
@@ -367,6 +416,8 @@ def create_app(settings: Settings | None = None, llm_client: Any = None, http_cl
         tl = build_timeline(p, settings, config())
         if person:
             tl = for_person(tl)
+        else:
+            tl["notes"] = notes.notes(pid)
         if not tl["days"]:
             raise HTTPException(409, "No data for this profile yet.")
         try:

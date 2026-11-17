@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { Day, RiskFlag, Timeline } from "../api";
+import type { Day, RiskFlag, SeenMarks, Timeline } from "../api";
 import { fmtDay, fmtNum } from "../lib/format";
 import { flagSentence, fmtClock, fmtHours, inRange, type RangeKey } from "../lib/observed";
 import { C } from "../theme";
@@ -10,6 +10,8 @@ type Props = {
   person: boolean;                 // the person's own view: "you", no sensitive sites
   selectedDay: string | null;
   onSelectDay: (d: string) => void;
+  seen?: SeenMarks;                                         // clinicians and parents
+  onSeen?: (flagId: string, lastDay: string | null) => void;
 };
 
 const RANGES: [RangeKey, string][] = [["7", "Last 7 days"], ["14", "Last 14 days"], ["30", "Last 30 days"], ["all", "All"]];
@@ -24,7 +26,7 @@ const fmtValue = (key: string, v: number | null | undefined): string =>
         : key.startsWith("quiet") ? fmtClock(v) : fmtNum(v, 0);
 
 /** Layer 1: what the network observed, in real units, against the person's usual range. */
-export function Overview({ tl, person, selectedDay, onSelectDay }: Props) {
+export function Overview({ tl, person, selectedDay, onSelectDay, seen, onSeen }: Props) {
   const obs = tl.observed;
   const [range, setRange] = useState<RangeKey>("all");
   const [from, setFrom] = useState("");
@@ -44,6 +46,9 @@ export function Overview({ tl, person, selectedDay, onSelectDay }: Props) {
   const rows = obs.tracks.filter((t) => ROW_KEYS.includes(t.key));
   const currentDays = tl.days.filter((d) => d.phase === "current" && d.complete).length;
   const group = `obs-${tl.profile.id}`;
+  const lastDay = (f: RiskFlag) => [...f.days].sort().at(-1) ?? "";
+  // seen until a new day joins the flag
+  const isSeen = (f: RiskFlag) => !!seen?.[f.id] && seen[f.id].last_day >= lastDay(f);
 
   return (
     <>
@@ -70,8 +75,8 @@ export function Overview({ tl, person, selectedDay, onSelectDay }: Props) {
           <p className="calm">Nothing stands out: the recent days are within {person ? "your" : `${tl.persona.name}'s`} usual range.</p>
         ) : (
           <ul className="flags">
-            {obs.flags.map((f) => (
-              <li key={f.id} className={`flag ${f.sensitive ? "flag-sensitive" : ""}`}>
+            {[...obs.flags].sort((a, b) => Number(isSeen(a)) - Number(isSeen(b))).map((f) => (
+              <li key={f.id} className={`flag ${f.sensitive ? "flag-sensitive" : ""} ${isSeen(f) ? "flag-seen" : ""}`}>
                 <span className="flag-mark" aria-hidden="true" />
                 <div>
                   <div className="flag-title">{f.title}</div>
@@ -81,6 +86,15 @@ export function Overview({ tl, person, selectedDay, onSelectDay }: Props) {
                       <button key={d} className={`chip ${d === selectedDay ? "chip-on" : ""}`} onClick={() => onSelectDay(d)}>{fmtDay(d)}</button>
                     ))}
                   </div>
+                  {onSeen && (
+                    <div className="flag-actions">
+                      {isSeen(f)
+                        ? <span className="muted small">Seen by {seen![f.id].by} on {fmtDay(seen![f.id].at.slice(0, 10))} ·{" "}
+                            <button className="link small" onClick={() => onSeen(f.id, null)}>undo</button></span>
+                        : <button className="btn small" onClick={() => onSeen(f.id, lastDay(f))}>Mark as seen</button>}
+                      {seen?.[f.id] && !isSeen(f) && <span className="muted small">new days since it was marked as seen</span>}
+                    </div>
+                  )}
                 </div>
               </li>
             ))}

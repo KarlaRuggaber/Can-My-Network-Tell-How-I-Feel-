@@ -266,6 +266,8 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
                 for d in tl["days"] if (o := d.get("observed"))
             },
         }
+    if not person_view and tl.get("notes"):
+        ctx["notes_by_clinicians_and_parents"] = [{"date": n["date"], "text": n["text"]} for n in tl["notes"]]
     if not person_view:
         # Criteria without weights in the config: raw values only (no likelihood, outside the gate).
         # Never sent for the person (C9 is suicidality).

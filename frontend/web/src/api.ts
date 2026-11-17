@@ -110,6 +110,9 @@ export interface Observed {
     sensitive_window: number; night_from_hour: number; night_to_hour: number };
 }
 
+export interface Note { id: string; date: string; text: string; author: string; created: string }
+export type SeenMarks = Record<string, { last_day: string; by: string; at: string }>;
+
 export interface Timeline {
   profile: Profile & { has_plan: boolean; phase_labels: Record<PhaseKey, string> };
   persona: PersonaMeta;
@@ -124,6 +127,8 @@ export interface Timeline {
   };
   baseline_stats: Record<string, { mean: number; sd: number; n: number }>;
   observed?: Observed;
+  notes?: Note[];            // clinicians and parents only
+  seen?: SeenMarks;          // flags marked as seen (clinicians and parents only)
 }
 
 export interface Block {
@@ -209,6 +214,10 @@ export const api = {
   day: (id: string, day: string) => get<DayDetail>(`/api/profiles/${enc(id)}/days/${day}`),
   sources: () => get<Source[]>("/api/sources"),
   sourceDevices: (source: string) => get<SourceDevice[]>(`/api/sources/${enc(source)}/devices`),
+  addNote: (id: string, date: string, text: string) => call<{ notes: Note[] }>("POST", `/api/profiles/${enc(id)}/notes`, { date, text }),
+  deleteNote: (id: string, noteId: string) => call<{ notes: Note[] }>("DELETE", `/api/profiles/${enc(id)}/notes/${enc(noteId)}`),
+  markSeen: (id: string, flag: string, lastDay: string) => call<{ seen: SeenMarks }>("PUT", `/api/profiles/${enc(id)}/flags/${enc(flag)}/seen`, { last_day: lastDay }),
+  unmarkSeen: (id: string, flag: string) => call<{ seen: SeenMarks }>("DELETE", `/api/profiles/${enc(id)}/flags/${enc(flag)}/seen`),
   createProfile: (b: ProfileBody) => call<Profile & { pending: boolean }>("POST", "/api/profiles", b),
   updateProfile: (id: string, b: ProfileBody) => call<Profile & { pending: boolean }>("PUT", `/api/profiles/${enc(id)}`, b),
   deleteProfile: (id: string) => call<{ ok: boolean }>("DELETE", `/api/profiles/${enc(id)}`),

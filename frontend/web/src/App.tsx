@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Config, CritKey, Me, PhaseKey, ProfileListItem, Timeline } from "./api";
+import type { Config, CritKey, Me, Note, PhaseKey, ProfileListItem, SeenMarks, Timeline } from "./api";
 import { api, CRIT_KEYS, setUnauthorizedHandler } from "./api";
 import { CriteriaSummary, type PhaseView } from "./components/CriteriaSummary";
 import { DayDetail } from "./components/DayDetail";
@@ -10,14 +10,15 @@ import { Assistant } from "./components/Assistant";
 import { AssistantSettings } from "./components/AssistantSettings";
 import { Login } from "./components/Login";
 import { Overview } from "./components/Overview";
+import { Timeline as TimelineView } from "./components/Timeline";
 import { MetricTrends } from "./components/MetricTrends";
 import { ProfileSettings } from "./components/ProfileSettings";
 import { episodeFlags, gatePresentRolling, phaseGate, type GateParams } from "./lib/gate";
 
 const PHASES: PhaseKey[] = ["baseline", "current"];
 
-export type Tab = "overview" | "details";
-const TABS: Tab[] = ["overview", "details"];
+export type Tab = "overview" | "timeline" | "details";
+const TABS: Tab[] = ["overview", "timeline", "details"];
 
 // URL state: #/<profile>/<day>/<criterion>/<tab>, or #/settings, so a view can be bookmarked.
 function readHash(): { pid?: string; day?: string; crit?: CritKey; tab?: Tab; settings: boolean } {
@@ -78,7 +79,13 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [crit, setCrit] = useState<CritKey | null>(init.crit ?? null);
   const [gate, setGate] = useState<GateParams | null>(null);
   const [rolling, setRolling] = useState(false);   // optional extra view; mixes phases
-  const [tab, setTab] = useState<Tab>(init.tab ?? "overview");   // layer 1 (observed) or layer 2 (model)
+  const [tab, setTab] = useState<Tab>(init.tab && (multi || init.tab !== "details") ? init.tab : "overview");
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [seen, setSeen] = useState<SeenMarks>({});
+  const onSeen = useCallback((flag: string, lastDay: string | null) => {
+    if (!pid) return;
+    (lastDay ? api.markSeen(pid, flag, lastDay) : api.unmarkSeen(pid, flag)).then((r) => setSeen(r.seen)).catch(() => undefined);
+  }, [pid]);
 
   const loadProfiles = useCallback((select?: string) =>
     api.profiles().then((p) => {
@@ -100,12 +107,14 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
     setTl(null);
     api.timeline(pid).then((t) => {
       setTl(t);
+      setNotes(t.notes ?? []);
+      setSeen(t.seen ?? {});
       setDay((d) => (d && t.days.some((x) => x.date === d) ? d : t.days[t.days.length - 1]?.date ?? null));
     }).catch((e) => setError(String(e.message ?? e)));
   }, [pid, settings]);
 
   useEffect(() => {
-    const h = settings ? "#/settings" : pid ? `#/${pid}/${day ?? ""}/${crit ?? ""}/${multi ? tab : ""}` : "";
+    const h = settings ? "#/settings" : pid ? `#/${pid}/${day ?? ""}/${crit ?? ""}/${tab}` : "";
     if (h) window.history.replaceState(null, "", h);
   }, [pid, day, crit, settings, tab, multi]);
 
@@ -117,7 +126,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
       if (h.pid) setPid(h.pid);
       if (h.day) setDay(h.day);   // a link without a day keeps the current one
       setCrit(h.crit ?? null);
-      if (h.tab) setTab(h.tab);
+      if (h.tab && (multi || h.tab !== "details")) setTab(h.tab);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -270,14 +279,19 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                 </dl>
               </section>}
 
-              {multi && tl.status === "ready" && (
+              {tl.status === "ready" && (
                 <nav className="layer-tabs" role="tablist" aria-label="View">
                   <button role="tab" aria-selected={tab === "overview"} className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>
-                    Overview <span className="tab-sub">what the network observed</span>
+                    Overview <span className="tab-sub">{multi ? "what the network observed" : "your recent days"}</span>
                   </button>
-                  <button role="tab" aria-selected={tab === "details"} className={tab === "details" ? "active" : ""} onClick={() => setTab("details")}>
-                    Details <span className="tab-sub">DSM-5 model, metrics, days</span>
+                  <button role="tab" aria-selected={tab === "timeline"} className={tab === "timeline" ? "active" : ""} onClick={() => setTab("timeline")}>
+                    Timeline <span className="tab-sub">{multi ? "day by day, with notes" : "day by day"}</span>
                   </button>
+                  {multi && (
+                    <button role="tab" aria-selected={tab === "details"} className={tab === "details" ? "active" : ""} onClick={() => setTab("details")}>
+                      Details <span className="tab-sub">DSM-5 model, metrics, days</span>
+                    </button>
+                  )}
                 </nav>
               )}
 
@@ -291,16 +305,21 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
               {tl.status === "ready" && phases && !multi && (
                 <>
-                  <Overview tl={tl} person selectedDay={day} onSelectDay={setDay} />
+                  {tab === "timeline"
+                    ? <TimelineView tl={tl} person notes={[]} onNotes={() => undefined} selectedDay={day} onSelectDay={setDay} />
+                    : <Overview tl={tl} person selectedDay={day} onSelectDay={setDay} />}
                   <Assistant open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person focus={null} />
                 </>
               )}
 
-              {tl.status === "ready" && phases && multi && tab === "overview" && (
+              {tl.status === "ready" && phases && multi && tab !== "details" && (
                 <>
-                  <Overview tl={tl} person={false} selectedDay={day} onSelectDay={setDay} />
+                  {tab === "timeline"
+                    ? <TimelineView tl={tl} person={false} notes={notes} onNotes={setNotes} selectedDay={day} onSelectDay={setDay}
+                        onOpenDetails={(d) => { setDay(d); setTab("details"); }} />
+                    : <Overview tl={tl} person={false} selectedDay={day} onSelectDay={setDay} seen={seen} onSeen={onSeen} />}
                   <Assistant open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false}
-                    focus={day ? `overview, day ${day}` : "overview"} />
+                    focus={`${tab}${day ? `, day ${day}` : ""}`} />
                 </>
               )}
 

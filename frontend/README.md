@@ -36,7 +36,31 @@ sent back to a browser; `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` also work). P
 OpenRouter (used for testing before the project had a Claude key: `deepseek/deepseek-v4.1-flash-1017`). The question and the derived results go to that
 provider, so use it with the scripted data, or with live data only where participants agreed.
 
-For multi-profile users the portal shows:
+**Two layers** (v2; the earlier single-layer version is tagged `frontend-v1`):
+
+1. **Overview — what the network observed**, in real units, against the person's usual range (mean
+   and SD over the baseline days), for everyone:
+   - *What stands out*: risk flags over the recent days, not single days, e.g. "Later nights: on 4 of
+     the last 7 nights Maria went quiet later than usual" (at least 3 of the last 7 days beyond
+     1.5 SD in the risk direction). Crisis or self-harm sites are flagged as soon as they rise above
+     the usual level (clinicians and parents only). Flags can be marked as seen; a new day brings
+     them back.
+   - *Day and night*: minutes in use per hour, with night shading and midnight lines (as in Robin Z),
+     range presets and a date range.
+   - *Quiet window at night*: when the devices went quiet and came back online (the longest stretch
+     without use overlapping 00:00–06:00; a check of up to 15 min between 00:00 and 05:00 does not end
+     it), with use during the night as dots. Called "quiet window", not sleep: asleep, away or
+     switched off look the same from the network.
+   - *Day by day*: time in use, use at night, chat sessions, different sites (and crisis or
+     self-harm sites), with legend chips to hide or highlight rows.
+   "In use" = at least `CMN_ACTIVE_PACKETS` (default 50) packets in 5 minutes. Scripted devices are
+   silent between blocks; real phones send background traffic, so tune this on a real device.
+2. **Timeline — day by day**: one card per day, newest first, with the quiet window, a 24-hour strip
+   of use and what was clearly different from usual; clinicians and parents add notes (holidays,
+   exams, a move to outpatient care), stored in `notes.json` and also given to their assistant.
+3. **Details — the model** (clinicians and parents), the previous view:
+
+For multi-profile users the Details tab shows:
 
 - **Baseline vs. clinical (or recent) period**: every scored DSM-5 criterion with, for scripted
   personas, the outcome expected in the profile's §9 (`profiles/tier2-clinical/*.md`) and two gate results side by side, each computed
@@ -243,6 +267,7 @@ The URL keeps the view: `#/<profile>/<day>/<criterion>`, e.g. `#/maria/2026-11-1
 | `CMN_DEVICES` | `traffic-runner/config/devices.csv` | IP → device |
 | `CMN_API` | `http://127.0.0.1:8600` | API address the Vite dev server proxies to |
 | `CMN_NO_IP_CACHE` | unset | `1` turns off the `is_private_ip` memoization |
+| `CMN_ACTIVE_PACKETS` | `50` | Packets per 5 minutes from which a device counts as "in use" (quiet window, time in use) |
 | `CMN_COOKIE_SECURE` | unset | `1` marks the login cookie HTTPS-only (set it behind `tailscale serve` or another HTTPS proxy) |
 
 ## Tests

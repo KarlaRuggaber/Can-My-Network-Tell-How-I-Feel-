@@ -285,3 +285,25 @@ def test_openrouter_errors_become_short_notes():
     for status, note in ((401, "rejected"), (402, "no credit"), (429, "busy")):
         client = httpx.Client(transport=httpx.MockTransport(lambda r, s=status: httpx.Response(s, json={"error": {"message": "x"}})))
         assert note in "".join(stream_openrouter("k", "m", sys_, [{"role": "user", "content": "q"}], client))
+
+
+def test_notes_and_seen_flags_for_clinicians_only(portal):
+    doc = login(portal, "doc", "pw-doc")
+    anna = login(portal, "anna", "pw-anna")
+    r = doc.post("/api/profiles/tester/notes", json={"date": "2026-11-08", "text": "  Exam week  "})
+    assert r.status_code == 200 and r.json()["notes"][0]["text"] == "Exam week"
+    assert r.json()["notes"][0]["author"] == "doc"
+    assert doc.post("/api/profiles/tester/notes", json={"date": "08.11.2026", "text": "x"}).status_code == 400
+    assert doc.post("/api/profiles/tester/notes", json={"date": "2026-11-08", "text": "   "}).status_code == 422
+    tl = doc.get("/api/profiles/tester").json()
+    assert [n["text"] for n in tl["notes"]] == ["Exam week"] and tl["seen"] == {}
+    # the person neither reads nor writes notes
+    assert "notes" not in anna.get("/api/profiles/tester").json()
+    assert anna.post("/api/profiles/tester/notes", json={"date": "2026-11-08", "text": "hi"}).status_code == 403
+    # seen marks
+    r = doc.put("/api/profiles/tester/flags/later_nights/seen", json={"last_day": "2026-11-08"})
+    assert r.json()["seen"]["later_nights"]["by"] == "doc"
+    assert doc.delete("/api/profiles/tester/flags/later_nights/seen").json()["seen"] == {}
+    nid = tl["notes"][0]["id"]
+    assert doc.delete(f"/api/profiles/tester/notes/{nid}").json()["notes"] == []
+    assert doc.delete(f"/api/profiles/tester/notes/{nid}").status_code == 404
