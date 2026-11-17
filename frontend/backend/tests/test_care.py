@@ -14,7 +14,8 @@ from test_observed import _days
 def test_routine_is_cleaned_and_validated():
     r = care.clean_routine({"week": {"wed": "home"}, "bedtime": "23:30",
                             "devices": [{"name": " iPhone ", "kind": "phone"}, {"name": ""}]})
-    assert r["week"]["mon"] == "away" and r["week"]["wed"] == "home" and r["week"]["sat"] == "free"
+    assert r["week"]["mon"] == {"am": "away", "pm": "away"} and r["week"]["wed"] == {"am": "home", "pm": "home"}
+    assert r["week"]["sat"] == {"am": "free", "pm": "free"}       # a single type (older routines): the whole day
     assert r["bedtime"] == "23:30" and r["wake"] is None
     assert [d["name"] for d in r["devices"]] == ["iPhone"] and r["devices"][0]["ip"] is None
     for bad in ({"week": {"mon": "sometimes"}}, {"bedtime": "25:00"}, {"devices": [{"name": "x", "kind": "toaster"}]}):
@@ -31,6 +32,17 @@ def test_day_type_from_routine_and_away_periods():
     assert care.day_type(r, away, "2026-11-16") == "away"          # a Monday
     assert care.day_type(r, away, "2026-11-21") == "away_period"
     assert care.day_type(None, [], "2026-11-21") is None
+
+
+def test_morning_and_afternoon_per_weekday():
+    r = care.clean_routine({"week": {"mon": {"am": "away", "pm": "free"}, "tue": {"am": "home", "pm": "free"},
+                                     "sat": {"am": "free"}}})
+    assert r["week"]["mon"] == {"am": "away", "pm": "free"} and r["week"]["sat"] == {"am": "free", "pm": "free"}
+    assert care.day_type(r, [], "2026-11-16") == "away"            # Monday: school in the morning
+    assert care.day_type(r, [], "2026-11-17") == "home"            # Tuesday: home office, then free
+    assert care.day_type(r, [], "2026-11-21") == "free"
+    with pytest.raises(ValueError):
+        care.clean_routine({"week": {"mon": {"am": "away", "pm": "later"}}})
 
 
 def test_focus_sensitivity_normals_and_away_periods_change_the_flags():
@@ -138,16 +150,20 @@ def test_onboarding_and_care_plan_permissions(portal):
 
 
 def test_setup_suggestions_are_validated(portal):
-    routine = {"week": {d: "away" for d in care.WEEKDAYS}, "away_from": "07:30", "away_to": "16:00",
-               "bedtime": "22:30", "wake": "06:45", "bedtime_free": None, "wake_free": None,
+    routine = {"week": {d: {"am": "away", "pm": "away"} for d in care.WEEKDAYS}, "away_from": "07:30",
+               "away_to": "16:00", "bedtime": "22:30", "wake": "06:45", "bedtime_free": None, "wake_free": None,
                "devices": [{"name": "iPhone", "kind": "phone", "shared": False}], "note": ""}
-    routine["week"]["sat"] = routine["week"]["sun"] = "free"
+    routine["week"]["wed"] = {"am": "away", "pm": "home"}
+    routine["week"]["sat"] = routine["week"]["sun"] = {"am": "free", "pm": "free"}
     fake = FakeClaude(routine)
     pat = _client(portal, "pat", "pw-pat", fake)
     r = pat.post("/api/profiles/pat/setup-suggestion", json={"kind": "routine", "text": "School Mon-Fri, bed at 22:30"})
     assert r.status_code == 200 and r.json()["routine"]["away_from"] == "07:30"
+    assert r.json()["routine"]["week"]["wed"] == {"am": "away", "pm": "home"}
     kw = fake.calls[-1]
     assert kw["output_config"]["format"]["type"] == "json_schema" and "School" in kw["messages"][0]["content"]
+    week_schema = kw["output_config"]["format"]["schema"]["properties"]["week"]["properties"]["mon"]
+    assert week_schema["required"] == ["am", "pm"]
     assert pat.post("/api/profiles/pat/setup-suggestion", json={"kind": "focus"}).status_code == 403
     assert pat.get("/api/profiles/pat").json()["care"]["routine"] is None        # nothing saved by a suggestion
 

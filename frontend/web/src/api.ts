@@ -126,8 +126,11 @@ export const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as con
 export type Weekday = typeof WEEKDAYS[number];
 export interface NamedDevice { id?: string; name: string; kind: string; shared: boolean; ip?: string | null }
 /** The patient's routine (onboarding, changeable later). */
+export type Half = "am" | "pm";
+/** One weekday: the morning (until about noon) and the afternoon. */
+export type HalfDays = Record<Half, DayType>;
 export interface Routine {
-  week: Record<Weekday, DayType>;
+  week: Record<Weekday, HalfDays>;
   away_from: string | null; away_to: string | null;
   bedtime: string | null; wake: string | null; bedtime_free: string | null; wake_free: string | null;
   devices: NamedDevice[]; note: string;

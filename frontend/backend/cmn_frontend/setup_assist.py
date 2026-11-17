@@ -26,7 +26,10 @@ ROUTINE_SCHEMA: dict[str, Any] = {
     "required": ["week", "away_from", "away_to", "bedtime", "wake", "bedtime_free", "wake_free", "devices", "note"],
     "properties": {
         "week": {"type": "object", "additionalProperties": False, "required": list(care_mod.WEEKDAYS),
-                 "properties": {d: {"type": "string", "enum": list(care_mod.DAY_TYPES)} for d in care_mod.WEEKDAYS}},
+                 "properties": {d: {"type": "object", "additionalProperties": False, "required": list(care_mod.HALVES),
+                                    "properties": {h: {"type": "string", "enum": list(care_mod.DAY_TYPES)}
+                                                   for h in care_mod.HALVES}}
+                                for d in care_mod.WEEKDAYS}},
         "away_from": _TIME, "away_to": _TIME, "bedtime": _TIME, "wake": _TIME, "bedtime_free": _TIME, "wake_free": _TIME,
         "devices": {"type": "array", "items": {
             "type": "object", "additionalProperties": False, "required": ["name", "kind", "shared"],
@@ -58,13 +61,15 @@ def focus_schema(risk_ids: list[str]) -> dict[str, Any]:
 
 ROUTINE_SYSTEM = """\
 You fill in the routine form of a research prototype that looks at a person's home-network use.
-From the person's own description, set for each weekday whether it is spent "away" (school, work,
-training away from home), at "home" (home office, online school, at home all day) or "free"
-(weekend, day off); the usual times away (on away days), bedtime and waking on away/home days and on
-free days (HH:MM, 24 h; null when not mentioned); and the devices they use in plain words with a kind
+From the person's own description, set for each weekday, separately for the morning ("am", until
+about noon) and the afternoon ("pm"), whether it is spent "away" (school, work, training away from
+home), at "home" (home office, online school, working or studying at home) or "free" (weekend, day
+off, nothing scheduled). Example: school on Monday morning and nothing in the afternoon is
+{"am": "away", "pm": "free"}. Also the usual times away (on away days), bedtime and waking on
+away/home days and on free days (HH:MM, 24 h; null when not mentioned); and the devices they use in plain words with a kind
 and whether others share the device. Keep a short "note" for anything relevant that does not fit
 (e.g. "every second weekend with my father"). Do not invent: leave times null and devices out when
-the description does not say. Weekdays not mentioned: Monday-Friday "away", weekend "free".
+the description does not say. Days or halves not mentioned: Monday-Friday "away", weekend "free".
 """
 
 FOCUS_SYSTEM = """\

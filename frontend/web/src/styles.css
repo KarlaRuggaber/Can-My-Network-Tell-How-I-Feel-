@@ -466,14 +466,19 @@ button.pill-btn:hover { box-shadow: 0 0 0 1px var(--ink); }
 .week-table th[scope="row"] { text-align: left; padding-right: 14px; display: flex; flex-direction: column; min-width: 190px; font-weight: 400; }
 .week-type { font-weight: 700; }
 .week-table td { border: none; padding: 0; text-align: center; }
-.week-table th.weekend, .week-table td.weekend { background: var(--beige-faint); border-radius: 8px; }
-.week-cell { width: 40px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
+.week-table th.weekend, .week-table td.weekend { background: var(--beige-faint); }
+.week-table th.day.weekend { border-radius: 8px 8px 0 0; }
+.week-table tr.halves th { font-size: 10.5px; font-weight: 400; color: var(--muted); padding: 0 0 2px; letter-spacing: .02em; }
+.week-table .am { padding-left: 8px; }      /* a gap between days; AM and PM of a day stay close */
+.week-table td.am.weekend, .week-table th.am.weekend { padding-left: 4px; }
+.week-cell { width: 30px; height: 30px; border-radius: 7px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
+.week-table td.pm .week-cell { margin-left: -2px; }
 .week-cell:hover { border-color: var(--ink); }
 .week-cell.on { border-color: var(--ink); }
 .week-cell.week-away.on { background: var(--ink); }
 .week-cell.week-home.on { background: #a8702c; border-color: #a8702c; }
 .week-cell.week-free.on { background: var(--beige); border-color: #c9b39c; }
-.week-cell.on::after { content: "✓"; color: #fff; font-size: 14px; }
+.week-cell.on::after { content: "✓"; color: #fff; font-size: 13px; }
 .week-cell.week-free.on::after { color: var(--ink); }
 .times-table { width: auto; align-self: flex-start; justify-self: start; border-collapse: separate; border-spacing: 10px 6px; margin-left: -10px; }
 .times-table th { border: none; position: static; background: none; font-size: 12.5px; color: var(--text2); padding: 0; text-align: left; vertical-align: middle; }

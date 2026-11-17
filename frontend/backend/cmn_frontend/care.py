@@ -2,8 +2,8 @@
 clinician's setup (history, focus, sensitivity, own normal ranges).
 
 - *Routine* (written by the patient in onboarding, changeable later; also by clinicians/parents):
-  per weekday whether the day is spent away (work, school), at home (home office, remote school) or
-  free; usual times away, bedtime and waking; the devices in plain words ("iPhone", "school
+  per weekday, for the morning and the afternoon, whether it is spent away (work, school), at home
+  (home office, remote school) or free; usual times away, bedtime and waking; the devices in plain words ("iPhone", "school
   laptop"). Clinicians or parents link each named device to an address seen on the network.
 - *Away periods* (patient or clinician): holidays, hospital stays, travel. These days are left out of
   the usual ranges and the flags, since the home network cannot see them.
@@ -26,7 +26,8 @@ from pathlib import Path
 from typing import Any
 
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
-DAY_TYPES = ("away", "home", "free")
+DAY_TYPES = ("away", "home", "free")       # in this order of precedence for a day with two kinds of half
+HALVES = ("am", "pm")                      # morning (until about noon) and afternoon
 DEVICE_KINDS = ("phone", "laptop", "tablet", "computer", "console", "tv", "other")
 SENSITIVITY = {                       # deviation (SD) and days needed among the last 7
     "strict": {"z": 1.0, "days": 2},
@@ -55,14 +56,30 @@ def _text(v: Any, field: str, limit: int = MAX_TEXT) -> str:
     return s
 
 
+def halves(v: Any, default: str) -> dict[str, str]:
+    """A weekday as {"am": type, "pm": type}; a single type (older routines) means the whole day."""
+    if isinstance(v, dict):
+        return {h: v.get(h) or default for h in HALVES}
+    return {h: v or default for h in HALVES}
+
+
+def whole_day(v: Any) -> str | None:
+    """One type for the day: the same for both halves, else the first in DAY_TYPES (away, home, free)."""
+    if v is None:
+        return None
+    hv = halves(v, "")
+    return next((t for t in DAY_TYPES if t in hv.values()), None)
+
+
 def clean_routine(r: dict[str, Any]) -> dict[str, Any]:
     week = r.get("week") or {}
     out_week = {}
     for d in WEEKDAYS:
-        t = week.get(d, "free" if d in ("sat", "sun") else "away")
-        if t not in DAY_TYPES:
-            raise ValueError(f"{d}: day type must be one of {', '.join(DAY_TYPES)}")
-        out_week[d] = t
+        hv = halves(week.get(d), "free" if d in ("sat", "sun") else "away")
+        for h, t in hv.items():
+            if t not in DAY_TYPES:
+                raise ValueError(f"{d} {h}: day type must be one of {', '.join(DAY_TYPES)}")
+        out_week[d] = hv
     times = {}
     for k in ("away_from", "away_to", "bedtime", "wake", "bedtime_free", "wake_free"):
         v = r.get(k) or None
@@ -188,9 +205,12 @@ class CareStore:
 
 
 def day_type(routine: dict[str, Any] | None, away: list[dict[str, Any]], day: str) -> str | None:
-    """'away_period' (holiday, hospital), else the routine's type of that weekday, else None."""
+    """'away_period' (holiday, hospital), else the routine's type of that weekday, else None.
+
+    A day with two kinds of half counts as the first of away, home, free: a morning at school and an
+    afternoon at home is an away day (the person is off the home network for part of it)."""
     if any(p["from"] <= day <= p["to"] for p in away):
         return "away_period"
     if not routine:
         return None
-    return routine["week"].get(WEEKDAYS[date.fromisoformat(day).weekday()])
+    return whole_day(routine["week"].get(WEEKDAYS[date.fromisoformat(day).weekday()]))

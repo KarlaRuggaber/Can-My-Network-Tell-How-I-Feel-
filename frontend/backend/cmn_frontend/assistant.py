@@ -272,7 +272,9 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
             "bedtime": r.get("bedtime"), "wake": r.get("wake"), "bedtime_free_days": r.get("bedtime_free"),
             "wake_free_days": r.get("wake_free"), "devices": [d["name"] for d in r.get("devices", [])],
             "note": r.get("note"),
-            "how_it_is_used": "usual ranges are learned per day type (away, home, free) once there are 5 baseline days of a type",
+            "how_it_is_used": ("week: per weekday the morning (am) and afternoon (pm); usual ranges are learned per "
+                               "day type (away, home, free; a day with an away half counts as away, else with a home "
+                               "half as home) once there are 5 baseline days of a type"),
         }
     if care.get("away_periods"):
         ctx["away_periods"] = [{"from": p["from"], "to": p["to"], "reason": p.get("reason")} for p in care["away_periods"]]
