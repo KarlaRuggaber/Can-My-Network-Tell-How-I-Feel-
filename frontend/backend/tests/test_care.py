@@ -87,7 +87,6 @@ def portal(tmp_path, monkeypatch):
     from cmn_frontend.export import export_dataset
     from cmn_frontend.profiles import Profile, ProfileStore
     monkeypatch.setenv("CMN_ASSISTANT", "1")
-    monkeypatch.setenv("CMN_ASSISTANT_PROVIDER", "anthropic")
     s = make_run(tmp_path)
     export_dataset(DS, s)
     ProfileStore(s).upsert(Profile("pat", "Pat", DS))

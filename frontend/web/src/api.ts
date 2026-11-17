@@ -214,10 +214,9 @@ const enc = encodeURIComponent;
 export interface AssistantStatus {
   enabled: boolean; notice: string;
   // multi-profile users only:
-  provider?: string; model?: string; has_key?: boolean;
-  providers?: Record<string, { label: string; default_model: string }>;
+  model?: string; default_model?: string; has_key?: boolean;
 }
-export interface AssistantSettingsBody { enabled: boolean; provider: string; model: string; api_key?: string | null }
+export interface AssistantSettingsBody { enabled: boolean; model: string; api_key?: string | null }
 export interface ChatTurn { role: "user" | "assistant"; content: string }
 
 /** Ask the explanation assistant; calls onText for every streamed chunk. */
@@ -241,7 +240,27 @@ async function ask(id: string, messages: ChatTurn[], focus: string | null, onTex
   }
 }
 
+export interface SpeechStatus { available: boolean; max_seconds?: number }
+export interface Transcript { text: string; language?: string | null; seconds?: number | null }
+
+/** Send a recording to the local speech-to-text service (Whisper on the portal's own machine). */
+async function transcribe(audio: Blob): Promise<Transcript> {
+  const r = await fetch("/api/transcribe", {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": audio.type || "audio/webm" }, body: audio,
+  });
+  if (!r.ok) {
+    let msg = `${r.status} ${r.statusText}`;
+    try { const d = (await r.json()).detail; if (typeof d === "string") msg = d; } catch { /* not JSON */ }
+    if (r.status === 401) onUnauthorized();
+    throw new ApiError(r.status, msg);
+  }
+  return r.json() as Promise<Transcript>;
+}
+
 export const api = {
+  speechStatus: () => get<SpeechStatus>("/api/transcribe"),
+  transcribe,
   assistant: () => get<AssistantStatus>("/api/assistant"),
   saveAssistant: (b: AssistantSettingsBody) => call<AssistantStatus>("PUT", "/api/assistant", b),
   ask,

@@ -22,7 +22,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import assistant, auth, care as care_mod, fasl, observability, observed, setup_assist
+from . import assistant, auth, care as care_mod, fasl, observability, observed, setup_assist, speech as speech_mod
 from .notes import NoteStore
 from .groundtruth import blocks_on_day, day_summary, load_devices, load_plan, phase_by_day
 from .personas import PHASE_LABEL, persona_meta
@@ -289,7 +289,6 @@ class AssistantBody(BaseModel):
 
 class AssistantSettingsBody(BaseModel):
     enabled: bool
-    provider: str
     model: str
     api_key: str | None = None      # None: keep the stored key; "": remove it
 
@@ -315,7 +314,8 @@ class ProfileBody(BaseModel):
     reference: str | None = None       # healthy reference: none | baseline | all
 
 
-def create_app(settings: Settings | None = None, llm_client: Any = None, http_client: Any = None) -> FastAPI:
+def create_app(settings: Settings | None = None, llm_client: Any = None,
+               speech_transport: Any = None) -> FastAPI:
     settings = settings or load_settings()
     assistant_cfg = assistant.AssistantConfig(settings.home_dir)
     app = FastAPI(title="Can My Network Tell How I Feel? – results API")
@@ -324,6 +324,7 @@ def create_app(settings: Settings | None = None, llm_client: Any = None, http_cl
     profiles = ProfileStore(settings)
     notes = NoteStore(settings.home_dir)
     carestore = care_mod.CareStore(settings.home_dir)
+    speech = speech_mod.Speech(transport=speech_transport)
 
     def config() -> fasl.FaslConfig:
         return fasl.load_config(settings.fasl_config)  # re-read: edits apply without restart
@@ -454,7 +455,7 @@ def create_app(settings: Settings | None = None, llm_client: Any = None, http_cl
         st = assistant_cfg.load()
         if not st["enabled"]:
             raise HTTPException(503, "The assistant is turned off (Settings → Assistant).")
-        clients = {"anthropic_client": llm_client, "http_client": http_client}
+        clients = {"anthropic_client": llm_client}
         try:
             if body.kind == "routine":
                 if not body.text.strip():
@@ -532,6 +533,30 @@ def create_app(settings: Settings | None = None, llm_client: Any = None, http_cl
                 "n_partitions": rec.get("n_partitions"),
                 "last_partition_start": rec.get("last_partition_start")}
 
+    # ---- dictation: local speech to text (Whisper on this machine) ----
+
+    @app.get("/api/transcribe")
+    async def transcribe_status(user: auth.User = Depends(current_user)) -> dict[str, Any]:
+        return await speech.status()
+
+    @app.post("/api/transcribe")
+    async def transcribe(request: Request, user: auth.User = Depends(current_user)) -> dict[str, Any]:
+        size = request.headers.get("content-length")
+        if size and size.isdigit() and int(size) > speech_mod.MAX_AUDIO_BYTES:
+            raise HTTPException(413, "The recording is too long.")
+        audio = await request.body()
+        if not audio:
+            raise HTTPException(400, "No recording received.")
+        if len(audio) > speech_mod.MAX_AUDIO_BYTES:
+            raise HTTPException(413, "The recording is too long.")
+        ctype = request.headers.get("content-type", "")
+        if not (ctype.startswith("audio/") or ctype.startswith("video/webm") or ctype == "application/octet-stream"):
+            raise HTTPException(415, "Not an audio recording.")
+        try:
+            return await speech.transcribe(audio, ctype)
+        except speech_mod.SpeechError as e:
+            raise HTTPException(e.status, str(e))
+
     # ---- explanation assistant ----
 
     @app.get("/api/assistant")
@@ -545,7 +570,7 @@ def create_app(settings: Settings | None = None, llm_client: Any = None, http_cl
     @app.put("/api/assistant")
     def assistant_settings(body: AssistantSettingsBody, user: auth.User = Depends(multi_user)) -> dict[str, Any]:
         try:
-            assistant_cfg.save(body.enabled, body.provider, body.model, body.api_key)
+            assistant_cfg.save(body.enabled, body.model, body.api_key)
         except ValueError as e:
             raise HTTPException(422, str(e))
         return assistant_cfg.public()
@@ -571,7 +596,7 @@ def create_app(settings: Settings | None = None, llm_client: Any = None, http_cl
         labels, _ = _metric_labels(str(settings.app_dir))
         ctx = assistant.build_context(tl, config(), person, labels)
         chunks = assistant.stream_answer(st, assistant.system_blocks(ctx, person), msgs,
-                                         anthropic_client=llm_client, http_client=http_client)
+                                         anthropic_client=llm_client)
         return StreamingResponse(chunks, media_type="text/plain; charset=utf-8",
                                  headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 

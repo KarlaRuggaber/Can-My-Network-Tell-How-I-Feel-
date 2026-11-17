@@ -30,11 +30,12 @@ results shown, answered only from the profile's derived daily results (likelihoo
 device names and must not diagnose. Persons get everyday language without clinical terms or
 expectations; clinicians get criterion names and, for scripted personas, the script's expectations
 marked as such. A multi-profile user turns it on under **Settings → Assistant** and enters the
-provider, model and API key there (stored in `~/cmn-data/frontend/assistant.json`, owner-only, never
-sent back to a browser; `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` also work). Providers: Anthropic
-(the default: Claude Sonnet 5.5, `claude-sonnet-5-5`, official SDK, with server-side refusal fallback; the project key does not include Opus or Fable) and
-OpenRouter (used for testing before the project had a Claude key: `deepseek/deepseek-v4.1-flash-1017`). The question and the derived results go to that
-provider, so use it with the scripted data, or with live data only where participants agreed.
+Claude model and the Claude API key there (stored in `~/cmn-data/frontend/assistant.json`,
+owner-only, never sent back to a browser; `ANTHROPIC_API_KEY` also works). The assistant uses
+Anthropic's Claude only (default Claude Sonnet 5.5, `claude-sonnet-5-5`, official SDK, with
+server-side refusal fallback; the project key does not include Opus or Fable). The question and the
+derived results go to Anthropic, so use it with the scripted data, or with live data only where
+participants agreed.
 
 **Two layers** (v2; the earlier single-layer version is tagged `frontend-v1`):
 
@@ -88,10 +89,17 @@ provider, so use it with the scripted data, or with live data only where partici
      baseline days of a type; away periods are left out of usual ranges and flags; flags follow the
      focus and sensitivity; a normal range set by the clinician decides what counts as different.
    - The patient never sees the clinical setup. The assistant (clinicians and parents) gets the
-     care plan including the history, which is sent to the configured provider.
+     care plan including the history, which is sent to Anthropic (Claude).
 5. **Explain with the assistant**: click a value in the daily grid (likelihood, C9 signal, gate), a
    flag, a timeline chip, a C9 hit or a day's criterion score, and the assistant panel opens with a
    question about exactly that value.
+6. **Dictation** (local speech to text): a microphone button in the free-text fields (describe your
+   week, note, history, concerns, treatment, timeline notes, assistant question). The browser records
+   the clip; the portal checks the login and passes it to a Whisper service on the same machine
+   (`whisper/server.py`, faster-whisper, model `small` int8 by default), which returns the text in
+   the language spoken. The audio does not leave the machine and is not stored, and no API key is
+   needed. The button only appears when the service runs and the browser may use the microphone
+   (HTTPS or localhost).
 
 For clinicians and parents the Details tab shows:
 
@@ -238,6 +246,17 @@ Start the UI in a second terminal, then open http://127.0.0.1:5173:
 cd frontend/web && npm install && npm run dev
 ```
 
+Optional, for dictation: start the local Whisper service in a third terminal (the first start
+downloads the model, about 0.5 GB):
+
+```bash
+cd frontend/whisper && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+```
+
+```bash
+cd frontend/whisper && WHISPER_PRELOAD=1 .venv/bin/uvicorn server:app --host 127.0.0.1 --port 8601
+```
+
 For the video, build the UI once; the API then serves it at http://127.0.0.1:8600 (one process):
 
 ```bash
@@ -264,6 +283,7 @@ The mini-PC serves the portal; the laptop keeps computing (the export needs 1–
 | File | Purpose |
 |---|---|
 | `Dockerfile`, `docker-compose.yml` | Container `cmn-portal` on top of the app's `app-app` image, host network, `127.0.0.1:8600` only, 512 MB limit, data mounted read-only |
+| `../whisper/Dockerfile` | Container `cmn-whisper` (dictation), same base image, `127.0.0.1:8601` only, 1.5 GB and 2 CPU limit, model kept in `/var/lib/cmn-whisper/models` and unloaded after 10 idle minutes |
 | `deploy-gateway.sh` | Builds the UI, copies the code to `/opt/cmn-portal/frontend`, (re)builds and starts the container |
 | `sync-gateway.sh [--watch 900]` | Pulls new partitions and plans and the portal's `profiles.json`, runs the export on the laptop, pushes the day records to `/var/lib/cmn-portal/cache` |
 | `gateway.env.example` | Host, user, key and sources; copy to `gateway.env` to change them |
@@ -304,6 +324,8 @@ The URL keeps the view: `#/<profile>/<day>/<criterion>`, e.g. `#/maria/2026-11-1
 | `CMN_NO_IP_CACHE` | unset | `1` turns off the `is_private_ip` memoization |
 | `CMN_ACTIVE_PACKETS` | `50` | Packets per 5 minutes from which a device counts as "in use" (quiet window, time in use) |
 | `CMN_COOKIE_SECURE` | unset | `1` marks the login cookie HTTPS-only (set it behind `tailscale serve` or another HTTPS proxy) |
+| `CMN_WHISPER_URL` | `http://127.0.0.1:8601` | Local Whisper service for dictation; `off` hides the microphone buttons |
+| `WHISPER_MODEL`, `WHISPER_COMPUTE`, `WHISPER_THREADS`, `WHISPER_LANGUAGE`, `WHISPER_IDLE_UNLOAD` | `small`, `int8`, `2`, detect, `600` | Settings of the Whisper service itself (see `whisper/server.py`) |
 
 ## Tests
 

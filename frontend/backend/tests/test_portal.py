@@ -182,7 +182,7 @@ def test_person_sees_no_expectations_or_plan(portal, scripted):
 
 
 def test_assistant_is_off_by_default(portal, monkeypatch):
-    for v in ("CMN_ASSISTANT", "CMN_ASSISTANT_PROVIDER", "OPENROUTER_API_KEY"):
+    for v in ("CMN_ASSISTANT", "ANTHROPIC_API_KEY"):
         monkeypatch.delenv(v, raising=False)
     c = login(portal, "anna", "pw-anna")
     assert c.get("/api/assistant").json()["enabled"] is False
@@ -192,7 +192,6 @@ def test_assistant_is_off_by_default(portal, monkeypatch):
 
 def test_assistant_explains_from_derived_results_only(portal, scripted, monkeypatch):
     monkeypatch.setenv("CMN_ASSISTANT", "1")
-    monkeypatch.setenv("CMN_ASSISTANT_PROVIDER", "anthropic")
     fake = FakeClaude()
     app = create_app(portal, llm_client=fake)
     c = TestClient(app)
@@ -223,68 +222,42 @@ def test_assistant_explains_from_derived_results_only(portal, scripted, monkeypa
     assert bad.status_code == 422
 
 
-def test_assistant_settings_and_openrouter(portal, scripted, monkeypatch):
+def test_assistant_settings_claude_only(portal, scripted, monkeypatch):
     import json
     import os
-
-    import httpx
-    for v in ("CMN_ASSISTANT", "CMN_ASSISTANT_PROVIDER", "CMN_ASSISTANT_MODEL", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"):
+    for v in ("CMN_ASSISTANT", "CMN_ASSISTANT_MODEL", "ANTHROPIC_API_KEY"):
         monkeypatch.delenv(v, raising=False)
     monkeypatch.setattr("cmn_frontend.assistant._anthropic_profile", lambda: False)  # no `ant auth login` profile
-    seen = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request)
-        sse = (": OPENROUTER PROCESSING\n\n"
-               'data: {"choices":[{"delta":{"content":"Sleep "}}]}\n\n'
-               'data: {"choices":[{"delta":{"content":"was usual."},"finish_reason":"stop"}]}\n\n'
-               "data: [DONE]\n\n")
-        return httpx.Response(200, text=sse, headers={"content-type": "text/event-stream"})
-
-    app = create_app(portal, http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+    path = portal.home_dir / "assistant.json"
+    # an older settings file with an OpenRouter key: ignored, and dropped on the next save
+    path.write_text(json.dumps({"enabled": True, "provider": "openrouter", "models": {"openrouter": "x"},
+                                "api_keys": {"openrouter": "sk-or-old"}}))
+    fake = FakeClaude()
+    app = create_app(portal, llm_client=fake)
     person, doc = TestClient(app), TestClient(app)
     person.post("/api/login", json={"username": "ben", "password": "pw-ben"})
     doc.post("/api/login", json={"username": "doc", "password": "pw-doc"})
-    assert person.put("/api/assistant", json={"enabled": True, "provider": "openrouter", "model": "x"}).status_code == 403
+    assert person.put("/api/assistant", json={"enabled": True, "model": "x"}).status_code == 403
     st = doc.get("/api/assistant").json()
-    assert st["provider"] == "anthropic" and st["model"] == "claude-sonnet-5-5"     # default: Claude
-    assert st["enabled"] is False and st["has_key"] is False
+    assert st["model"] == "claude-sonnet-5-5" and st["default_model"] == "claude-sonnet-5-5"
+    assert st["enabled"] is False and st["has_key"] is False and "provider" not in st      # no Claude key yet
 
-    r = doc.put("/api/assistant", json={"enabled": True, "provider": "openrouter",
-                                        "model": "deepseek/deepseek-v4.1-flash-1017", "api_key": "sk-or-test"})
-    assert r.status_code == 200 and r.json()["has_key"] and "sk-or-test" not in r.text
-    path = portal.home_dir / "assistant.json"
+    r = doc.put("/api/assistant", json={"enabled": True, "model": "claude-sonnet-5-5", "api_key": "sk-ant-test"})
+    assert r.status_code == 200 and r.json()["has_key"] and "sk-ant-test" not in r.text
     assert oct(os.stat(path).st_mode & 0o777) == "0o600"
-    assert "sk-or-test" not in doc.get("/api/assistant").text
+    stored = json.loads(path.read_text())
+    assert stored["api_keys"] == {"anthropic": "sk-ant-test"} and "openrouter" not in stored["models"]
+    assert "sk-ant-test" not in doc.get("/api/assistant").text
     assert set(person.get("/api/assistant").json()) == {"enabled", "notice"}     # person: no settings
-    # saving without a key keeps the stored one
-    doc.put("/api/assistant", json={"enabled": True, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash-1017"})
-    assert json.loads(path.read_text())["api_keys"]["openrouter"] == "sk-or-test"
+    doc.put("/api/assistant", json={"enabled": True, "model": "claude-sonnet-5-5"})   # no key: keep it
+    assert json.loads(path.read_text())["api_keys"]["anthropic"] == "sk-ant-test"
 
     r = person.post(f"/api/profiles/{scripted}/assistant", json={"messages": [{"role": "user", "content": "Sleep?"}]})
-    assert r.status_code == 200 and r.text == "Sleep was usual."
-    req = seen[-1]
-    assert str(req.url) == "https://openrouter.ai/api/v1/chat/completions"
-    assert req.headers["authorization"] == "Bearer sk-or-test"
-    body = json.loads(req.content)
-    assert body["model"] == "deepseek/deepseek-v4.1-flash-1017" and body["stream"] is True
-    assert body["messages"][0]["role"] == "system" and "<results>" in body["messages"][0]["content"]
-    assert body["messages"][-1] == {"role": "user", "content": "Sleep?"}
-    assert PHONE_IP not in req.content.decode() and "Insomnia" not in req.content.decode()
+    assert r.status_code == 200 and fake.calls[-1]["model"] == "claude-sonnet-5-5"
 
-    doc.put("/api/assistant", json={"enabled": False, "provider": "openrouter",
-                                    "model": "deepseek/deepseek-v4.1-flash-1017", "api_key": ""})
-    assert "openrouter" not in json.loads(path.read_text())["api_keys"]
+    doc.put("/api/assistant", json={"enabled": False, "model": "claude-sonnet-5-5", "api_key": ""})
+    assert json.loads(path.read_text())["api_keys"] == {}
     path.unlink()
-
-
-def test_openrouter_errors_become_short_notes():
-    import httpx
-    from cmn_frontend.assistant import stream_openrouter
-    sys_ = [{"type": "text", "text": "s"}]
-    for status, note in ((401, "rejected"), (402, "no credit"), (429, "busy")):
-        client = httpx.Client(transport=httpx.MockTransport(lambda r, s=status: httpx.Response(s, json={"error": {"message": "x"}})))
-        assert note in "".join(stream_openrouter("k", "m", sys_, [{"role": "user", "content": "q"}], client))
 
 
 def test_notes_and_seen_flags_for_clinicians_only(portal):
@@ -321,3 +294,47 @@ def test_healthy_reference_setting(portal):
     assert P("x", "X", "s").reference_mode == "none" and P("x", "X", "s", persona="gw_a").reference_mode == "baseline"
     body["reference"] = None
     assert doc.put("/api/profiles/dns", json=body).json()["reference_mode"] == "none"
+
+
+def test_dictation_goes_to_the_local_whisper_service_only(portal, monkeypatch):
+    import httpx
+    monkeypatch.delenv("CMN_WHISPER_URL", raising=False)
+    seen = []
+
+    def whisper(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path == "/health":
+            return httpx.Response(200, json={"ok": True, "model": "small", "max_seconds": 300})
+        if request.content == b"noise":
+            return httpx.Response(415, json={"detail": "could not read the recording"})
+        return httpx.Response(200, json={"text": " School from eight to four. ", "language": "en", "seconds": 3.2})
+
+    app = create_app(portal, speech_transport=httpx.MockTransport(whisper))
+    anon = TestClient(app)
+    assert anon.post("/api/transcribe", content=b"x", headers={"content-type": "audio/webm"}).status_code == 401
+    me = TestClient(app)
+    me.post("/api/login", json={"username": "anna", "password": "pw-anna"})       # the person may dictate too
+    assert me.get("/api/transcribe").json()["available"] is True
+    r = me.post("/api/transcribe", content=b"\x1aE\xdf\xa3webm", headers={"content-type": "audio/webm;codecs=opus"})
+    assert r.status_code == 200 and r.json()["text"] == "School from eight to four."
+    req = seen[-1]
+    assert str(req.url) == "http://127.0.0.1:8601/transcribe" and req.content == b"\x1aE\xdf\xa3webm"
+    assert req.headers["content-type"] == "audio/webm;codecs=opus" and "cookie" not in req.headers
+    assert me.post("/api/transcribe", content=b"noise", headers={"content-type": "audio/webm"}).status_code == 422
+    assert me.post("/api/transcribe", content=b"{}", headers={"content-type": "application/json"}).status_code == 415
+    assert me.post("/api/transcribe", content=b"", headers={"content-type": "audio/webm"}).status_code == 400
+
+    # service down: dictation is shown as unavailable, and a recording gets a short note
+    def down(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused")
+    app = create_app(portal, speech_transport=httpx.MockTransport(down))
+    me = TestClient(app)
+    me.post("/api/login", json={"username": "anna", "password": "pw-anna"})
+    assert me.get("/api/transcribe").json() == {"available": False}
+    r = me.post("/api/transcribe", content=b"a", headers={"content-type": "audio/webm"})
+    assert r.status_code == 503 and "not running" in r.json()["detail"]
+
+    monkeypatch.setenv("CMN_WHISPER_URL", "off")                                     # turned off
+    me = TestClient(create_app(portal))
+    me.post("/api/login", json={"username": "anna", "password": "pw-anna"})
+    assert me.get("/api/transcribe").json() == {"available": False}

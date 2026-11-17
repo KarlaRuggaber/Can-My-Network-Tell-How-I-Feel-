@@ -6,8 +6,8 @@
   network can tell about each), the risks to flag and their sensitivity, each with a reason.
 
 Suggestions only fill the forms; nothing is saved until a person reviews and saves them. They use the
-provider configured under Settings → Assistant (structured output with Claude, a JSON object with
-OpenRouter), and every answer is validated before it reaches the browser.
+model configured under Settings → Assistant (Claude with structured output), and every answer is
+validated before it reaches the browser.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ import re
 from typing import Any
 
 from . import care as care_mod
-from .assistant import OPENROUTER_URL
 from .observability import OBSERVABILITY, RISK_CRITERIA
 
 _TIME = {"anyOf": [{"type": "string", "pattern": r"^([01]\d|2[0-3]):[0-5]\d$"}, {"type": "null"}]}
@@ -95,29 +94,8 @@ def _first_json(text: str) -> dict[str, Any]:
 
 
 def complete_json(cfg: dict[str, Any], system: str, user: str, schema: dict[str, Any],
-                  anthropic_client: Any = None, http_client: Any = None) -> dict[str, Any]:
-    """One structured answer from the configured provider (raises ValueError with a short reason)."""
-    if cfg["provider"] == "openrouter":
-        import httpx
-        if not cfg["api_key"]:
-            raise ValueError("no OpenRouter API key (Settings → Assistant)")
-        body = {"model": cfg["model"], "response_format": {"type": "json_object"},
-                "messages": [{"role": "system", "content": system + "\nAnswer with one JSON object matching this "
-                              "JSON schema, nothing else:\n" + json.dumps(schema)},
-                             {"role": "user", "content": user}]}
-        client = http_client or httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0))
-        try:
-            r = client.post(OPENROUTER_URL, json=body,
-                            headers={"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"})
-        except httpx.HTTPError:
-            raise ValueError("could not reach OpenRouter")
-        finally:
-            if http_client is None:
-                client.close()
-        if r.status_code != 200:
-            raise ValueError(f"OpenRouter answered {r.status_code}")
-        return _first_json(r.json()["choices"][0]["message"]["content"] or "")
-
+                  anthropic_client: Any = None) -> dict[str, Any]:
+    """One structured answer from Claude (raises ValueError with a short reason)."""
     import anthropic
     client = anthropic_client
     if client is None:

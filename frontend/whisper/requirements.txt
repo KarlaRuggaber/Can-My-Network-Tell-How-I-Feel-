@@ -1,0 +1,4 @@
+# Local speech-to-text service (frontend/whisper/server.py).
+faster-whisper>=1.1
+fastapi>=0.110
+uvicorn>=0.29

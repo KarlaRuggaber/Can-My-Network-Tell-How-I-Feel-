@@ -6,6 +6,7 @@ import {
 import { fmtClock, fmtHours } from "../lib/observed";
 import { fmtNum } from "../lib/format";
 import { AwayEditor, defaultRoutine, RoutineForm } from "./RoutineForm";
+import { appendText, Dictate } from "./Dictate";
 
 type Props = {
   tl: Timeline;
@@ -168,18 +169,27 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
 
       <section className="card">
         <div className="card-head"><h2>History and focus</h2>
-          <p className="sub">Clinicians and parents only; never shown to the patient. {assistant && "The assistant can suggest a focus from these notes (they are sent to its provider)."}</p></div>
+          <p className="sub">Clinicians and parents only; never shown to the patient. {assistant && "The assistant can suggest a focus from these notes (they are sent to Claude, Anthropic)."}</p></div>
         {msg?.where === "clinical" && <p className={msg.kind === "error" ? "error" : "notice"}>{msg.text}</p>}
         <div className="form-grid">
           <label className="field">Background and history
-            <textarea rows={4} value={clinical.history} onChange={(e) => setClinical({ ...clinical, history: e.target.value })}
-              placeholder="e.g. first depressive episode in 2025, admitted to LIFE in October; sleep problems since the summer" /></label>
+<span className="dictate-wrap">
+              <textarea rows={4} value={clinical.history} onChange={(e) => setClinical({ ...clinical, history: e.target.value })}
+                placeholder="e.g. first depressive episode in 2025, admitted to LIFE in October; sleep problems since the summer" />
+              <Dictate inField onText={(t) => setClinical((c) => ({ ...c, history: appendText(c.history, t) }))} />
+            </span></label>
           <label className="field">Current concerns
-            <textarea rows={4} value={clinical.concerns} onChange={(e) => setClinical({ ...clinical, concerns: e.target.value })}
-              placeholder="e.g. withdrawal from friends, late nights, passive suicidal thoughts reported two weeks ago" /></label>
+<span className="dictate-wrap">
+              <textarea rows={4} value={clinical.concerns} onChange={(e) => setClinical({ ...clinical, concerns: e.target.value })}
+                placeholder="e.g. withdrawal from friends, late nights, passive suicidal thoughts reported two weeks ago" />
+              <Dictate inField onText={(t) => setClinical((c) => ({ ...c, concerns: appendText(c.concerns, t) }))} />
+            </span></label>
           <label className="field">Treatment and context
-            <textarea rows={4} value={clinical.treatment} onChange={(e) => setClinical({ ...clinical, treatment: e.target.value })}
-              placeholder="e.g. outpatient since 3 Nov, sertraline since 20 Oct; exams in December" /></label>
+<span className="dictate-wrap">
+              <textarea rows={4} value={clinical.treatment} onChange={(e) => setClinical({ ...clinical, treatment: e.target.value })}
+                placeholder="e.g. outpatient since 3 Nov, sertraline since 20 Oct; exams in December" />
+              <Dictate inField onText={(t) => setClinical((c) => ({ ...c, treatment: appendText(c.treatment, t) }))} />
+            </span></label>
         </div>
         {assistant && (
           <div className="row-actions">

@@ -6,17 +6,15 @@ and SD, the gate per period) and explains where a finding comes from. It never s
 IP addresses, hostnames or device names, and it must not diagnose.
 
 Off by default, because questions and these derived results are sent to an external model API.
-A multi-profile user turns it on in the portal (Settings → Assistant): provider, model and API key are
+A multi-profile user turns it on in the portal (Settings → Assistant): model and Claude API key are
 stored in <home>/assistant.json (readable by the owner only; the key is never sent back to a
 browser). Environment variables give the defaults:
 
     CMN_ASSISTANT=1                         # on
-    CMN_ASSISTANT_PROVIDER=anthropic        # default; or openrouter
     CMN_ASSISTANT_MODEL=claude-sonnet-5-5
-    ANTHROPIC_API_KEY=... / OPENROUTER_API_KEY=...
+    ANTHROPIC_API_KEY=...
 
-Providers: "anthropic" (Claude through the official SDK; the default since the project has a Claude
-API key) and "openrouter" (OpenRouter's chat completions API, any model it serves; used for testing).
+The only provider is Anthropic (Claude through the official SDK, with the project's Claude key).
 
 Single-profile users (the person themself) get a context without expectations or clinical labels and
 answers in everyday language; multi-profile users (clinicians, parents) get the criterion names and,
@@ -35,13 +33,10 @@ from typing import Any, Iterable, Iterator
 from . import fasl
 
 PROVIDERS = {
-    "openrouter": {"label": "OpenRouter", "default_model": "deepseek/deepseek-v4.1-flash-1017",
-                   "key_env": "OPENROUTER_API_KEY"},
     "anthropic": {"label": "Anthropic (Claude)", "default_model": "claude-sonnet-5-5",
                   "key_env": "ANTHROPIC_API_KEY"},
 }
 DEFAULT_PROVIDER = "anthropic"
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MAX_TURNS = 20
 
 # Everyday names for the scored criteria (person view and person assistant).
@@ -80,7 +75,7 @@ PLAIN_METRICS = {
 
 
 class AssistantConfig:
-    """Assistant settings: <home>/assistant.json over environment defaults. Keys per provider."""
+    """Assistant settings: <home>/assistant.json over environment defaults. Claude only."""
 
     def __init__(self, home: Path):
         self.path = Path(home) / "assistant.json"
@@ -93,41 +88,36 @@ class AssistantConfig:
 
     def load(self) -> dict[str, Any]:
         f = self._file()
-        provider = f.get("provider") or os.environ.get("CMN_ASSISTANT_PROVIDER", DEFAULT_PROVIDER)
-        if provider not in PROVIDERS:
-            provider = DEFAULT_PROVIDER
+        p = PROVIDERS[DEFAULT_PROVIDER]
         env_on = os.environ.get("CMN_ASSISTANT", "").lower() in ("1", "true", "yes")
-        keys = f.get("api_keys") or {}
-        key = keys.get(provider) or os.environ.get(PROVIDERS[provider]["key_env"], "")
-        model = (f.get("models") or {}).get(provider) or os.environ.get("CMN_ASSISTANT_MODEL") \
-            or PROVIDERS[provider]["default_model"]
-        return {"enabled": bool(f.get("enabled", env_on)), "provider": provider, "model": model,
+        key = (f.get("api_keys") or {}).get(DEFAULT_PROVIDER) or os.environ.get(p["key_env"], "")
+        model = (f.get("models") or {}).get(DEFAULT_PROVIDER) or os.environ.get("CMN_ASSISTANT_MODEL") \
+            or p["default_model"]
+        return {"enabled": bool(f.get("enabled", env_on)), "provider": DEFAULT_PROVIDER, "model": model,
                 "api_key": key}
 
     def public(self) -> dict[str, Any]:
         c = self.load()
-        return {"enabled": c["enabled"], "provider": c["provider"], "model": c["model"],
-                "has_key": bool(c["api_key"]) or c["provider"] == "anthropic" and _anthropic_profile(),
-                "providers": {k: {"label": v["label"], "default_model": v["default_model"]} for k, v in PROVIDERS.items()},
+        return {"enabled": c["enabled"], "model": c["model"],
+                "default_model": PROVIDERS[DEFAULT_PROVIDER]["default_model"],
+                "has_key": bool(c["api_key"]) or _anthropic_profile(),
                 "notice": (f"Your question and this profile's daily results (no raw traffic, addresses or device "
-                           f"names) are sent to {PROVIDERS[c['provider']]['label']} ({c['model']}) to write the answer.")}
+                           f"names) are sent to Anthropic's Claude ({c['model']}) to write the answer.")}
 
-    def save(self, enabled: bool, provider: str, model: str, api_key: str | None) -> None:
-        """api_key None: keep the stored key; "": remove it."""
-        if provider not in PROVIDERS:
-            raise ValueError(f"provider must be one of {', '.join(PROVIDERS)}")
+    def save(self, enabled: bool, model: str, api_key: str | None) -> None:
+        """api_key None: keep the stored key; "": remove it. Keys of earlier providers are dropped."""
         model = model.strip()
         if not model or len(model) > 200:
             raise ValueError("model is required")
         f = self._file()
-        f.update({"enabled": bool(enabled), "provider": provider})
-        f.setdefault("models", {})[provider] = model
-        keys = f.setdefault("api_keys", {})
+        keys = {k: v for k, v in (f.get("api_keys") or {}).items() if k in PROVIDERS}
         if api_key is not None:
             if api_key.strip():
-                keys[provider] = api_key.strip()
+                keys[DEFAULT_PROVIDER] = api_key.strip()
             else:
-                keys.pop(provider, None)
+                keys.pop(DEFAULT_PROVIDER, None)
+        f = {"enabled": bool(enabled), "provider": DEFAULT_PROVIDER, "models": {DEFAULT_PROVIDER: model},
+             "api_keys": keys}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".tmp-", suffix=".json")
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -355,70 +345,12 @@ def clean_messages(messages: Iterable[dict[str, Any]], focus: str | None) -> lis
 
 
 def stream_answer(cfg: dict[str, Any], system: list[dict[str, Any]], messages: list[dict[str, Any]],
-                  anthropic_client: Any = None, http_client: Any = None) -> Iterator[str]:
-    """Text chunks of the answer from the configured provider."""
-    if cfg["provider"] == "openrouter":
-        if not cfg["api_key"]:
-            yield "(The assistant is not set up: no OpenRouter API key. Add it under Settings → Assistant.)"
-            return
-        yield from stream_openrouter(cfg["api_key"], cfg["model"], system, messages, http_client)
-        return
+                  anthropic_client: Any = None) -> Iterator[str]:
+    """Text chunks of Claude's answer."""
     if anthropic_client is None:
         import anthropic
         anthropic_client = anthropic.Anthropic(api_key=cfg["api_key"]) if cfg["api_key"] else anthropic.Anthropic()
     yield from stream_claude(anthropic_client, cfg["model"], system, messages)
-
-
-def stream_openrouter(api_key: str, model: str, system: list[dict[str, Any]],
-                      messages: list[dict[str, Any]], http_client: Any = None) -> Iterator[str]:
-    """OpenRouter chat completions with server-sent events; errors end with a short note."""
-    import httpx
-    body = {
-        "model": model,
-        "stream": True,
-        "messages": [{"role": "system", "content": "\n\n".join(b["text"] for b in system)}] + messages,
-    }
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    client = http_client or httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0))
-    try:
-        with client.stream("POST", OPENROUTER_URL, json=body, headers=headers) as r:
-            if r.status_code != 200:
-                r.read()
-                try:
-                    msg = r.json().get("error", {}).get("message", "")
-                except ValueError:
-                    msg = ""
-                yield {401: "(The assistant is not set up: the OpenRouter API key was rejected.)",
-                       402: "(The OpenRouter account has no credit left.)",
-                       429: "(The assistant is busy. Please try again in a minute.)"}.get(
-                    r.status_code, f"(The assistant failed: {r.status_code} {msg})".strip())
-                return
-            finish = None
-            for line in r.iter_lines():
-                if not line.startswith("data:"):
-                    continue                       # keep-alive comments
-                data = line[5:].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    ev = json.loads(data)
-                except ValueError:
-                    continue
-                if ev.get("error"):
-                    yield f"\n\n(The assistant failed: {ev['error'].get('message', 'error')})"
-                    return
-                for ch in ev.get("choices") or []:
-                    text = (ch.get("delta") or {}).get("content")
-                    if text:
-                        yield text
-                    finish = ch.get("finish_reason") or finish
-            if finish == "length":
-                yield "\n\n(The answer was cut off.)"
-    except httpx.HTTPError:
-        yield "(The assistant could not reach OpenRouter.)"
-    finally:
-        if http_client is None:
-            client.close()
 
 
 def stream_claude(client: Any, model: str, system: list[dict[str, Any]],

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, type AssistantStatus, type ChatTurn } from "../api";
 import { Markdown } from "./Markdown";
+import { appendText, Dictate } from "./Dictate";
 
 /** A question asked from elsewhere on the page ("explain this value"), sent once per id. */
 export type AskRequest = { id: number; question: string; focus?: string | null };
@@ -187,6 +188,7 @@ export function Assistant({ request, open, onToggle, profileId, person, focus }:
             <input value={input} onChange={(e) => setInput(e.target.value)} disabled={busy}
               placeholder={person ? "e.g. Why was last Tuesday different?" : "e.g. Which metric made C4 reach θ on 31/10?"}
               aria-label="Your question" />
+            <Dictate disabled={busy} onText={(t) => setInput((old) => appendText(old, t))} />
             <button className="btn btn-primary" type="submit" disabled={busy || !input.trim()}>{busy ? "…" : "Ask"}</button>
           </form>
           <div className="row-between">

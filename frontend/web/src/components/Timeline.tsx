@@ -4,6 +4,7 @@ import { api } from "../api";
 import { fmtDay, fmtNum } from "../lib/format";
 import { fmtClock, fmtHours } from "../lib/observed";
 import { C } from "../theme";
+import { appendText, Dictate } from "./Dictate";
 
 type Props = {
   tl: TL;
@@ -144,6 +145,7 @@ export function Timeline({ tl, person, notes, onNotes, selectedDay, onSelectDay,
                       <form className="tl-add" onSubmit={(e) => { e.preventDefault(); save(); }}>
                         <input autoFocus value={draft.text} maxLength={2000} placeholder="e.g. exam week, holidays, moved to outpatient care"
                           onChange={(e) => setDraft({ day: d.date, text: e.target.value })} />
+                        <Dictate onText={(t) => setDraft((dr) => (dr ? { ...dr, text: appendText(dr.text, t).slice(0, 2000) } : dr))} />
                         <button className="btn btn-primary" type="submit" disabled={!draft.text.trim()}>Save</button>
                         <button className="btn btn-quiet" type="button" onClick={() => setDraft(null)}>Cancel</button>
                       </form>

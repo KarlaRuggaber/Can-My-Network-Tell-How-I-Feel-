@@ -4,6 +4,8 @@
 # Docker runs there with "iptables": false, so the container uses the host network. The portal
 # listens on 127.0.0.1:8600 only; `tailscale serve` publishes it inside the tailnet (HTTPS).
 # Day records are computed on the laptop and pushed to /var/lib/cmn-portal/cache (sync-gateway.sh).
+# Dictation: the "whisper" service turns recordings into text on this machine (127.0.0.1:8601 only);
+# the portal passes recordings to it after checking the login. No audio leaves the mini-PC.
 name: cmn-portal
 services:
   portal:
@@ -23,6 +25,7 @@ services:
       CMN_CACHE: /data/cache
       CMN_HOME: /data/home
       CMN_COOKIE_SECURE: "1"   # reached only over HTTPS (tailscale serve)
+      CMN_WHISPER_URL: http://127.0.0.1:8601
     volumes:
       - /opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet:/data/processed_parquet:ro
       - /var/lib/traffic-executor:/data/run:ro
@@ -30,3 +33,22 @@ services:
       - /var/lib/cmn-portal/home:/data/home
       - /opt/can-my-network/app_pcap_to_dsm5/app:/repo/app_pcap_to_dsm5/app:ro
       - /opt/can-my-network/traffic-runner/config/devices.csv:/repo/traffic-runner/config/devices.csv:ro
+  whisper:
+    build:
+      context: /opt/cmn-portal
+      dockerfile: frontend/whisper/Dockerfile
+      network: host
+    image: cmn-whisper:latest
+    container_name: cmn-whisper
+    network_mode: host
+    restart: unless-stopped
+    mem_limit: 1500m           # "small" (int8) needs about 0.5-1 GB while loaded
+    cpus: 2                    # leave the other cores to the capture and the runner
+    environment:
+      WHISPER_MODEL: small     # base: faster and lighter; medium: more accurate, ~2 GB
+      WHISPER_COMPUTE: int8
+      WHISPER_THREADS: "2"
+      WHISPER_IDLE_UNLOAD: "600"   # free the memory after 10 minutes without dictation
+      WHISPER_PRELOAD: "1"     # download the model at start, not on the first dictation
+    volumes:
+      - /var/lib/cmn-whisper/models:/models
