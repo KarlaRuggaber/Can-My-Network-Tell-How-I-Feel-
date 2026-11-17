@@ -105,7 +105,8 @@ traffic-runner/config/devices.csv ───────────────�
   Early Signs page (same partition-to-day rule, hostname enrichment, background filter, base record,
   all nine criteria, previous days as history). It keeps only the resulting row per day, so memory
   stays at about one day of packets (1–3 GB, up to ~7 GB for a 9M-packet day) instead of the 24 GB
-  the Streamlit app needs for its in-memory cache. A day is recomputed when its partitions change,
+  the Streamlit app needed for its in-memory cache before 17.11 (since PR #17 the app also computes
+  one day per process, peak 3.8 GB for a 9M-row day; `app/metrics/daily_cache.py`). A day is recomputed when its partitions change,
   when the metric code changes, or when an earlier day was recomputed (history-dependent metrics).
   The newest day is marked *incomplete* until a later day has data.
 - **Scoring** (`fasl.py`): membership functions and `fasl_score` are ported from the page, which cannot
@@ -119,9 +120,11 @@ traffic-runner/config/devices.csv ───────────────�
 - **UI** (`web/`): React + TypeScript + ECharts. The gate in `src/lib/gate.ts` and the Python gate
   share the test cases in `shared/gate_cases.json`.
 
-Speed: the metric code calls `is_private_ip` per packet in row-wise `apply`, which dominates the run
-time. The export memoizes this pure function in its own process (results identical, tested;
-`CMN_NO_IP_CACHE=1` disables it). A normal day still takes 0.5–3 min, and a 9M-packet streaming day
+Speed: the metric code used to call `is_private_ip` per packet in row-wise `apply`, which dominated
+the run time. The export memoizes this pure function in its own process (results identical, tested;
+`CMN_NO_IP_CACHE=1` disables it). Since PR #17 (17.11) the metric code itself checks each distinct
+address only once (`private_ip_mask`, `outbound_mask`, `inbound_mask` in `metrics/common.py`), so the
+memoization adds little; the timings below were measured before that change. A normal day still takes 0.5–3 min, and a 9M-packet streaming day
 several minutes. Computing everything here takes about an hour for three personas with `--jobs 3`; importing
 from the evaluation's tables takes about a minute per persona. After that, only new or changed days
 are processed.

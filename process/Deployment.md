@@ -135,6 +135,12 @@ The cache fixes were needed because the app assumed that data never changes afte
 
 Pages 01 and 02 now compute a cheap signature of the selected datasets (number of partition files + newest modification time, `app/utils/partitions.py`). The CSV is used only if it is newer than the newest partition. Day loaders are keyed on the modification times of that day's files, so unchanged days stay cached and only the changed day is reloaded. The "Refresh cached day metrics" button is no longer needed for live data.
 
+*Update 17.11.2026 (PR #17):* replaced by a per-day cache. Each row of the feature-cache CSV carries a
+fingerprint of that day's partition files, only changed days are recomputed, and each day runs in its
+own short Python process, because the long-running Streamlit process kept growing until it was killed
+for out-of-memory (13.11). Details in the docstring of `app/metrics/daily_cache.py`. The cache still
+does not notice changed metric code: after a code change, recompute with the button or `--force`.
+
 
 ## 4. Differences from the plan in MasterThesisInc.md §4.1
 

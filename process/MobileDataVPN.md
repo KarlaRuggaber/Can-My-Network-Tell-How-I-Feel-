@@ -159,7 +159,7 @@ no-dhcp-interface=wg0
 ```
 
 `wg0` comes up after dnsmasq at boot; that is fine because `tapgw.conf` already uses `bind-dynamic`
-(checked on the gateway 17.11.2026; HardwareSetup.md still shows the older `bind-interfaces`), so
+(checked on the gateway 17.11.2026; changed for `br-sim`, HardwareSetup.md §16), so
 dnsmasq starts listening on `wg0` as soon as it appears. Then:
 
 ```bash

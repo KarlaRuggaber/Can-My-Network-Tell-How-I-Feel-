@@ -2,7 +2,7 @@
 
 Evaluates the live run (25.10–22.11) against the profiles: per persona, the **baseline phase** (tier-0 profile, 26.10–08.11) against the **clinical phase** (09.11–22.11), with the thesis app's own metric and scoring code.
 
-Why not the app: its Early Signs page keeps every loaded day in Streamlit's cache (`st.cache_data`, up to 256 entries). On 13.11, with 20 days of three personas, it was killed for out-of-memory on the gateway (4.9 GB) and twice on a laptop (8 GB, then 24 GB Docker memory). Here a day is computed and released before the next one: 1.5–7 GB per persona, about 76 s per day with ~900 k rows.
+Why not the app: its Early Signs page keeps every loaded day in Streamlit's cache (`st.cache_data`, up to 256 entries). On 13.11, with 20 days of three personas, it was killed for out-of-memory on the gateway (4.9 GB) and twice on a laptop (8 GB, then 24 GB Docker memory). Here a day is computed and released before the next one: 1.5–7 GB per persona, about 76 s per day with ~900 k rows. (Since PR #17, 17.11, the app also computes each day in its own process and no longer runs out of memory: all 61 days of the three personas in 48 min, peak 3.8 GB. The evaluation stays separate because it compares the baseline and clinical phase with the expected directions in `expectations.yaml`.)
 
 ```
 evaluation/
