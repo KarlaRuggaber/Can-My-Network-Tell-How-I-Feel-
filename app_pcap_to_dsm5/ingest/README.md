@@ -205,6 +205,9 @@ belong in git (`.gitignore` blocks `devices.real.csv`). Same format; template: `
   file, and the size of `gw_unassigned`).
 - **IPv6:** the LAN serves IPv4 only. If IPv6 is ever enabled, devices change their IPv6 addresses
   daily; the MAC-first lookup covers that, but `pcap_etl` and the metrics only read IPv4.
+- **Mobile data (outlook):** away from the home WiFi the gateway sees nothing. A WireGuard VPN from the
+  phone to the gateway, recorded on `wg0`, would close that gap without code changes; the full plan is
+  in [process/MobileDataVPN.md](../../process/MobileDataVPN.md).
 - **More robust identity (outlook):** one WiFi password per person (UniFi "Private Pre-Shared Keys",
   each mapped to its own VLAN and subnet) would identify a person even with rotating addresses. It needs
   VLAN interfaces, DHCP ranges and firewall rules per person on the gateway and a lookup by subnet.
