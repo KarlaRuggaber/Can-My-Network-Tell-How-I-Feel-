@@ -7,10 +7,11 @@ type Props = {
   height: number;
   onClick?: (p: echarts.ECElementEvent) => void;
   ariaLabel: string;
+  group?: string;          // charts in one group share the hover line and tooltip
 };
 
 /** Thin ECharts wrapper: one instance per mount, resized with its container. */
-export function Chart({ option, height, onClick, ariaLabel }: Props) {
+export function Chart({ option, height, onClick, ariaLabel, group }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const inst = useRef<echarts.ECharts | null>(null);
   const clickRef = useRef(onClick);
@@ -20,6 +21,7 @@ export function Chart({ option, height, onClick, ariaLabel }: Props) {
     if (!el.current) return;
     const c = echarts.init(el.current, undefined, { renderer: "svg" });
     inst.current = c;
+    if (group) { c.group = group; echarts.connect(group); }
     c.on("click", (p) => clickRef.current?.(p as echarts.ECElementEvent));
     // When the panel opens or closes, the page takes its new width at once and fades in: redraw once.
     // While the panel edge or the window is dragged, the size changes every frame: the chart is

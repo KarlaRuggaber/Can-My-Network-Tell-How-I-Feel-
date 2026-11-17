@@ -172,6 +172,10 @@ def test_person_sees_no_expectations_or_plan(portal, scripted):
     assert me.get("/api/profiles").json()[0]["condition"] == ""
     day = me.get(f"/api/profiles/{scripted}/days/2026-11-09").json()
     assert list(day["activity"]["devices"]) == ["Device 1"]
+    assert all(d["metrics"] == {} for d in tl["days"])                     # no raw metrics for the person
+    assert not any(k.startswith("C9_") for k in tl["baseline_stats"])
+    assert all(not f["sensitive"] for f in tl["observed"]["flags"])
+    assert "observed" in doc and doc["observed"]["tracks"][-1]["key"] == "sensitive_days"
     text = (str(tl) + str(me.get("/api/profiles").json()) + str(day)).lower()
     for word in ("insomnia", "elevated", DS, "test_a_phone"):
         assert word not in text, word

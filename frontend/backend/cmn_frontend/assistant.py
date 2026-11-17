@@ -242,6 +242,30 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
             for c in configured
         },
     }
+    obs = tl.get("observed")
+    if obs:
+        # Layer 1: observed behaviour in real units and the risk flags the overview shows. For the
+        # person, the timeline is already redacted (no crisis or self-harm sites).
+        def clock(m):
+            return None if m is None else f"{int(m // 60) % 24:02d}:{int(m % 60):02d}"
+        ctx["observed_behaviour"] = {
+            "note": ("what the network saw, before any model: quiet window at night (devices went quiet / "
+                     "came back online; asleep, away or off look the same), hours in use, minutes in use "
+                     "00:00-06:00, chat sessions, different sites. 'usual' = mean and SD over the baseline "
+                     "days. A flag names a risk over the recent days, not a single day."),
+            "usual": {k: {"mean": _r(v["mean"]), "sd": _r(v["sd"])} for k, v in obs.get("usual", {}).items()},
+            "flags": [{"title": f["title"], "days": f["days"], "count": f["count"], "of_last": f["window"],
+                       **({"what": f.get("names")} if f.get("names") else {})} for f in obs.get("flags", [])],
+            "days": {
+                d["date"]: {
+                    "went_quiet": clock(o.get("quiet_start")), "back_online": clock(o.get("quiet_end")),
+                    "quiet_hours": _r(o.get("quiet_hours"), 2), "hours_in_use": _r(o.get("online_hours"), 2),
+                    "minutes_in_use_at_night": o.get("night_minutes"), "chat_sessions": o.get("chat_sessions"),
+                    "different_sites": o.get("sites"),
+                }
+                for d in tl["days"] if (o := d.get("observed"))
+            },
+        }
     if not person_view:
         # Criteria without weights in the config: raw values only (no likelihood, outside the gate).
         # Never sent for the person (C9 is suicidality).

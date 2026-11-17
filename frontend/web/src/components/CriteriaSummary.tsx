@@ -99,7 +99,7 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
   return (
     <section className="card">
       <div className="card-head">
-        <h2><span className="step">1</span>Overview</h2>
+        <h2><span className="step">1</span>DSM-5 criteria</h2>
         <p className="sub">
           Which DSM-5 criteria pass the gate in each period. Each period is judged on its own days only.
         </p>

@@ -22,7 +22,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import assistant, auth, fasl
+from . import assistant, auth, fasl, observed
 from .groundtruth import blocks_on_day, day_summary, load_devices, load_plan, phase_by_day
 from .personas import PHASE_LABEL, persona_meta
 from .profiles import Device, Profile, ProfileStore
@@ -149,6 +149,10 @@ def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig) -
     present = {c: fasl.gate_present_rolling([d["L"][c] for d in days], gate.theta, gate.need_days,
                                             gate.window)
                for c in configured}
+    baseline_stats = _baseline_stats(days)
+    labels, _ = _metric_labels(str(settings.app_dir))
+    obs = observed.build(days, [rec.get("activity") for _, rec in records], baseline_stats,
+                         lambda k: labels.get(k, k))
     return {
         "profile": {**profile.to_json(), "has_plan": has_plan,
                     "phase_labels": {"baseline": "Baseline", "current": "Clinical" if has_plan else "Recent"}},
@@ -160,7 +164,8 @@ def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig) -
                  "phases": by_phase,
                  "rolling": {"present": present, "episode": fasl.episode_flags(present, gate),
                              "note": "rolling window over the last M days; mixes phases"}},
-        "baseline_stats": _baseline_stats(days),
+        "baseline_stats": baseline_stats,
+        "observed": obs,
     }
 
 
@@ -177,7 +182,15 @@ def for_person(tl: dict[str, Any]) -> dict[str, Any]:
     tl["profile"] = {**tl["profile"], "persona": None, "has_plan": False, "source": "",
                      "devices": [{"ip": "", "label": f"Device {i + 1}"} for i in range(len(tl["profile"]["devices"]))],
                      "phase_labels": {"baseline": "Usual weeks", "current": "Recent"}}
-    tl["days"] = [{**d, "ground_truth": None} for d in tl["days"]]
+    # Raw metrics of every criterion are not needed for the person's view, and some (crisis lines,
+    # self-harm sites) must not reach their browser at all; the scored criteria's parts stay.
+    tl["days"] = [{**d, "ground_truth": None, "metrics": {},
+                   "observed": dict(d["observed"]) if "observed" in d else None} for d in tl["days"]]
+    unscored = ("C3_", "C5_", "C6_", "C7_", "C9_")
+    tl["baseline_stats"] = {k: v for k, v in tl.get("baseline_stats", {}).items() if not k.startswith(unscored)}
+    if "observed" in tl:
+        tl["observed"] = {**tl["observed"], "flags": list(tl["observed"]["flags"])}
+        observed.for_person(tl["observed"], tl["days"])
     return tl
 
 

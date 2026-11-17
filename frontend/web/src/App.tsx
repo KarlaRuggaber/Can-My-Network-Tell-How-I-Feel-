@@ -9,18 +9,22 @@ import { UnscoredMetrics } from "./components/UnscoredMetrics";
 import { Assistant } from "./components/Assistant";
 import { AssistantSettings } from "./components/AssistantSettings";
 import { Login } from "./components/Login";
-import { PersonView } from "./components/PersonView";
+import { Overview } from "./components/Overview";
 import { MetricTrends } from "./components/MetricTrends";
 import { ProfileSettings } from "./components/ProfileSettings";
 import { episodeFlags, gatePresentRolling, phaseGate, type GateParams } from "./lib/gate";
 
 const PHASES: PhaseKey[] = ["baseline", "current"];
 
-// URL state: #/<profile>/<day>/<criterion>, or #/settings, so a view can be bookmarked.
-function readHash(): { pid?: string; day?: string; crit?: CritKey; settings: boolean } {
-  const [pid, day, crit] = window.location.hash.replace(/^#\/?/, "").split("/");
+export type Tab = "overview" | "details";
+const TABS: Tab[] = ["overview", "details"];
+
+// URL state: #/<profile>/<day>/<criterion>/<tab>, or #/settings, so a view can be bookmarked.
+function readHash(): { pid?: string; day?: string; crit?: CritKey; tab?: Tab; settings: boolean } {
+  const [pid, day, crit, tab] = window.location.hash.replace(/^#\/?/, "").split("/");
   if (pid === "settings") return { settings: true };
-  return { pid: pid || undefined, day: day || undefined, crit: (crit as CritKey) || undefined, settings: false };
+  return { pid: pid || undefined, day: day || undefined, crit: (crit as CritKey) || undefined,
+    tab: TABS.includes(tab as Tab) ? (tab as Tab) : undefined, settings: false };
 }
 
 /** Login gate: the portal looks the same for everyone; the role decides what it offers. */
@@ -74,6 +78,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [crit, setCrit] = useState<CritKey | null>(init.crit ?? null);
   const [gate, setGate] = useState<GateParams | null>(null);
   const [rolling, setRolling] = useState(false);   // optional extra view; mixes phases
+  const [tab, setTab] = useState<Tab>(init.tab ?? "overview");   // layer 1 (observed) or layer 2 (model)
 
   const loadProfiles = useCallback((select?: string) =>
     api.profiles().then((p) => {
@@ -100,9 +105,9 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   }, [pid, settings]);
 
   useEffect(() => {
-    const h = settings ? "#/settings" : pid ? `#/${pid}/${day ?? ""}/${crit ?? ""}` : "";
+    const h = settings ? "#/settings" : pid ? `#/${pid}/${day ?? ""}/${crit ?? ""}/${multi ? tab : ""}` : "";
     if (h) window.history.replaceState(null, "", h);
-  }, [pid, day, crit, settings]);
+  }, [pid, day, crit, settings, tab, multi]);
 
   // follow links / manual edits of the hash (replaceState above does not fire this event)
   useEffect(() => {
@@ -112,6 +117,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
       if (h.pid) setPid(h.pid);
       if (h.day) setDay(h.day);   // a link without a day keeps the current one
       setCrit(h.crit ?? null);
+      if (h.tab) setTab(h.tab);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -222,7 +228,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
       {!settings && profiles.length > 0 && (
         <>
-          {multi && (
+          {multi && tab === "details" && (
             <details className="gatebar card">
               <summary>
                 <span className="gate-title">Gate</span>
@@ -264,6 +270,17 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                 </dl>
               </section>}
 
+              {multi && tl.status === "ready" && (
+                <nav className="layer-tabs" role="tablist" aria-label="View">
+                  <button role="tab" aria-selected={tab === "overview"} className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>
+                    Overview <span className="tab-sub">what the network observed</span>
+                  </button>
+                  <button role="tab" aria-selected={tab === "details"} className={tab === "details" ? "active" : ""} onClick={() => setTab("details")}>
+                    Details <span className="tab-sub">DSM-5 model, metrics, days</span>
+                  </button>
+                </nav>
+              )}
+
               {tl.status === "pending" && (
                 <section className="card">
                   <h2>Data is being prepared</h2>
@@ -274,12 +291,20 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
               {tl.status === "ready" && phases && !multi && (
                 <>
-                  <PersonView tl={tl} cfg={cfg} recent={phases.current} gate={gate} />
+                  <Overview tl={tl} person selectedDay={day} onSelectDay={setDay} />
                   <Assistant open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person focus={null} />
                 </>
               )}
 
-              {tl.status === "ready" && phases && multi && (
+              {tl.status === "ready" && phases && multi && tab === "overview" && (
+                <>
+                  <Overview tl={tl} person={false} selectedDay={day} onSelectDay={setDay} />
+                  <Assistant open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false}
+                    focus={day ? `overview, day ${day}` : "overview"} />
+                </>
+              )}
+
+              {tl.status === "ready" && phases && multi && tab === "details" && (
                 <>
                   <CriteriaSummary tl={tl} cfg={cfg} phases={phases} gate={gate}
                     selected={activeCrit} onSelect={setCrit} />

@@ -67,6 +67,7 @@ export interface Day {
   ground_truth: GroundTruthSummary | null;   // only for scripted sources
   metrics: Record<string, number | string | boolean | null>;
   hourly: number[] | null;   // packets per hour of the day
+  observed?: DayObserved | null;
   L: Record<CritKey, number | null>;
   parts: Partial<Record<CritKey, Record<string, MetricPart>>>;
 }
@@ -79,6 +80,34 @@ export interface PhaseInfo {
   criteria: Partial<Record<CritKey, { days_over: number; present: boolean }>>;
   planned_first: string | null; planned_last: string | null; planned_days: number;
   counted: string[]; in_progress: string[];
+}
+
+/** Layer 1: what the network saw on a day (times in minutes from midnight; negative = evening before). */
+export interface DayObserved {
+  quiet_start: number | null; quiet_end: number | null; quiet_hours: number | null;
+  online_hours: number | null; night_minutes: number | null;
+  chat_sessions: number | null; sites: number | null;
+  active_hourly: number[] | null;     // minutes in use per hour
+  has_data: boolean;
+  deviation: Record<string, number | null>;   // z against the usual range
+  sensitive?: { metric: string; label: string; value: number | null }[];   // clinicians and parents only
+  sensitive_days?: number;
+}
+
+export interface ObservedTrack {
+  key: string; label: string; unit: string; sensitive: boolean;
+  risk: number[];          // direction(s) that count as a risk: 1 higher than usual, -1 lower
+}
+export interface RiskFlag {
+  id: string; title: string; track: string; direction: number; days: string[]; count: number;
+  window: number; unit: string; phrase: string; text: string; sensitive: boolean; names?: string[];
+}
+export interface Observed {
+  tracks: ObservedTrack[];
+  usual: Record<string, { mean: number; sd: number; n: number }>;
+  flags: RiskFlag[];
+  params: { active_packets: number; deviation_z: number; flag_days: number; flag_window: number;
+    sensitive_window: number; night_from_hour: number; night_to_hour: number };
 }
 
 export interface Timeline {
@@ -94,6 +123,7 @@ export interface Timeline {
     rolling: { present: Partial<Record<CritKey, boolean[]>>; episode: boolean[]; note: string };
   };
   baseline_stats: Record<string, { mean: number; sd: number; n: number }>;
+  observed?: Observed;
 }
 
 export interface Block {
