@@ -282,25 +282,32 @@ The mini-PC serves the portal; the laptop keeps computing (the export needs 1–
 
 | File | Purpose |
 |---|---|
-| `Dockerfile`, `docker-compose.yml` | Container `cmn-portal` on top of the app's `app-app` image, host network, `127.0.0.1:8600` only, 512 MB limit, data mounted read-only |
+| `Dockerfile`, `docker-compose.yml` | Container `cmn-portal-v2` on top of the app's `app-app` image, host network, `127.0.0.1:8610` only, 512 MB limit, data mounted read-only, own home `/var/lib/cmn-portal-v2/home` |
 | `../whisper/Dockerfile` | Container `cmn-whisper` (dictation), same base image, `127.0.0.1:8601` only, 1.5 GB and 2 CPU limit, model kept in `/var/lib/cmn-whisper/models` and unloaded after 10 idle minutes |
-| `deploy-gateway.sh` | Builds the UI, copies the code to `/opt/cmn-portal/frontend`, (re)builds and starts the container |
-| `sync-gateway.sh [--watch 900]` | Pulls new partitions and plans and the portal's `profiles.json`, runs the export on the laptop, pushes the day records to `/var/lib/cmn-portal/cache` |
+| `deploy-gateway.sh` | Builds the UI, copies the code to `/opt/cmn-portal-v2/frontend`, copies v1's logins, people and assistant settings on the first deploy, (re)builds and starts both containers |
+| `switch-gateway.sh v1\|v2 [--keep]` | Points the tailnet URL to v1 (`8600`) or v2 (`8610`) and stops the other one (with `--keep` it keeps running); `status` shows what runs |
+| `sync-gateway.sh [--watch 900]` | Pulls new partitions and plans and v2's `profiles.json`, runs the export on the laptop, pushes the day records to `/var/lib/cmn-portal/cache` (read by v1 and v2) |
 | `gateway.env.example` | Host, user, key and sources; copy to `gateway.env` to change them |
 
 One-time steps:
 
 1. Tailscale admin console → DNS → enable **HTTPS Certificates** (needed by `tailscale serve`).
 2. `frontend/deploy/deploy-gateway.sh`, then `frontend/deploy/sync-gateway.sh`.
-3. Logins on the mini-PC: `sudo docker exec -it cmn-portal python -m cmn_frontend.users add …`
-   (or copy `users.json` from the laptop to `/var/lib/cmn-portal/home/`). The assistant is set up
+3. Logins on the mini-PC: `sudo docker exec -it cmn-portal-v2 python -m cmn_frontend.users add …`
+   (or copy `users.json` from the laptop to `/var/lib/cmn-portal-v2/home/`). The assistant is set up
    in the portal under Settings → Assistant.
-4. Publish in the tailnet: `sudo tailscale serve --bg 8600` and allow HTTPS on `tailscale0` in
+4. Publish in the tailnet: `switch-gateway.sh v2` (runs `sudo tailscale serve --bg 8610`) and allow HTTPS on `tailscale0` in
    `/etc/nftables.conf` (`iifname "tailscale0" tcp dport 443 accept`, after a backup and
    `sudo nft -c -f`). The portal is then at `https://minipc.<tailnet>.ts.net`.
 
+**v1 and v2 side by side.** v1 (tag `frontend-v1`) stays installed in `/opt/cmn-portal` (container
+`cmn-portal`, port 8600, home `/var/lib/cmn-portal/home`); v2 runs from `/opt/cmn-portal-v2`. Only
+one is shown at the tailnet URL, and the other is stopped to free memory for the live run. A stopped
+container keeps its image and data and stays stopped after a reboot. For the report's screenshots
+of v1, run `switch-gateway.sh v1`, and `switch-gateway.sh v2` afterwards.
+
 Rollback: `sudo tailscale serve reset`, restore the nftables backup, `sudo docker compose -f
-/opt/cmn-portal/frontend/deploy/docker-compose.yml down`.
+/opt/cmn-portal-v2/frontend/deploy/docker-compose.yml down` (v2) or `sudo docker stop cmn-portal` (v1).
 
 Do not put it on the public internet: the data is personal (health-related inferences), and the
 login has no rate limiting or second factor.

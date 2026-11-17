@@ -1,20 +1,23 @@
-# Results portal on the gateway mini-PC:
-#   sudo docker compose -f /opt/cmn-portal/frontend/deploy/docker-compose.yml up -d --build
+# Results portal v2 on the gateway mini-PC, next to v1 (tag frontend-v1, /opt/cmn-portal, port 8600):
+#   sudo docker compose -f /opt/cmn-portal-v2/frontend/deploy/docker-compose.yml up -d --build
 #
-# Docker runs there with "iptables": false, so the container uses the host network. The portal
-# listens on 127.0.0.1:8600 only; `tailscale serve` publishes it inside the tailnet (HTTPS).
-# Day records are computed on the laptop and pushed to /var/lib/cmn-portal/cache (sync-gateway.sh).
+# Docker runs there with "iptables": false, so the containers use the host network. The portal
+# listens on 127.0.0.1:8610 only; `tailscale serve` publishes v1 or v2 inside the tailnet (HTTPS),
+# see switch-gateway.sh. Day records are computed on the laptop and pushed to
+# /var/lib/cmn-portal/cache (sync-gateway.sh); v1 and v2 read the same records. v2 has its own
+# home (logins, people, care plans, notes, assistant settings), copied from v1 on the first deploy.
 # Dictation: the "whisper" service turns recordings into text on this machine (127.0.0.1:8601 only);
 # the portal passes recordings to it after checking the login. No audio leaves the mini-PC.
-name: cmn-portal
+name: cmn-portal-v2
 services:
   portal:
     build:
-      context: /opt/cmn-portal
+      context: /opt/cmn-portal-v2
       dockerfile: frontend/deploy/Dockerfile
       network: host
-    image: cmn-portal:latest
-    container_name: cmn-portal
+    image: cmn-portal-v2:latest
+    container_name: cmn-portal-v2
+    command: ["uvicorn", "cmn_frontend.api:app", "--host", "127.0.0.1", "--port", "8610"]
     network_mode: host
     restart: unless-stopped
     mem_limit: 512m            # the live run needs the memory; the portal stays far below this
@@ -30,12 +33,12 @@ services:
       - /opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet:/data/processed_parquet:ro
       - /var/lib/traffic-executor:/data/run:ro
       - /var/lib/cmn-portal/cache:/data/cache:ro
-      - /var/lib/cmn-portal/home:/data/home
+      - /var/lib/cmn-portal-v2/home:/data/home
       - /opt/can-my-network/app_pcap_to_dsm5/app:/repo/app_pcap_to_dsm5/app:ro
       - /opt/can-my-network/traffic-runner/config/devices.csv:/repo/traffic-runner/config/devices.csv:ro
   whisper:
     build:
-      context: /opt/cmn-portal
+      context: /opt/cmn-portal-v2
       dockerfile: frontend/whisper/Dockerfile
       network: host
     image: cmn-whisper:latest

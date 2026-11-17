@@ -3,7 +3,7 @@
 #   1. pull new Parquet partitions and the runner's plans/logs from the mini-PC,
 #   2. take the people configured in the portal (profiles.json) from the mini-PC,
 #   3. run the export on the laptop (evaluation tables where present, else the metric code),
-#   4. push the small day records to /var/lib/cmn-portal/cache on the mini-PC.
+#   4. push the small day records to /var/lib/cmn-portal/cache on the mini-PC (read by v1 and v2).
 #   frontend/deploy/sync-gateway.sh            # once
 #   frontend/deploy/sync-gateway.sh --watch 900 # every 15 minutes
 set -euo pipefail
@@ -22,13 +22,13 @@ once() {
     "$GW:/var/lib/traffic-executor/" "$DATA/run/"
   echo "== people configured in the portal"
   mkdir -p "$HOME_DIR"
-  if gw 'sudo test -f /var/lib/cmn-portal/home/profiles.json'; then
-    gw 'sudo cat /var/lib/cmn-portal/home/profiles.json' > "$HOME_DIR/profiles.json.tmp" && mv "$HOME_DIR/profiles.json.tmp" "$HOME_DIR/profiles.json"
+  if gw "sudo test -f $PORTAL_HOME/profiles.json"; then
+    gw "sudo cat $PORTAL_HOME/profiles.json" > "$HOME_DIR/profiles.json.tmp" && mv "$HOME_DIR/profiles.json.tmp" "$HOME_DIR/profiles.json"
   fi
   echo "== export on the laptop"
   (cd "$FRONTEND/backend" && .venv/bin/python -m cmn_frontend.export --jobs 3 $SOURCES 2>&1 | grep -E '^[0-9:]+ [^ ]+: \{' || true)
   echo "== push day records"
-  rsync -a --delete -e "$RSYNC_SSH" --rsync-path="sudo rsync" "$DATA/frontend_cache/" "$GW:/var/lib/cmn-portal/cache/"
+  rsync -a --delete -e "$RSYNC_SSH" --rsync-path="sudo rsync" "$DATA/frontend_cache/" "$GW:$PORTAL_CACHE/"
   echo "== done $(date '+%H:%M')"
 }
 
