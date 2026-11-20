@@ -53,6 +53,56 @@ describe("Assistant answer controls", () => {
   });
 });
 
+describe("Assistant orb", () => {
+  beforeEach(() => { vi.clearAllMocks(); resetConversations(); });
+  afterEach(() => { vi.useRealTimers(); });
+  const orbs = () => document.querySelectorAll(".assistant-orb");
+
+  it("shows a paused orb above a greeting and the suggestions when the conversation is empty", async () => {
+    vi.mocked(api.assistant).mockResolvedValue({ enabled: true, notice: "" } as never);
+    render(<Assistant open onToggle={() => undefined} profileId="p1" person focus={null} />);
+    await screen.findByRole("group", { name: "Suggested questions" });
+    expect(screen.getByText("Ask where a result comes from.")).toBeTruthy();
+    const big = document.querySelector(".assistant-orb-64") as HTMLElement;
+    expect(big.getAttribute("aria-hidden")).toBe("true");
+    expect(big.getAttribute("data-paused")).toBe("true");
+    // tab and header carry a paused small orb
+    expect(document.querySelectorAll(".assistant-orb-20[data-paused='true']").length).toBe(2);
+  });
+
+  it("waits with an orb and an elapsed-time status, and the slow hint appears after 15 s", async () => {
+    vi.mocked(api.assistant).mockResolvedValue({ enabled: true, notice: "" } as never);
+    vi.mocked(api.ask).mockImplementation(() => new Promise(() => undefined));
+    render(<Assistant open onToggle={() => undefined} profileId="p1" person focus={null} />);
+    const pill = await screen.findByRole("button", { name: "Which days stood out?" });
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(pill); });
+    expect(screen.getByRole("status").textContent).toContain("Composing, 0 s");
+    expect(screen.queryByText(/Thinking/)).toBeNull();
+    expect(document.querySelector(".assistant-orb-64[data-paused='false']")).toBeTruthy();
+    expect(screen.queryByText("This can take up to half a minute.")).toBeNull();
+    await act(async () => { vi.advanceTimersByTime(12_000); });
+    expect(screen.getByRole("status").textContent).toContain("Composing, 12 s");
+    await act(async () => { vi.advanceTimersByTime(4_000); });
+    expect(screen.getByText("This can take up to half a minute.")).toBeTruthy();
+  });
+
+  it("shows a small orb after the streaming text and removes it when the answer is complete", async () => {
+    vi.mocked(api.assistant).mockResolvedValue({ enabled: true, notice: "" } as never);
+    let finish: () => void = () => undefined;
+    vi.mocked(api.ask).mockImplementation((_id, _m, _f, onText) => new Promise<void>((res) => { onText("Fewer quiet hours"); finish = res; }));
+    render(<Assistant open onToggle={() => undefined} profileId="p1" person focus={null} />);
+    const pill = await screen.findByRole("button", { name: "Which days stood out?" });
+    await act(async () => { fireEvent.click(pill); });
+    await screen.findByText("Fewer quiet hours");
+    expect(document.querySelector(".bubble-assistant .stream-orb")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();     // text is flowing: no "Composing" any more
+    await act(async () => { finish(); });
+    expect(document.querySelector(".bubble-assistant .stream-orb")).toBeNull();
+    expect(orbs().length).toBe(2);                       // only the tab and header marks remain
+  });
+});
+
 describe("followUps", () => {
   it("gives 2–3 short questions, flag first, without clinical terms for the person", () => {
     expect(followUps(true, { flag: "quiet_short", day: "2025-11-04" }))
