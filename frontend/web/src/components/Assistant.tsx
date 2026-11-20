@@ -109,14 +109,14 @@ function useElapsed(active: boolean): number {
 }
 const SLOW_HINT_AFTER = 15;   // seconds before "can take up to half a minute" appears
 
-/** The pending answer: the orb and an elapsed-time status; the slow hint fades in after a while. */
-function Composing() {
+/** The pending answer: the small orb and an elapsed-time status; the slow hint fades in after a while. */
+function Thinking() {
   const secs = useElapsed(true);
   return (
     <div className="composing">
-      <AssistantOrb size={64} />
+      <AssistantOrb size={20} />
       <div role="status" className="composing-text">
-        <span>Composing, {secs} s</span>
+        <span>Thinking, {secs} s</span>
         {secs >= SLOW_HINT_AFTER && <span className="composing-hint muted small">This can take up to half a minute.</span>}
       </div>
     </div>
@@ -290,7 +290,7 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
                     {t.role === "assistant" && t.sources && !(busy && i === turns.length - 1) && <AnswerSources sources={t.sources} onJump={onJump} />}
                   </Fragment>
                 )
-                : <Composing key={i} />
+                : <Thinking key={i} />
             ))}
             {/* controls under the latest answer: "Shorter" / "More detail" refer to the answer just given */}
             {!busy && turns[turns.length - 1]?.role === "assistant" && turns[turns.length - 1].content && (

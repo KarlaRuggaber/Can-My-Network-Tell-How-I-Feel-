@@ -43,7 +43,8 @@
 .assistant-tab-icon .assistant-orb { transform: scale(0.9); }
 .drawer-head-orb { margin-top: 2px; }
 .drawer-head-text { flex: 1; min-width: 0; }
-.composing { display: flex; align-items: center; gap: 12px; padding: 4px 2px; }
+.composing { display: flex; align-items: flex-start; gap: 8px; padding: 4px 2px; }
+.composing > :first-child { flex: none; margin-top: -1px; }
 .composing-text { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--text2); }
 .composing-hint { animation: composing-in 400ms ease both; }
 @keyframes composing-in { from { opacity: 0; } to { opacity: 1; } }

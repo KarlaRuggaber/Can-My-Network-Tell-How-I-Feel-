@@ -77,12 +77,13 @@ describe("Assistant orb", () => {
     const pill = await screen.findByRole("button", { name: "Which days stood out?" });
     vi.useFakeTimers();
     await act(async () => { fireEvent.click(pill); });
-    expect(screen.getByRole("status").textContent).toContain("Composing, 0 s");
-    expect(screen.queryByText(/Thinking/)).toBeNull();
-    expect(document.querySelector(".assistant-orb-64[data-paused='false']")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("Thinking, 0 s");
+    expect(screen.queryByText(/Composing/)).toBeNull();
+    expect(document.querySelector(".composing .assistant-orb-20[data-paused='false']")).toBeTruthy();
+    expect(document.querySelector(".composing .assistant-orb-64")).toBeNull();
     expect(screen.queryByText("This can take up to half a minute.")).toBeNull();
     await act(async () => { vi.advanceTimersByTime(12_000); });
-    expect(screen.getByRole("status").textContent).toContain("Composing, 12 s");
+    expect(screen.getByRole("status").textContent).toContain("Thinking, 12 s");
     await act(async () => { vi.advanceTimersByTime(4_000); });
     expect(screen.getByText("This can take up to half a minute.")).toBeTruthy();
   });
@@ -96,7 +97,7 @@ describe("Assistant orb", () => {
     await act(async () => { fireEvent.click(pill); });
     await screen.findByText("Fewer quiet hours");
     expect(document.querySelector(".bubble-assistant .stream-orb")).toBeTruthy();
-    expect(screen.queryByRole("status")).toBeNull();     // text is flowing: no "Composing" any more
+    expect(screen.queryByRole("status")).toBeNull();     // text is flowing: no "Thinking" any more
     await act(async () => { finish(); });
     expect(document.querySelector(".bubble-assistant .stream-orb")).toBeNull();
     expect(orbs().length).toBe(2);                       // only the tab and header marks remain
