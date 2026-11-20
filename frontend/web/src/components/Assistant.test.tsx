@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { api, type ChatTurn } from "../api";
+import { resetSpeechStatus } from "./Dictate";
 import { Assistant, followUps, MORE_DETAIL, SHORTER, resetConversations } from "./Assistant";
 
 vi.mock("../api", async (orig) => {
@@ -50,6 +51,20 @@ describe("Assistant answer controls", () => {
     const pill = await screen.findByRole("button", { name: "Which days stood out?" });
     await act(async () => { fireEvent.click(pill); });
     expect(screen.queryByRole("button", { name: "Make this answer shorter" })).toBeNull();
+  });
+});
+
+describe("Assistant dictation", () => {
+  beforeEach(() => resetSpeechStatus());
+  afterEach(() => { vi.unstubAllGlobals(); resetSpeechStatus(); });
+  it("shows a disabled, explained mic when the speech service is off", async () => {
+    vi.stubGlobal("MediaRecorder", class {});
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: vi.fn() } });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ available: false }), { status: 200 })));
+    vi.mocked(api.assistant).mockResolvedValue({ enabled: true, notice: "" } as never);
+    render(<Assistant open onToggle={() => undefined} profileId="p1" person={false} focus="overview" />);
+    const mic = await screen.findByRole("button", { name: /dictation is off/i }) as HTMLButtonElement;
+    expect(mic.disabled).toBe(true);
   });
 });
 

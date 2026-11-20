@@ -503,6 +503,7 @@ button.pill-btn:hover { box-shadow: 0 0 0 1px var(--ink); }
   font: inherit; font-size: 12.5px; cursor: pointer; }
 .dictate-btn:hover:not(:disabled) { border-color: var(--ink); }
 .dictate-btn:disabled { opacity: .45; cursor: default; }
+.dictate-btn.unavailable:disabled { opacity: 1; color: var(--muted); background: var(--beige-faint, transparent); cursor: not-allowed; }
 .dictate-btn.recording { border-color: var(--alert); color: var(--alert); background: var(--alert-soft); font-variant-numeric: tabular-nums; }
 .dictate-btn.working { color: var(--muted); cursor: default; }
 .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--alert); animation: rec-pulse 1.1s ease-in-out infinite; }

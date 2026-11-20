@@ -8,9 +8,17 @@ const canRecord = () =>
   typeof window !== "undefined" && typeof window.MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
 
 let status: Promise<number | null> | null = null;   // one check per page load: max seconds, or null if off
+/** Forget the cached service check (tests). */
+export const resetSpeechStatus = () => { status = null; };
 /** Whether dictation is available: the browser can record and the local Whisper service runs. */
 export function useSpeech(): number | null {
-  const [max, setMax] = useState<number | null>(null);
+  const m = useSpeechState();
+  return typeof m === "number" ? m : null;
+}
+
+/** Like useSpeech, but tells "still checking" and "service off" apart (the second may show a disabled mic). */
+function useSpeechState(): number | null | undefined {
+  const [max, setMax] = useState<number | null | undefined>(canRecord() ? undefined : null);
   useEffect(() => {
     if (!canRecord()) return;
     status ??= api.speechStatus()
@@ -28,16 +36,19 @@ export const appendText = (old: string, t: string) => (old.trim() ? `${old.trimE
 
 type Props = {
   onText: (text: string) => void; disabled?: boolean; inField?: boolean;
+  showUnavailable?: boolean;  // browser can record but the service is off: show a disabled mic with the reason
   label?: string;          // what is dictated, for the button's name, e.g. "your answer" (several mics on one page)
 };
 
 /**
  * A microphone button: records in the browser and adds the spoken words to a text field. Speech is
  * turned into text by Whisper on the study's own computer; the recording is not stored and not sent
- * to any other service. Hidden when the browser cannot record or the service is not running.
+ * to any other service. Hidden when the browser cannot record; when the service is not running it is hidden too,
+ * unless showUnavailable asks for a disabled button that explains why.
  */
-export function Dictate({ onText, disabled, inField, label }: Props) {
-  const max = useSpeech();
+export const DICTATION_OFF = "Dictation is off: the speech service on the study computer is not running.";
+export function Dictate({ onText, disabled, inField, label, showUnavailable }: Props) {
+  const max = useSpeechState();
   const [state, setState] = useState<"idle" | "recording" | "working">("idle");
   const [secs, setSecs] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +68,17 @@ export function Dictate({ onText, disabled, inField, label }: Props) {
     return () => window.clearTimeout(t);
   }, [error]);
 
-  if (max === null) return null;
+  if (max === undefined) return null;
+  if (max === null) {
+    if (!showUnavailable || !canRecord()) return null;
+    return (
+      <span className={`dictate${inField ? " in-field" : ""}`} title={DICTATION_OFF}>
+        <button type="button" className="dictate-btn unavailable" disabled aria-disabled="true" aria-label={DICTATION_OFF} title={DICTATION_OFF}>
+          <MicIcon />
+        </button>
+      </span>
+    );
+  }
 
   const stop = () => {
     window.clearInterval(timer.current);

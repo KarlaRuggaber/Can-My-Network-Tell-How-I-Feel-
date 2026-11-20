@@ -324,7 +324,7 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
             <input value={input} onChange={(e) => setInput(e.target.value)} disabled={busy}
               placeholder={person ? "e.g. Why was last Tuesday different?" : "e.g. Why does Sleep count as present on 31/10?"}
               aria-label="Your question" />
-            <Dictate disabled={busy} onText={(t) => setInput((old) => appendText(old, t))} />
+            <Dictate showUnavailable disabled={busy} onText={(t) => setInput((old) => appendText(old, t))} />
             <button className="btn btn-primary" type="submit" disabled={busy || !input.trim()}>{busy ? "…" : "Ask"}</button>
           </form>
           <div className="row-between">
