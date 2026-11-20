@@ -6,17 +6,16 @@
   network can tell about each), the risks to flag and their sensitivity, each with a reason.
 
 Suggestions only fill the forms; nothing is saved until a person reviews and saves them. They use the
-model configured under Settings → Assistant (Claude with structured output), and every answer is
+model configured under Settings → Assistant (Claude or a local model, with structured output), and every answer is
 validated before it reaches the browser.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
-from . import care as care_mod
+from . import care as care_mod, llm
 from .observability import OBSERVABILITY, RISK_CRITERIA
 
 _TIME = {"anyOf": [{"type": "string", "pattern": r"^([01]\d|2[0-3]):[0-5]\d$"}, {"type": "null"}]}
@@ -91,39 +90,10 @@ add facts that are not in the notes. Answer in English.
 """
 
 
-def _first_json(text: str) -> dict[str, Any]:
-    m = re.search(r"\{.*\}", text, re.S)
-    if not m:
-        raise ValueError("the assistant gave no JSON")
-    return json.loads(m.group(0))
-
-
 def complete_json(cfg: dict[str, Any], system: str, user: str, schema: dict[str, Any],
-                  anthropic_client: Any = None) -> dict[str, Any]:
-    """One structured answer from Claude (raises ValueError with a short reason)."""
-    import anthropic
-    client = anthropic_client
-    if client is None:
-        client = anthropic.Anthropic(api_key=cfg["api_key"]) if cfg["api_key"] else anthropic.Anthropic()
-    try:
-        msg = client.beta.messages.create(
-            model=cfg["model"], max_tokens=8000, system=system,
-            messages=[{"role": "user", "content": user}],
-            output_config={"format": {"type": "json_schema", "schema": schema}, "effort": "low"},
-            betas=["server-side-fallback-2026-07-01"], fallbacks="default",
-        )
-    except anthropic.AuthenticationError:
-        raise ValueError("no valid Anthropic credentials (Settings → Assistant)")
-    except anthropic.RateLimitError:
-        raise ValueError("the assistant is busy, try again in a minute")
-    except anthropic.APIStatusError as e:
-        raise ValueError(f"the assistant failed ({e.status_code})")
-    except anthropic.APIConnectionError:
-        raise ValueError("could not reach the Anthropic API")
-    if msg.stop_reason == "refusal":
-        raise ValueError("the assistant could not answer this")
-    text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
-    return json.loads(text)
+                  client: Any = None) -> dict[str, Any]:
+    """One structured answer from the configured provider (raises ValueError with a short reason)."""
+    return llm.complete_json(cfg, system, user, schema, client)
 
 
 def suggest_routine(cfg: dict[str, Any], text: str, **clients: Any) -> dict[str, Any]:
