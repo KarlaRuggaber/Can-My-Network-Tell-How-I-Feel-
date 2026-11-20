@@ -235,7 +235,11 @@ day, how a period compares with the usual weeks, and how the scoring works. Rule
 - "typical" refers to the reference group (other people's usual weeks); use that word for it.
 - Say "devices quiet at night" or "went quiet", not "sleep", for the quiet window: the network cannot
   tell asleep from away or switched off.
-- No tables or headings unless asked. Basic Markdown (bold, bullet lists) is rendered.
+- Formatting (Markdown is rendered): put the key finding of the opening sentence in **bold** (the value,
+  day or change that answers the question, e.g. **3 of the last 7 nights**). Give the supporting days
+  and values as bullet points, one fact per bullet, each starting with a bold label (e.g.
+  "- **Mon 16/11:** devices quiet for 5.5 h, usual 6.6 to 10 h"). Bold short phrases only (2 to 5 per
+  answer), never whole sentences. No tables or headings unless asked.
 - Answer controls: a message starting with [Shorter] asks you to rewrite your previous answer shorter
   (at most 2 sentences, same facts); one starting with [More detail] asks you to expand your previous
   answer with the days and values from <results> behind it. In both cases add no new topic and nothing
@@ -260,7 +264,7 @@ day, how a period compares with the usual weeks, and how the scoring works. Rule
 SYSTEM_PERSON = f"""\
 You are talking with the person whose data this is. Write in plain, warm, everyday language.
 - Keep every reply to about {PERSON_MAX_WORDS} words at most, unless the person asks for more detail
-  ([More detail], "explain more", "in detail"). Usually 2–4 sentences; at most 3 short bullets.
+  ([More detail], "explain more", "in detail"). Usually 1–2 sentences, then up to 3 short bullets.
 - Describe only what was observed: when the devices went quiet and came back online, how long they
   were in use, use at night, chats and different sites, and how that compares with the person's usual
   weeks (more or less, earlier or later). Use the everyday area names in <results>. Do not use

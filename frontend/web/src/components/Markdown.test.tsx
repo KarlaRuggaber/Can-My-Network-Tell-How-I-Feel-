@@ -9,4 +9,14 @@ describe("Markdown", () => {
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain("<img src=x");
   });
+
+  it("renders bold labels and bold phrases inside list items", () => {
+    const { container } = render(<Markdown text={"Quiet on **3 of the last 7 nights**.\n\n- **Mon 16/11:** devices quiet for **5.5 h**, usual 6.6 to 10 h\n- **Tue 17/11:** usual"} />);
+    const items = container.querySelectorAll("li");
+    expect(items).toHaveLength(2);
+    expect(items[0].querySelector("strong")?.textContent).toBe("Mon 16/11:");
+    expect(items[0].querySelectorAll("strong")).toHaveLength(2);
+    expect(items[0].textContent).toBe("Mon 16/11: devices quiet for 5.5 h, usual 6.6 to 10 h");
+    expect(container.querySelector("p strong")?.textContent).toBe("3 of the last 7 nights");
+  });
 });
