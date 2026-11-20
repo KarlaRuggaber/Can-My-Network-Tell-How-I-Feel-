@@ -257,7 +257,15 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
               : "Explains what the results show and how they come about, from this person's data only. No diagnosis."}
           </p>
         </div>
-        <button className="drawer-close" onClick={() => onToggle(false)} aria-label="Close the assistant" title="Close">×</button>
+        <div className="drawer-actions">
+          {status?.enabled && (
+            <button type="button" className="drawer-icon-btn" onClick={() => { setTurns([]); setAskedFlag(null); }}
+              disabled={busy || turns.length === 0} aria-label="New conversation" title="New conversation">
+              <NewChatIcon />
+            </button>
+          )}
+          <button className="drawer-close" onClick={() => onToggle(false)} aria-label="Close the assistant" title="Close">×</button>
+        </div>
       </div>
 
       <div className="drawer-body">
@@ -327,14 +335,22 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
             <Dictate showUnavailable disabled={busy} onText={(t) => setInput((old) => appendText(old, t))} />
             <button className="btn btn-primary" type="submit" disabled={busy || !input.trim()}>{busy ? "…" : "Ask"}</button>
           </form>
-          <div className="row-between">
-            {status.notice ? <p className="muted small">{status.notice}</p> : <span />}
-            {turns.length > 0 && <button type="button" className="btn btn-quiet small" onClick={() => { setTurns([]); setAskedFlag(null); }} disabled={busy}>New conversation</button>}
-          </div>
+          {status.notice && <p className="muted small">{status.notice}</p>}
         </div>
       )}
     </aside>
     </>,
     document.body,
+  );
+}
+
+/** "Start a new chat": a speech bubble with a pencil (the usual compose icon). */
+function NewChatIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M11 4H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h1v3.5L11.5 17H18a2 2 0 0 0 2-2v-4" />
+      <path d="M17.5 3.5a1.8 1.8 0 0 1 2.5 2.5L14 12l-3.2.8.8-3.2z" />
+    </svg>
   );
 }

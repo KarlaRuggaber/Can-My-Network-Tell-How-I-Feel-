@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { AutoTextarea } from "./AutoTextarea";
 import {
   api, CRIT_KEYS, type AwayPeriod, type Care, type CarePurpose, type Clinical, type Config, type CritKey, type FocusSuggestion,
   type Routine, type Sensitivity, type SourceDevice, type Timeline,
@@ -268,19 +269,19 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
         <div className="form-grid">
           <label className="field">Background and history
 <span className="dictate-wrap">
-              <textarea rows={4} value={clinical.history} onChange={(e) => setClinical({ ...clinical, history: e.target.value })}
+              <AutoTextarea rows={4} value={clinical.history} onChange={(e) => setClinical({ ...clinical, history: e.target.value })}
                 placeholder="e.g. first depressive episode in 2025, admitted to LIFE in October; sleep problems since the summer" />
               <Dictate inField onText={(t) => setClinical((c) => ({ ...c, history: appendText(c.history, t) }))} />
             </span></label>
           <label className="field">Current concerns
 <span className="dictate-wrap">
-              <textarea rows={4} value={clinical.concerns} onChange={(e) => setClinical({ ...clinical, concerns: e.target.value })}
+              <AutoTextarea rows={4} value={clinical.concerns} onChange={(e) => setClinical({ ...clinical, concerns: e.target.value })}
                 placeholder="e.g. withdrawal from friends, late nights, passive suicidal thoughts reported two weeks ago" />
               <Dictate inField onText={(t) => setClinical((c) => ({ ...c, concerns: appendText(c.concerns, t) }))} />
             </span></label>
           <label className="field">Treatment and context
 <span className="dictate-wrap">
-              <textarea rows={4} value={clinical.treatment} onChange={(e) => setClinical({ ...clinical, treatment: e.target.value })}
+              <AutoTextarea rows={4} value={clinical.treatment} onChange={(e) => setClinical({ ...clinical, treatment: e.target.value })}
                 placeholder="e.g. outpatient since 3 Nov, sertraline since 20 Oct; exams in December" />
               <Dictate inField onText={(t) => setClinical((c) => ({ ...c, treatment: appendText(c.treatment, t) }))} />
             </span></label>
