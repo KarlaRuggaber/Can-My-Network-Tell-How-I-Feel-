@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { Day, RiskFlag, Timeline } from "../api";
+import { DataLabel } from "./DataLabel";
 import { Overview } from "./Overview";
 import { Timeline as TimelineView } from "./Timeline";
 
@@ -49,12 +50,9 @@ const makeTl = (flags: RiskFlag[], extra: Partial<Timeline> = {}): Timeline => (
 const noop = () => undefined;
 
 describe("Overview, person view", () => {
-  it("shows the data label and the week table, no flags and no charts until asked", () => {
+  it("shows the week table, no data label (own tab), no flags and no charts until asked", () => {
     render(<Overview tl={makeTl([flag({})])} person selectedDay={null} onSelectDay={noop} />);
-    expect(screen.getByText("Collected")).toBeTruthy();
-    expect(screen.getByText("Not collected")).toBeTruthy();
-    expect(screen.getByText("Search terms")).toBeTruthy();
-    expect(screen.getByText(/Your care team also sees/)).toBeTruthy();
+    expect(screen.queryByText("What this page is based on")).toBeNull();
     expect(screen.queryByText(/Hello/)).toBeNull();
     expect(screen.queryByText("What stands out")).toBeNull();
     expect(screen.queryByText("Later nights")).toBeNull();
@@ -64,6 +62,14 @@ describe("Overview, person view", () => {
     expect(within(table).getByText(/usual weeks/)).toBeTruthy();
     expect(screen.queryByText("Devices quiet at night")).toBeNull();
     expect(screen.queryByRole("group", { name: "Time range" })).toBeNull();
+  });
+  it("has the data label on its own 'About the data' tab", () => {
+    render(<DataLabel tl={makeTl([])} />);
+    expect(screen.getByText("What this page is based on")).toBeTruthy();
+    expect(screen.getByText("Collected")).toBeTruthy();
+    expect(screen.getByText("Not collected")).toBeTruthy();
+    expect(screen.getByText("Search terms")).toBeTruthy();
+    expect(screen.getByText(/Your care team also sees/)).toBeTruthy();
   });
   it("shows the charts behind a button, with the toolbar hidden by default", () => {
     render(<Overview tl={makeTl([])} person selectedDay={null} onSelectDay={noop} />);

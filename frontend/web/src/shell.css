@@ -231,3 +231,7 @@
 .btn.btn-icon .icon { width: 22px; height: 22px; stroke-width: 1.9; }
 .btn.btn-icon:hover:not(:disabled) { background: var(--beige-faint); }
 .btn.btn-icon:focus-visible { outline: 2px solid var(--beige); outline-offset: 2px; }
+
+/* a tab that is not available yet (the person's Timeline before their week is set up) */
+.appbar-tab.disabled, .tabbar-tab.disabled { opacity: 0.4; cursor: not-allowed; }
+.appbar-tab.disabled:hover { background: transparent; }
