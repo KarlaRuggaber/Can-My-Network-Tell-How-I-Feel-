@@ -45,7 +45,7 @@ export function Overview(props: Props) {
     return (
       <div className="ov" style={CSS_VARS}>
         <DataLabel tl={tl} />
-        <WeekTable tl={tl} person selectedDay={selectedDay} onSelectDay={onSelectDay} />
+        <WeekTable tl={tl} person selectedDay={selectedDay} onSelectDay={onSelectDay} selectable={showCharts} />
         <section className="card">
           <div className="row-between">
             <div>
