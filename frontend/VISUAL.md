@@ -52,6 +52,7 @@ settings, login and assistant. The tools are `web/src/theme.ts`, `web/src/styles
 | `person` | Person |
 | `data` | Data / about the data |
 | `lock` | Private / protected |
+| `days` | Timeline, day by day (section icon) |
 
 ## Colours (validated)
 

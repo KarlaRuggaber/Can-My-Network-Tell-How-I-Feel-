@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { AppBar, type AppTab } from "./AppBar";
 
@@ -19,33 +19,37 @@ function Harness(over: Partial<React.ComponentProps<typeof AppBar>> = {}) {
   );
 }
 
+// Both tab lists are in the DOM (CSS shows one per screen size; jsdom applies no CSS).
+const top = () => within(document.querySelector(".appbar") as HTMLElement);
+const bottom = () => within(document.querySelector(".tabbar") as HTMLElement);
+
 describe("AppBar", () => {
   it("keeps tab semantics and moves with the arrow keys", () => {
     render(<Harness />);
-    const tabs = screen.getAllByRole("tab");
+    const tabs = top().getAllByRole("tab");
     expect(tabs.map((t) => t.getAttribute("aria-selected"))).toEqual(["true", "false", "false"]);
     expect(tabs[1].tabIndex).toBe(-1);
     fireEvent.keyDown(tabs[0], { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: /Timeline/ }).getAttribute("aria-selected")).toBe("true");
-    expect(document.activeElement).toBe(screen.getByRole("tab", { name: /Timeline/ }));
+    expect(top().getByRole("tab", { name: /Timeline/ }).getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(top().getByRole("tab", { name: /Timeline/ }));
     fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
     fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
-    expect(screen.getByRole("tab", { name: /Care plan/ }).getAttribute("aria-selected")).toBe("true");
+    expect(top().getByRole("tab", { name: /Care plan/ }).getAttribute("aria-selected")).toBe("true");
   });
 
   it("gives each link its sub-label for screen readers and shows the neutral care-plan dot", () => {
     render(<Harness />);
-    const t = screen.getByRole("tab", { name: /Overview/ });
+    const t = top().getByRole("tab", { name: /Overview/ });
     const id = t.getAttribute("aria-describedby")!;
     expect(document.getElementById(id)?.textContent).toBe("what the network observed");
-    expect(screen.getByRole("img", { name: "incomplete" })).toBeTruthy();
+    expect(top().getByRole("img", { name: "incomplete" })).toBeTruthy();
   });
 
   it("goes to Overview from the wordmark and shows the disclaimer line", () => {
     render(<Harness />);
-    fireEvent.click(screen.getByRole("tab", { name: /Timeline/ }));
+    fireEvent.click(top().getByRole("tab", { name: /Timeline/ }));
     fireEvent.click(screen.getByRole("button", { name: /go to Overview/ }));
-    expect(screen.getByRole("tab", { name: /Overview/ }).getAttribute("aria-selected")).toBe("true");
+    expect(top().getByRole("tab", { name: /Overview/ }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText(/Research prototype, not a diagnostic tool/)).toBeTruthy();
     expect(screen.getByText(/About: A thesis/)).toBeTruthy();
   });
@@ -65,5 +69,24 @@ describe("AppBar", () => {
     fireEvent.keyDown(trigger, { key: "Enter" });
     fireEvent.click(await screen.findByRole("menuitem", { name: "Settings" }));
     expect(set).toHaveBeenCalled();
+  });
+
+  it("shows the same sections as a bottom tab bar with short labels and full names", () => {
+    const tabs: AppTab[] = [...TABS, { key: "about", label: "About the data", short: "About", icon: "data", sub: "what the network can see" }];
+    render(<Harness tabs={tabs} />);
+    const bar = bottom();
+    expect(bar.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Overview", "Timeline", "Care plan", "About"]);
+    const about = bar.getByRole("tab", { name: "About the data" });
+    fireEvent.click(about);
+    expect(about.getAttribute("aria-selected")).toBe("true");
+    expect(top().getByRole("tab", { name: /About the data/ }).getAttribute("aria-selected")).toBe("true");
+    expect((document.querySelector(".tabbar") as HTMLElement).style.getPropertyValue("--tab-i")).toBe("3");
+    fireEvent.keyDown(about, { key: "ArrowRight" });
+    expect(bar.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("hides the bottom tab bar while settings are open", () => {
+    render(<Harness settings />);
+    expect(document.querySelector(".tabbar")).toBeNull();
   });
 });

@@ -32,12 +32,12 @@ const MULTI_ONLY: Tab[] = ["details", "about", "care"];
 export const THESIS_TITLE = "Can My Network Tell How I Feel? Explainable depression indicators from network traffic metadata";
 
 // Icons only where one of the fixed icon meanings (VISUAL.md) fits the tab.
-type TabDef = { key: Tab; label: string; icon?: IconName; sub: (multi: boolean) => string; multiOnly?: boolean };
+type TabDef = { key: Tab; label: string; short?: string; icon?: IconName; sub: (multi: boolean) => string; multiOnly?: boolean };
 const TAB_DEFS: TabDef[] = [
   { key: "overview", label: "Overview", icon: "person", sub: (m) => (m ? "what the network observed" : "your recent days") },
-  { key: "timeline", label: "Timeline", sub: (m) => (m ? "day by day, with notes" : "day by day") },
+  { key: "timeline", label: "Timeline", icon: "days", sub: (m) => (m ? "day by day, with notes" : "day by day") },
   { key: "details", label: "Details", icon: "explain", sub: () => "DSM-5 model, metrics, days", multiOnly: true },
-  { key: "about", label: "About the data", icon: "data", sub: () => "what the network can and cannot see", multiOnly: true },
+  { key: "about", label: "About the data", short: "About", icon: "data", sub: () => "what the network can and cannot see", multiOnly: true },
   { key: "care", label: "Care plan", icon: "note", sub: () => "routine, devices, focus, normals", multiOnly: true },
 ];
 
@@ -242,7 +242,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
       <AppBar username={me.username} multi={multi} onLogout={onLogout}
         tabs={!settings && profiles.length > 0 && tl?.status === "ready"
           ? TAB_DEFS.filter((t) => multi || !t.multiOnly).map((t) => ({
-            key: t.key, label: t.label, icon: t.icon, sub: t.sub(multi),
+            key: t.key, label: t.label, short: t.short, icon: t.icon, sub: t.sub(multi),
             dot: t.key === "care" && setupMissing.length > 0 ? "Care plan incomplete" : undefined,
           }))
           : null}

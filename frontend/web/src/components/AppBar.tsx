@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { ProfileListItem } from "../api";
 import { Icon, type IconName } from "./Icon";
 import { PersonPicker } from "./PersonPicker";
@@ -6,7 +7,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PRODUCT_NAME, PRODUCT_SUBTITLE } from "../theme";
 
-export type AppTab = { key: string; label: string; icon?: IconName; sub: string; dot?: string };
+export type AppTab = { key: string; label: string; short?: string; icon?: IconName; sub: string; dot?: string };
 
 type Props = {
   username: string;
@@ -121,10 +122,54 @@ export function AppBar(p: Props) {
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
+      {p.tabs && !p.settings && <TabBar tabs={p.tabs} tab={p.tab} onTab={p.onTab} />}
       <p className="appbar-note">
         {PRODUCT_SUBTITLE} | Research prototype, not a diagnostic tool.
         {p.thesis && <> <span className="about-line">About: {p.thesis}.</span></>}
       </p>
     </>
+  );
+}
+
+/**
+ * Phones: the sections as a floating glass tab bar at the bottom of the screen (iOS tab bar
+ * pattern: icon above a short label, the selected tab on a sliding lens). Shown only below 640px
+ * (CSS); the top strip is hidden there, so only one tab list is ever in the accessibility tree.
+ * Rendered into <body>: the page gets a transform while it glides and is a layout container, and
+ * either would pin a fixed bar to the page instead of the screen.
+ */
+export function TabBar({ tabs, tab, onTab }: { tabs: AppTab[]; tab: string; onTab: (key: string) => void }) {
+  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const index = Math.max(0, tabs.findIndex((t) => t.key === tab));
+  const onKey = (e: React.KeyboardEvent, i: number) => {
+    const to = e.key === "ArrowRight" ? (i + 1) % tabs.length : e.key === "ArrowLeft" ? (i - 1 + tabs.length) % tabs.length
+      : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    onTab(tabs[to].key);
+    refs.current[tabs[to].key]?.focus();
+  };
+  return createPortal(
+    <nav className="tabbar" aria-label="Sections" style={{ "--tabs": tabs.length, "--tab-i": index } as React.CSSProperties}>
+      <span className="tabbar-lens" aria-hidden="true" />
+      <div className="tabbar-tabs" role="tablist" aria-label="View">
+        {tabs.map((t, i) => {
+          const active = t.key === tab;
+          return (
+            <button key={t.key} type="button" role="tab" aria-selected={active} tabIndex={active ? 0 : -1}
+              aria-label={t.short && t.short !== t.label ? t.label : undefined}
+              className={`tabbar-tab${active ? " active" : ""}`} ref={(el) => { refs.current[t.key] = el; }}
+              onClick={() => onTab(t.key)} onKeyDown={(e) => onKey(e, i)}>
+              <span className="tabbar-icon">
+                {t.icon && <Icon name={t.icon} size={22} />}
+                {t.dot && <span className="tabbar-dot" role="img" aria-label="incomplete" title={t.dot} />}
+              </span>
+              <span className="tabbar-label">{t.short ?? t.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>,
+    document.body,
   );
 }

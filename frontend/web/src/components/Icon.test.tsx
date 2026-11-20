@@ -3,7 +3,7 @@ import { ICON_NAMES, Icon } from "./Icon";
 
 describe("Icon", () => {
   it("renders every icon as inline SVG in currentColor", () => {
-    expect(ICON_NAMES).toHaveLength(17);
+    expect(ICON_NAMES).toHaveLength(18);
     for (const name of ICON_NAMES) {
       const { container, unmount } = render(<Icon name={name} />);
       const svg = container.querySelector("svg")!;
