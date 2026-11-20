@@ -1,0 +1,334 @@
+# Meeting Summary
+
+## Main Topics Discussed
+
+### 1. LiFE Adolescent Crisis Service and Continuity of Care
+- LiFE was described as a low-threshold service for adolescents in crisis. Admission does not require a formal psychiatric diagnosis, and its waiting list is comparatively short; admission may be possible within about **2 weeks**.
+- The service aims to intervene early during a crisis and reduce the risk of problems becoming chronic.
+- LiFE brings three levels of care together in one building and under the same treatment team:
+  1. **Inpatient care**, typically for around **2 weeks** at the beginning of admission, when adolescents need substantial support.
+  2. **Day clinic**, where adolescents receive treatment and attend the clinic school during the day, then return home at night.
+  3. **Outpatient care**, continuing with the same team after transition from the day clinic.
+- This model is intended to avoid difficult transitions between services with different staff. It also allows flexible escalation—for example, a day-clinic patient can return to inpatient care for one or more nights if needed.
+- The inpatient stay is not a required preliminary stage for every psychiatric service; in LiFE it is commonly used because adolescents are admitted during a crisis and may initially need intensive support.
+
+### 2. Questionnaire-Based Clinical Research
+- The research accompanying the newer LiFE service has two components. The first is a questionnaire battery completed online through **REDCap** at **pre-admission**, **discharge**, and **3 months after discharge**.
+- Adolescents complete measures, and questionnaires are also sent to parents; therapists complete questionnaires as well.
+- Measures cover clinical factors, suicidality, symptom severity, and mental-health risks and resources, including perceived stress, childhood trauma, impulsivity, social connectedness, social support, and quality of life.
+- Questionnaire results are also part of clinical routine and support therapy planning by helping teams identify symptoms, resources, and areas that may be addressed in treatment.
+- Participants emphasized that psychiatric assessment relies heavily on self-report and interviews. The instruments are generally well-established, with prior use spanning roughly **20–50 years** and established psychometric properties. The team uses analytical approaches including structural equation modeling to examine hypothesized pathways, including those related to suicidality.
+
+### 3. EMA and Smartphone Passive-Sensing Study
+- The second research component is a more intensive smartphone study involving a subsample of eligible adolescents. Participation takes place in the outpatient phase and begins at least **2 weeks after transition**, because the clinical team considers the transition period potentially unstable.
+- Each study period lasts **2 weeks**. Participants receive **5 email notifications per day**, each with a **1-hour** window to complete an ecological momentary assessment (EMA) survey; an unanswered survey is deactivated after that window. Recruitment is ongoing rather than simultaneous.
+- EMA topics include:
+  - **Context:** location, current activity, and whether the adolescent is alone or with others.
+  - **Mood and well-being:** momentary mood, optimism, and life satisfaction, using established measures.
+  - **Lifestyle:** sleep quality, drug use, meals, and whether meals were eaten alone or with others.
+  - **Stress:** momentary stress and confidence in coping, assessed at all five daily prompts; evening questions cover daily hassles and uplifts, including specific events such as whether a painful memory arose that day.
+  - **Social connectedness:** perceived connection to people around them, assessed at each prompt.
+  - **Suicidal ideation:** assessed once per prompt interval, asking whether ideation occurred since the previous survey and, if so, its intensity.
+- Researchers highlighted the possible relevance of accumulating small stressors and “micro-uplifts,” not only major stressful events.
+- A safety alert is built into the EMA protocol: if reported suicidal-ideation intensity exceeds a set threshold, the LiFE treatment team receives an automated notification to check whether the adolescent is safe or needs more support. The alert approach was developed in response to ethics-review concerns about studying a vulnerable population.
+- The study uses the **CoRa app** for EMA and passive phone sensing. Current study participants are iPhone users; Android participation may be considered, but the data available differ by operating system.
+- For iPhones, the team reported collecting battery level/charging status, screen brightness and on/off status, location (with some location information available specifically when the app is in use), activity type, nearby Wi-Fi networks and connection status, Bluetooth connections, accelerometer data and step counts, and incoming-call occurrence and duration. Some planned sensors are unavailable on iPhone without Apple’s ResearchKit framework. The team believes the accelerometer data are collected regularly, potentially even when the app is not open.
+- Android can provide app-use data, which is not available in the current iPhone setup. Some common measures—battery, screen status, location, Wi-Fi, and Bluetooth—are available across platforms. Step count and activity data were not captured by the Android device tested. Since the current sample consists of iPhone users, app-use data may not be usable in the present dataset.
+- Recruitment is challenging: adolescents must be approached at the right time, consent discussions must be arranged, and parents also need to be informed. The process can take long enough that some interested adolescents are discharged before enrollment. The sample remains small—approximately **10 participants at most** at the time of discussion—and data collection is continuing. The team noted strict inclusion/exclusion criteria and the difficulty of recruiting this population.
+
+### 4. Potential Analyses and Clinical Value of Passive Sensing
+- Proposed research questions include whether passive sensing improves prediction of suicidality or other mental-health outcomes when added to EMA data, and whether passive data can identify patterns or markers associated with psychiatric variables.
+- The clinical motivation is that suicidal ideation may be poorly communicated, even to close family or friends. Passive sensing might provide additional information that can corroborate questionnaires and interviews, rather than replace clinical assessment.
+- The group discussed complementary data sources:
+  - **Smartphone sensors** may capture mobility and activity patterns.
+  - **Network/router data** may indicate internet activity, sleep-related periods of inactivity, irregular schedules, and broad categories of services or websites used.
+  - **Acoustic sensing** (including the previously discussed iHearU project) may provide information when a person speaks, but cannot help when there is no voice activity.
+- Participants stressed that each sensing modality has limitations. Router-based monitoring only sees traffic when a device is connected to the monitored Wi-Fi/access point. It cannot see activity over cellular data or an unrelated network. A VPN-based approach over mobile data was raised as technically possible but considered more complicated and not necessarily worthwhile. Lack of network traffic is ambiguous: the person may be asleep, away from home, or simply not using digital devices.
+- The clinicians considered sleep particularly valuable because it can be difficult to establish adolescents’ actual sleep schedules through self-report, and sleep disruption may be relevant to depression, suicidality, mania, and psychosis. Social connectedness and loneliness were also identified as important, though digital social-network use alone cannot determine whether online activity is protective connection or a substitute for in-person relationships.
+- Website or service categories may offer useful context even when content is encrypted and cannot be inspected. Examples discussed included visits to crisis-help websites, self-harm forums, social networks, music services, and gaming services. The group emphasized that such signals should be treated as supplementary indicators, not definitive evidence or a diagnosis.
+
+### 5. Network-Data Dashboard Demonstration and Constraints
+- The collaborating team demonstrated a clinician-facing dashboard using **scripted/simulated traffic profiles**, not real participant traffic. The underlying system for collecting and analyzing real-world network data is available, but the example shown was simulated.
+- The prototype included:
+  - Device/person configuration, such as associating a person with a phone and laptop and their network identifiers.
+  - A time-based heat map of packet volume. Darker blocks represent more internet-dependent activity; gaps may indicate inactivity, sleep, or absence from home, but cannot establish which explanation is correct.
+  - Broad indicators such as distinct social domains, use of particular online services, and visits to crisis or self-harm-related sites.
+  - A simulated 14-day period used to establish an individual baseline, followed by a clinical period in which deviations and possible risk patterns are displayed.
+- The prototype’s modeled output suggested possible suicidal ideation for one scripted profile after visits to crisis lines and self-harm forums; participants clarified that this was not an actual clinical classification from real data.
+- A key technical limitation is that router-based traffic capture requires the monitored device to use the controlled Wi-Fi. This could be practical in a clinic or in a participant’s home if the system is deployed there, but it would leave gaps when the participant uses mobile data or is elsewhere.
+- The team discussed whether such network data could complement smartphone sensing and clinical questionnaires. Clinicians expressed interest in a clinical-support tool, provided that risk indicators are communicated cautiously and do not purport to make diagnoses or clinical decisions autonomously.
+
+### 6. Dashboard Design and Clinician Needs
+- Clinicians welcomed the concept of presenting additional information as support for interviews and treatment, rather than as a replacement for diagnosis or professional judgment.
+- A two-layer interface was proposed:
+  1. A simple, quick-to-read overview with clear risk/status labels and visually accessible trends, suitable for time-constrained clinical work.
+  2. A more detailed layer with underlying measures, numbers, and explanations of how indicators were derived.
+- The clinicians favored showing trajectories and deviations from a person’s usual pattern—for example, changes in sleep regularity or activity—rather than treating a persistently high symptom level as an immediate acute warning. A sudden improvement could also warrant discussion rather than being interpreted automatically as resolution.
+- Two kinds of reference were considered important: comparison with the individual’s own baseline and comparison with validated norms from a broader healthy population. A personal baseline alone may normalize an already concerning pattern if monitoring begins after symptoms have been present for a long time.
+- The team asked whether clinicians would want standard indicators for all users or personalized monitoring configurations. Clinicians noted that needs may differ between diagnostic assessment and ongoing treatment: assessment may require a broad picture of current status, while treatment monitoring may emphasize change over time and response to therapy.
+- An example of a symptom-tracking clinical app, **Robin Z**, was mentioned. Its clinician dashboard allows mood and other symptom trajectories to be reviewed with adolescents, which clinicians said can support discussion and shared interpretation.
+- The developers mentioned an assistant feature under development that would use an **LLM** to answer questions about the data. This was presented as an exploratory interface idea, not a completed capability.
+
+### 7. Collaboration, Analysis Support, and Funding Opportunity
+- The clinical team asked for guidance on analyzing the passive-sensing data, including how to assess whether passive signals improve prediction beyond EMA and what analyses are feasible with a small sample.
+- The technology team offered to support early analysis and suggested contacting **Clemens**, described as experienced in well-being research and smartphone data. The participants agreed that these avenues are complementary and that the circle of collaborators could be expanded.
+- The technology team also expressed interest in demonstrating the system further and potentially exploring a deployment once the prototype is more stable.
+- A possible **DIGIT Innovation Grant** was introduced. It supports digitalization-focused projects in the Zurich area. The clinical presenter said they had previously received a larger grant for a **3-year** project with a university of teacher education partner to digitize ADHD diagnosis and monitoring using **fNIRS** (functional near-infrared spectroscopy).
+- The smaller grant discussed offers **€75,000 for 1 year**, with a deadline of **January 13** (the transcript does not specify the year; given the meeting date of November 20, 2026, the upcoming deadline would be January 13, 2027). The proposed application would be collaborative, with the clinical presenter potentially serving as applicant and including the other team members. The application was described as requiring a short written proposal and a video presentation. No decision to apply was recorded.
+
+## Action Items
+- **Clinical and technology teams:** Explore feasible initial analyses of the available smartphone passive-sensing data, taking account of the small sample and ongoing recruitment.
+- **Clinical team:** Consider contacting Clemens for methodological guidance on smartphone and well-being data analysis.
+- **Technology team:** Continue refining the network-data dashboard, particularly the balance between a concise clinician-facing overview and access to transparent supporting detail.
+- **Technology team:** Consider how to represent sleep, social-service use, risk-related site visits, personal deviations, and population norms without overstating what the data establish.
+- **Both teams:** Discuss whether and how router-based monitoring could be deployed in a clinic or at home, while addressing Wi-Fi coverage gaps, cellular-data limitations, consent, privacy, and regulatory requirements.
+- **Both teams:** Consider a future demonstration or pilot deployment when the network-monitoring system is more stable.
+- **Clinical presenter and collaborators:** Decide whether to pursue the DIGIT Innovation Grant before the **January 13** deadline and, if so, develop the short proposal and required video.
+
+## Follow-Up Points
+- Recruitment and data collection for the LiFE smartphone study are ongoing; the sample was still approximately **10 participants or fewer** during the meeting.
+- Further collaboration is expected around passive-sensing analysis and possible system demonstrations, but no date for a follow-up meeting was specified.
+- The teams may revisit the dashboard’s clinical indicators, presentation layers, personalized monitoring, and reference norms as the prototype and analyses develop.
+- The potential grant application remains under consideration; no commitment or final project scope was established.
+
+---
+
+Speaker A (0:00): That doesn't surprise me. The idea is that it's a low threshold intervention because technically you can be admitted to Life Without a Psychiatric Diagnosis. And also they have comparatively quite a short waiting list, so it's more like it's possible to get admitted within like 2 weeks, which in comparison to the other inpatient wards is substantially shorter. And the idea is that you really can treat adolescents when they're in a crisis and intervene early to really reduce the risk of chronification. And what is also new with LiFE is that they have the 3 different settings that are typically available in psychiatry, like the inpatient setting, the day clinic, and outpatient setting. They're all at the same location, so they're all in this building. And the idea is that the adolescents, they go to LIFE and then they, around 2 weeks, they are in the inpatient part. Then they transition to the day clinic where they're still there during the day. They go to the clinic school and have their treatment there, but go home at night. And then from there, they transition to the outpatient treatment, but it's still the same treatment team. And this is good because usually when you have, or you treat patients in an outpatient clinic, then if they need a more intense treatment, they go to the inpatient ward, but they have an entirely different treatment team. They stay there for a couple of weeks or months, and then they go back. And those transition periods can be quite difficult. And so the idea is to really have this continuity and focus on also the relationship between the patient and the treatment team. And it also allows for, like, a flexible treatment, because if they're in the day clinic and they, for some reason, they need more intense support, then they can just go back to the inpatient part for 1 night, 2 nights, or as much as is needed.
+
+Speaker B (2:08): Question, Susan. Inpatient, it's not Before the clinic, is this a stage that they need special care? Or I'm a bit confused in this part.
+
+Speaker A (2:24): Yeah, and the thing is, usually the child and adolescent psychiatry in Zurich, they have inpatient wards for psychotherapy and also an acute inpatient ward, and there they only offer the inpatient service. And if you don't need the inpatient treatment anymore, then you leave and go to a different service. It can be within our clinics, but it's then with other people, other therapists. And the advantage of LiFe is that the inpatient ward is also in that building where also the day clinic is and also the outpatient treatment is. So when they transition between the 3 settings, the treatment team doesn't change. And the idea that they start with an inpatient stay for about 2 weeks is just because when they are admitted to LIFE, they usually do need quite a bit of support because they, they are admitted during a crisis. Does this answer the question?
+
+Speaker B (3:29): Yes.
+
+Speaker A (3:30): Yes. Okay. Yeah, and because this is a newer service, we also do the research to accompany it, and it's— it has 2 parts. The first part is the questionnaire battery that Lukas already mentioned. They're psychometric instruments that we send to them online on REDCap before they are admitted. at discharge and 3 months after discharge. And we also sent the questionnaires to their parents, and the therapist also completed questionnaires. And I did not put everything on the slides because it's quite a lot. We assess, like, clinical factors, suicidality, symptom severity, and then also risk factors for mental health, such as perceived stress, childhood trauma, impulsivity, and protective factors, like social connectedness or social support and the quality of life. And this is the data that everyone that is admitted to LiFE completes or should complete at least. And that is also part of the clinical routine that the therapists and the clinical teams at LiFE use for therapy planning and to see Yeah, what, um, where the symptoms are and maybe also where the resources are and where they can, um, where they should, or where they can, what parts of their life they can affect with therapy.
+
+Speaker C (5:11): So yeah, I can maybe add to this just quickly. So this is So our daily bread in psychiatry is subjective reporting and also interviews, like history, supervised interviews. So this is the main part of it, right? So we have nothing better than questionnaires and interviews. But the good part about this is that these are well-established instruments, most of them. Also, we have good psychometric information about these instruments, like the factor analysis and so on. And this, most of them have been used for many years. I mean, even like 20, 40, 50 years. So, they have a good validity, so to speak.
+
+Speaker B (6:11): Very well established.
+
+Speaker C (6:13): Yeah, yeah, yeah, yeah. I mean, this is, this is the best we can do in psychiatry. So that's why I'll focus on this. And then we do different methods to analyze this. For example, recently, CDA used structural equation modeling. We have certain hypotheses regarding the pathway, for example, suicidality. So just for you, just a small clarification. And I think CDA can now probably move to the most Important part for us for this passive sensing. Yeah.
+
+Speaker A (6:43): Yeah. And as I said, this is the first part. The second part of our research is with a subsample of those adolescents, which is the more intense study with the smartphone-based study with ecological momentary assessment and passive sensing. And we— all adolescents at LIFE could participate if they fulfill the inclusion criteria. And we do it— they can participate when they're in the outpatient setting. And maybe as a quick overview, we assess that the study period is 2 weeks. And during those 2 weeks, we— they get 5 email notifications a day where they can have an hour to complete the survey. And if they don't, it gets deactivated. And they don't all participate at the same time, but like the recruitment is ongoing and they can just participate when they're in the outpatient setting. At minimum 2 weeks after they transitioned, because the clinical team at LIFE said that the transition itself can be quite a period of instability. So we— they wait at least 2 weeks before they start their participation. And here also, just as an overview, I put the modules from the ecological momentary assessment part. We assess like the context. We ask them, where are you? What are you doing? Are you alone? Are you with others? Then we also assess mood, also with an established instrument, how optimistic they're feeling, how satisfied with their life they are. And always at the moment. And then we also assessed like lifestyle factors like sleep quality, drug use, how many times they've eaten that day, if they ate with others or by themselves. And then also a big part is stress and stressors. We asked at every— all 5 time points per day how stressed they are at the moment. But also how confident they feel that they can cope with that stress. And then every evening we ask them about daily hassles and uplifts, like if there were small hassles that occurred during the day or also small uplifts.
+
+Speaker C (9:06): I can add to this, I can add to this, Silje. There is also a theory saying that it's not only the stress, like the main stress that the important for different mental, let's say, outcomes, but also so-called microstress and also micro-uplifts. So I find this a very interesting construct of this, or sometimes also the accumulation of small microstress might be relevant for the psychiatric outcomes. So just my comment.
+
+Speaker B (9:39): Question is, how can how this is reported by the patient typically? Can they— because typically things accumulate, I would say things accumulate and then they report a lot, not the micro level.
+
+Speaker A (9:53): I mean, they are quite specific stressors and uplifts. So we ask them, has a painful memory come up today? And then they say yes or no.
+
+Speaker B (10:05): I see.
+
+Speaker A (10:08): And yeah, the last part is the suicidality, and I also put social connectedness there because they're closely associated. And we ask the social connectedness, or how connected they feel to the people around them, at every time point during the day. And the suicidal ideation, we only ask once, um, because we ask them if they had had suicidal ideation since the previous, uh, EMA questionnaire, and if they say they did, we ask the intensity. And the thing is that above a certain intensity, the treatment team at Life, they get an automated notification that tells them to reach out to the adolescent to check in if they're like safe or need more support at the moment.
+
+Speaker C (10:58): It was also actually, we anticipated this question from the ethics committee, right? Because it's a vulnerable population suffering from suicidation. So we prevented this question already and integrated this alert system because it's 100% that you would ask, okay, you are dealing with suicidality, what is your intervention when there is a heightened suicidality, right? So that they are notified exactly here at our center about high suicidality. And also, I'd like to add that we have different scales, right? This is a Likert scale rating, sometimes yes and no, but most of the time this is kind of distributed, right? So we want to— we measure this on a— Likert scale. 5.8 or something like this, these variables.
+
+Speaker A (12:01): Yes. Yes, and this is the EMA part, the app that we're using, the CoRa app. They also collect the passive phone data from the sensors. And next, I'm showing you the— I've divided it by iOS and Android. Android because it's quite different.
+
+Speaker C (12:23): Yeah.
+
+Speaker A (12:24): And in our study so far, we only have iPhone users. So I think this is, well, at the moment what we're working with. We are open to also including Android users. I'll show it. It's on the next slide what the Android is collecting, and then also have a slide where I'm— where I show what is collected by both. But it is quite different. But in the data we have today, we have what's on this slide from our participants. And we did plan on assessing more, but some sensors, they— I mean, you know this way better than I do, but some, they don't work on iPhone without the ResearchKit application.
+
+Speaker B (13:13): Yeah, they are gated by it.
+
+Speaker A (13:18): Yeah, but what you do have is the battery level and if it's charging or not, the screen brightness, if the screen's on or off, the location in general, but also when specifically, I think when the app is in use, then activity type, the Wi-Fi networks in the area, and the connection status. The Bluetooth connections and the accelerometer with the step count as well, and the call log, just if there's an incoming call and the duration. Yeah.
+
+Speaker B (13:55): I don't know much about the app, but would the accelerometer, for instance, work even if the app is not open?
+
+Speaker A (14:06): Yes, I think so. It
+
+Speaker B (14:10): gives mobility patterns that could be interesting.
+
+Speaker A (14:13): Yeah, yeah, yeah. The frequency in the back row or in the last row, they are kind of from our data, what I saw when we did collect. So I think it does collect quite regularly. So I do think it's running all the time. Yeah.
+
+Speaker C (14:34): I think this physical activity and then step counter, this is a very interesting marker because we have now also this discussion about the sedentary life, sorry for my pronunciation, which is related to dementia, to also to loneliness, to different psychiatric or psychological variables. I find it especially that Good that you noticed this, Bruno. That is definitely an interesting marker for us also.
+
+Speaker A (15:06): And then for Android, it collects this data. What is really important, or what was really important to us, was the app use. It is collected by the Android phones but not for iPhone. And yeah, as we do have mostly iPhone users, then unfortunately I don't think this is something we'll be able to use. But other than that, they collect some of the same indicators, and I put them here on the slide together, which is— yeah, unfortunately here the step count and activity is not included because the Android phone we tested did not collect that data. But we have the battery level, the screen status, the location, the Wi-Fi and Bluetooth connections on both. Yeah, but as I said, I think at the moment we only have included in the study people that use iPhones. So I think—
+
+Speaker B (16:14): That's, I would say, the majority. Yeah, at least in Switzerland.
+
+Speaker A (16:19): If you
+
+Speaker B (16:19): change the country, then
+
+Speaker A (16:24): Yeah, so that's the overview of our study and the data we're collecting. And maybe Lukas has already told you that the recruitment is ongoing and we're still collecting data. The recruitment is a bit slow because it's not It is a bit difficult to catch the adolescents at the right time and to get them to have a call or talk with us about the informed consent. And then we also have to inform their parents, and that process has been proven to be quite, maybe a bit too lengthy. And so sometimes they do want to participate, but they already are being discharged and So the— I think besides the passive data collection and how we would analyze it, the big question is also the sample size, which is, yeah, quite small still, but we do still have some time for data collection.
+
+Speaker C (17:31): Yeah, so now the question would be to you, what— yeah, do you resonate with this type of research? Maybe there are like privileges, between what you are doing or what you would like to do. Yeah. We would like to slowly start with analysis. For me personally, so this is a bit of a research question that we have with Celia, which can also evolve. I think you can have a lot of research questions around this, but for example, one of them would be whether the passive sensing data increases the prediction of suicidality or prediction of another mental health outcome when added to ecological momentary assessment data. So, active versus passive. Yeah. Then to find markers of different psychological psychiatric variables based on the passive sensing data, maybe to recognize some patterns. So, these are the research questions we have in mind, which also would be of practical importance, right? Because—
+
+Speaker B (18:51): Yeah.
+
+Speaker C (18:52): I don't know whether I mentioned to you last time, the reason also we are so interested in this detection, right? is that the suicidal ideation is not well communicated, right? So we have also several publications showing this, that it's a very uncommunicated condition.
+
+Speaker B (19:14): Mm-hmm.
+
+Speaker C (19:14): Also among close ones, right? Parents or close friends, you know, so many people are even surprised by a suicide or Hopefully only suicidal attempts. So we would like to find means to how to detect suicidality using technology that is being used, right? Also your router data. I mean, this is also fantastic. Okay, okay, I put the point here. Yeah.
+
+Speaker B (19:43): First, for sure, it's super interesting what you're doing and looking beyond, for instance, taking smartphone data. That's amazing. I saw a lot of connections. That's why I was saying on the accelerometer data, you can check mobility. Those are things that we are not collecting so far. And I don't know if you have it open, the point that— or the dashboard you have.
+
+Speaker D (20:13): Yeah, absolutely.
+
+Speaker B (20:14): That we are doing— there are so many things that we can observe from the network. I mean, and that's something, um, that we can extract so much information that can help a few ones, not all of them. But I think that can definitely be positive on suicidality.
+
+Speaker D (20:36): Mm-hmm.
+
+Speaker B (20:37): In the sense that if someone is entering a few websites, um, that, that are— have this type of content, is possible to detect those websites, not to see the content of what the person is seeing, but definitely the website. And from the website and the frequency in which the person is accessing this website, you can maybe raise a flag, say, hey, um, there's something, I don't know what, but something, it's not usual here, that it's a problem. interesting to take a look. And the data that we collect right now, the project that Yehi and Carla are going on, helps a lot on a few aspects, not all of them. Mobility, for instance, is not something that you can see from a network perspective.
+
+Speaker A (21:30): Mm-hmm.
+
+Speaker B (21:31): But whether someone is not sleeping well, there is a very irregular sleeping schedule, the frequency you access a few websites, and so on and so forth. This hints a few things that can help, help something that you collect during the questionnaire. It's not certainly one source of information that will be solving everything, but an additional source of information that can help to corroborate information that you already have.
+
+Speaker A (22:04): Mm-hmm. I think especially that is information that, I mean, in my experience working with adolescents, it's hard to come by. Like, we often talk about like sleep schedules, sleep hygiene, and it's actually very difficult to know how much they sleep, when they go to bed, how regularly they sleep, because—
+
+Speaker B (22:28): Yeah.
+
+Speaker A (22:29): First, I think it's quite subjective, but also they usually, They don't know. And I feel like with the website, I think it's also like a lot of like shame and embarrassment. And even if they, I mean, they would know, but maybe they would not share it. And I think it's very relevant information. Yeah,
+
+Speaker B (22:48): for sure. Also not perfect. I mean, if someone is not sleeping well but not using anything digital, you would not catch this type of thing. Yeah, certainly.
+
+Speaker D (22:59): Yes, I'm ready. Let me show you what we built so far. So maybe
+
+Speaker B (23:05): it's,
+
+Speaker D (23:06): um,
+
+Speaker B (23:06): that's a work in progress that we have right now, but it's just super, super nice, at least the stage. Yeah, they have in the prototype.
+
+Speaker D (23:15): So maybe to give you a very, very quick intro of what we can see with network data usually. So the most important thing is to actually just see that there is any data, because as you already mentioned, this is very helpful to see when people maybe sleep or don't sleep, because you can just see that there is activity going on. And also kind of the behavior in terms of, do they have a very bursty behavior, for example, that they go onto websites only for a few minutes but every hour, or do they have extended sessions where there are— there's interaction ongoing for 5 hours in one block, I don't know, from 10 PM to 3 AM, and then you kind of can infer some things out of that. And this is like the one thing, just that there's something that exists. And the second thing that is even more important when we think about suicidality and the things we talked about now is that we can see on a very broad level what the person has visited or what he has done. So for example, if you think about crisis websites where there's like help for people that have suicidal thoughts, we can see that this person has visited this website. We cannot see exactly what he maybe has searched to enter this website or what he has looked at on the website or what the content of the website exactly is. But what we can see is that he has resolved this name of the website. So we know that he has visited this site. And this is like for us one of the most important indicators if we look at suicidality. So if I'm gonna share you the dashboard, it's a bit overwhelming, but don't worry. So as Bruno already said, it's a very work in progress thing. But what you can see here is that we, this is kind of what we tell, what we call a clinician's view. is that you have different people here that you can sort of know which devices they use. So you would configure, okay, this person has maybe a phone and a laptop as well, and these are 2 different IP addresses on the network. So we can identify the person with that, with a few caveats, but let's just assume that it works. And then we can sort of track their, their behavior. So if we first take a look at this, this is what we came up with, a sort of heat map of just how many packets were sent from a device. So the darker the rectangle is, the more this person has used something that requires internet. So this could be, for example, a voice call that has— that the person has done, but also it could be that he has used social networks, he has just been browsing, or he has been gaming, for example, in online game. And this is just kind of the usage. And there, of course, you can infer that, for example, here on this Thursday, the last packet that was sent was kind of in this slot from 12 to 1 AM. So in this white space, this person was most likely asleep or not using digital devices at at all, or has not been at home, for example, which could of course also be. But we can see that he has definitely not been using his phone during this time. Um, and what we then try to, to do, and what is also the basis for our work that has been done in a master thesis beforehand, is try to think about what we can, um, take out of the data and kind of use as, as an indicator for the different depression criteria or depression symptoms. So, um, for example, this indicator of distinct social domains, this we can do. And I think you also touched upon it in, in your introduction before, that you cannot capture app names right now, or what, what application a person uses. So if the application uses internet, then we can see which application the person uses. For example, if you go on Spotify, you can see that this device has looked up a Spotify server, or if you go on Instagram, then it is a Meta server that gets called if you open the app. So we can see, for example, if the person communicates over WhatsApp, we see that he will send a packet to WhatsApp. You cannot see the content, you cannot see to whom he sent it, but you can see that he has used a sort of social network during that time. And this, I think, is quite an important factor in considering especially depressive symptoms that are with social anxiety or like being more introverted. Yeah, that's maybe that. And then we can try to infer like the criteria in terms of the DSM-5 criteria and say, okay, in this case— so just to tell you, this is scripted behavior right now, it's not real traffic, so we sort of came up with profiles. That kind of simulates different people and different behavior. And in this case, this person has visited some crisis lines and also self-harm forums over this time. And what you can see here is that this is the 14-day period where kind of the standard got calibrated of this person. So what is their kind of normal behavior? And then the kind of pink pink shading is where this 14-day sort of clinical period starts, where we can say, okay, we now have established a baseline for this person, so how does this differ from a more healthy profile? And in this case, our model would say that this person is likely to have suicidal ideation or suicidal thoughts.
+
+Speaker B (29:13): And of course, that's source of information that can be used to corroborate what we already have in the questionnaires. If it makes sense, then—
+
+Speaker D (29:26): Yeah, and maybe, um, so ask any questions. I think it's very— it's a bit hard to maybe grasp it a bit, but my, um, my first question would be a bit like, if we assume we would try to, to use this as on top of your already, um, what you're already kind of capturing in, in terms of the device data. Um, the problem is a bit that this is of course, um, network data. So network data has to travel over the network that this system runs on. So it's not like— there are ways, but it's not really possible to just have the person being not in the clinic and just be roaming around where he wants to be. So being in, in an open space and then capturing all of this is, uh, just way harder than using this in a, in, in the clinic itself. So this would maybe be a, in the first step, a more useful indicator for people that are stationary there, or at least maybe during, during the day.
+
+Speaker C (30:31): But, uh, yeah. Can you comment on this? I don't understand that one. So why, what is the reason for this? I mean, like that in there, for example, you mentioned that in the open space. What is the reason?
+
+Speaker D (30:47): Yes, so it's actually a purely technical reason. So if you think about how this runs is that usually when you connect to the internet via your Wi-Fi, the packets, they travel over your home network first. And the router is like the spot where your home network is connected to the internet in a very simplified way. So you can— all, everything that travels to the internet will travel through the router. And what we do is we capture the traffic that flows through there and also flows inward from the internet back to you. And we mirror this data. So we just save everything that gets sent through because this is just sent. It's not saved anywhere. and then analyze this data. And what you would have to do in, in, in the open environment is that the, the person that uses, um, just their phone to connect to the internet regularly, like they use cellular service, right? Or like mobile, um, data, not, um, a Wi-Fi that is controlled by us. So—
+
+Speaker B (31:53): If I—
+
+Speaker D (31:54): Yeah, Bruno, please. Please.
+
+Speaker B (31:56): It only works if the person is associated with this internet. If you connect to the Wi-Fi, that we can see the traffic. If the person is at the clinic or at home but using the mobile data, we can't see.
+
+Speaker C (32:11): Yeah, so this, so it would probably have gaps, like information gaps, that could be also important if Yes,
+
+Speaker B (32:23): yes.
+
+Speaker D (32:24): The only thing I thought about, maybe Bruno, you could, you could give me your input there. Is it possible to, like, if the person is using mobile data but is connected at the same time to a VPN that is controlled by us, is it possible to capture the data?
+
+Speaker B (32:42): Yes, but then, then Um, the question is, then you have created— you need to create a VPN. It's a little bit more complicated and it makes not a lot of sense, to be honest, but it's possible.
+
+Speaker D (32:59): Because maybe— I'm not sure how this, uh, currently works with what you're capturing right now on the devices, but I can imagine that this works sort of on a more hardware level as well. So you don't just use an app for this, right?
+
+Speaker B (33:14): I think right now what Lucas— what you're using is just an app that collects metrics over of the phone. In our case, we don't have anything on the phone but on the network. If they are connected to the Wi-Fi, we see all the traffic.
+
+Speaker E (33:32): Yeah, maybe as a quick input, right, this is also why because you only measure data when you're at home currently connected to weather. This is also why you as a user, for example, put in whenever you go to work, because then we know there is no traffic, but there is no traffic on purpose, right? Because the person is not home. But then if we know in the entire weekend that there is no traffic and the person is out a lot, that again says a lot about the social aspect and stuff, right? So yeah, this home aspect is
+
+Speaker D (34:13): Yeah, but maybe we can, we can take this as a sort of extension and think about how this would be like, how we would be able to capture also this with mobile data.
+
+Speaker B (34:24): It could be a limitation of the modality. If the person is connected to a network, we have a view and we can extract those metrics. And then provide a report. That's why also we had another work that we focused on acoustics. We had those— I think I can get it here. Yeah,
+
+Speaker C (34:49): the iHearU project, right?
+
+Speaker B (34:51): Exactly. We had a few microphones laying around that basically those home assistants that if a person is not interacting or using digital devices. Then this caveat here, or the limitation, is that the person needs to speak. If there is no voice, then the AI hear you doesn't work. It doesn't hear anything. Yeah. Every modality comes with a benefit, every passive modality, but also a drawback. The drawback in the case of the network is that the person needs to be associated. With the access point of the router, so we extract traffic, which makes a very good case, for instance, if the person is at the clinic, you provide the Wi-Fi, or if you really are looking for a proactive use case, the person can deploy this at home. So it could be a very good source of additional information for the questionnaires. Yeah. The question is whether something like this is helpful to you, whether you see potentially this being in use. Of course, here it's still very good, but still a work in progress, things that we can still improve. But the good aspect is that we already have a system that works collecting real-world data. It's not a simulation. Well, it is a simulation of the traffic, but the system that collects it, it's ready. And
+
+Speaker E (36:31): maybe an additional question on that, also as a validation to this prototype, right? The screen that shows the clinicians the overview. Maybe also, is there something that you would want to see right at the beginning, or is there something you think Is that relevant for you? Maybe also interested in that, how you would act or interact with this prototype now?
+
+Speaker B (36:51): Or maybe even a lot of information at once.
+
+Speaker C (36:58): Is that a question for us? Yes, for you.
+
+Speaker B (37:02): Yeah, whether you— is it a clear interface? Is it something you would like to see?
+
+Speaker C (37:10): Yeah, I mean, I mean, we could— I don't know what kind of, for example, classification algorithm is there. I think, you know, I could imagine kind of clinical support system that is giving you like clear information, clear labeling. Yeah, this person is at risk for something, or this person is showing a pattern of, I don't know, depressive mood, or is at risk of suicidality. Even with this, you know, with this uncertainty, right? We are talking— we are not talking about making clinical decision. We are talking about clinical support. Like, all this information is for clinical support. Yes. I mean, then we can be courageous. We don't have to be, you know, okay, now I— this is just exploratory and so on, and we cannot make any diagnostic I mean, this is clear, but if we can be courageous with the framework of clinical support, additional information provided to clinicians, I mean, we can— this would be something I would welcome, definitely.
+
+Speaker A (38:20): I think it's super interesting. Also, as I understand, the people participating would just need to, like, agree that you get access to their network, but they don't need to actively do anything or change Which
+
+Speaker C (38:34): is, of course, very comfortable,
+
+Speaker A (38:37): right?
+
+Speaker C (38:37): Because EMA requires, like, active input and so on, and passive sensing is just working by default. I mean, it's very important. And I could imagine, I mean, it would, you know, I'd say the future, right? But maybe together with— we are exploratory stage study research and so on, but in the future, I could imagine, like, a kind of agreement with parents of adolescents which are at risk of suicidality, or, you know, to have this kind of smart home, the smart home as you also name it, as application or something running in the background. I mean, the whole regulation would need to be discussed. Clear. But for example, also our life intervention patients, rather, when they finish their intervention after 3 months. I can imagine that's still a part of— a subsample of them is at risk of suicidality, especially, you know, a good predictor of the next attempt is actually the previous attempt, right? Yes. Celia, you can correct me, but I think this is a previous attempt is a very good predictor of possible future attempt. So for us, for such critical subpopulation, it would make sense maybe I'm just fantasizing in our life intervention project to prolong it, for example, for the next 3 months or 1 month, you know, as a kind of low threshold monitoring mechanism in a subsample of adolescents that are especially at risk of suicidality. Yeah. But in terms of the— do you have any ideas in terms of panel or what can be can be provided to clinicians. So my— the idea I mentioned was to have a clear labeling, but maybe some other things. I mean, insomnia is also very important parameters, and we can really— we can have a readout of also perturbed sleep, which I find very important for clinical applications. Sleep is very important here. With many relationship to suicidality, depression, and so on. Mania and different, you know, this chaotic— yeah. Thea, any comments?
+
+Speaker A (41:00): Yeah, I think I like this dashboard. I think there's, I don't know, there's an app that clinicians use here, the Robin Z app, which is more for like the— it's on a symptom basis. It's not really for research, but they can put in their symptoms. They put in, they can put in like resources, good experiences, and everything. And then there's also like a dashboard for the clinician where you can see it. And
+
+Speaker B (41:25): what's the name of the app? I'm sorry.
+
+Speaker A (41:26): Robin Z.
+
+Speaker C (41:27): I can, I can, I send you, I send you in the chat.
+
+Speaker B (41:31): Thank you.
+
+Speaker A (41:33): And in my, or in our clinical work, we use this quite a bit to track the adolescent's mood and everything. And a lot of Then they really like it because you can also see like the trajectories, and we often look at those with the patients together. And I think, as Luca said, the idea is not to make a— or as you said, it's not to like make a diagnosis, but to like see, oh, do you see this changes? Like, do you see a connection to your mood? I think especially, for example, with sleep. I think it's very interesting that you have the ability to look at it. And also the, the thing you showed with the, the where it's marked red, where it's, uh, I think above or maybe even below the average of the person. I think that's super interesting. Yeah. And I think it's some— it can make it a bit easier if you look at just the data and you don't have to— you can just take this And then discuss it and then see together what it would mean instead of having to, like, the subjective tracking of the symptoms.
+
+Speaker C (42:44): Yeah, I think that the future of psychiatry is not to have all these parameters, all these results collected at a certain point, and then there is a clinical interview or a series of clinical interviews where such additional information may be discussed. discussed, right? It's not going to replace the diagnostic and so on. But I mean, I said that additionally, provide more
+
+Speaker B (43:10): information.
+
+Speaker A (43:11): Yeah, yeah,
+
+Speaker C (43:12): absolutely.
+
+Speaker A (43:12): And I think, as you already mentioned, Lukasz, I think with mania and also psychosis, I think sleep is a very good early indicator. I think it would be, could be very helpful to have as early detection.
+
+Speaker C (43:25): Yeah, I like sleep. I mean, this is one of the I mean, for me, it's a very important marker, sleep. I mean, many things start with sleep or related to sleep. Another one is what we like. Unfortunately, we, we don't have means. I mean, we have a bit, we've developed apps, but this social connectedness, um, this is a very strong protective factor, you know, uh, people having a network of friends or family, family support. I know this is more— this is still a psychological measure, right? Because it's difficult. But with all this, with this network, or maybe connections, or kind of tracking, you know, social connections. Yeah. I also find it next to sleep, this social connectedness, a very interesting pattern we can— interesting parameter we can focus on.
+
+Speaker B (44:23): That's a point that we can say that from a networking perspective, we can partially observe that. We can see whether someone uses social network.
+
+Speaker D (44:35): Yeah, you see what I share right now.
+
+Speaker B (44:37): It's exactly that. But since everything is encrypted, we cannot see the content.
+
+Speaker A (44:44): But I think I've read some papers that just already the type of app has different implications for mental health among adolescents. That if, like, it's different if they, like, play video games on their phone for, like, 4 hours or they're on, like, social networking sites, and they're not both— the effect is not the same. So I think even if you can't see the content, just, I think the website itself is very important information.
+
+Speaker C (45:13): And I also think, I mean, also the— I mean, internet can also be a replacement for real-life connections, right? I mean, we can also— would need to maybe differentiate whether this is a replacement and the person is still alone or feeling alone. Loneliness is also an important topic nowadays. Or is it kind of— or is it showing that the network of contacts that is actually protective, right? Or is it maybe just a substitute that it's not working properly? protectively. I mean, this is another, another thing we should definitely think about.
+
+Speaker B (45:50): That's certainly— sorry, Carla, please.
+
+Speaker E (45:53): Sorry, I was just wondering if we could circle back also to the interface. Our current struggle mainly is also the balance between showing something as straightforward as possible and intuitive and showing something, right, of course backed by data and explaining, hey, this is true, it is computed by XYZ. Maybe what is your input? How self-explanatory do you want data to be, and how backed by numbers and stuff do you want it to be, right? This balance. So we currently don't entirely know how to present this then in the end to clinicians.
+
+Speaker C (46:31): Carla, can you repeat? I missed a bit your point.
+
+Speaker E (46:35): So, um, So our struggle right now currently is to balance between showing something very straightforward, very easily, and showing it backed by actual numbers, right? Because what we show, the data, is correct that way. It is just about how to present the data now. If it is too, let's say, too theoretical, too data science-ish, or if it is already too simple and you would like more information tied to it. Yeah, so how— what's your input on this balance and where to set it?
+
+Speaker C (47:06): So my question— so my answer would be actually like very spontaneous, would be to have 2 layers of information. One very simple, as a really straightforward information, I would exaggerate, yeah, this person is going to commit suicide, this person is depressive, but we are at risk. I would maybe use this at risk You know, and they, they show a very, very simple dashboard, you know. And also because sometimes, sometimes time is an issue, so I would suggest, uh, like very simple and very like— I mean, simple and rather visually attractive information, but very simple as layer 1.
+
+Speaker E (47:50): So like this dashboard, for example?
+
+Speaker C (47:55): I mean, it's already good. It can be even simpler, but I think the level of complexity is good. But maybe level 2, you know, to go deeper and then to show like more advanced information. This would be my immediate response. I don't know whether, Silvia, you have thoughts.
+
+Speaker A (48:15): Yeah, I like the idea with the 2 layers. I think the simple layer is Just from a practical point of view, like, time is always an issue, especially like in the clinical work. So I don't think if it's too complicated, I don't think clinicians have time to look at it in detail, and then they'll just maybe not look at it as often. Mm-hmm. But I like the idea. I think I like the idea with the, like, the average Activity that you could see that, and then maybe see when there's a deviation from that. So if, like, I think you said you could infer about how long someone sleeps, but you could see like what the average score was, and that you— but you could also then see if someone slept way more or way less, um, in a certain period.
+
+Speaker B (49:11): One idea that we are testing is, you see there is an assistant button there. We are integrating an LLM to work over the data. So someone could chat, make questions specifically with the data. And then maybe that's a more modern interface that we have there. And it looks over the data and gives information over it.
+
+Speaker A (49:41): Yeah.
+
+Speaker B (49:42): Yeah. So this is something also in progress.
+
+Speaker A (49:44): Yeah, yeah. I think that's— or to me, when I'm not thinking as research but thinking clinically, I think to me, if someone has, for example, been depressed for months and months, like a high score in like depressed mood would not initially be concerning to me directly in that moment. But if I saw that it like deviates a lot or if it suddenly got a lot better, I would also be very skeptical. difficult. So I think the information is, is the— or for to really see the acute, um, danger, I think it would be like the deviation. I think
+
+Speaker D (50:21): if I may touch upon that, so what we thought about is like my first part of the question would be, um, are there like certain things you always want to monitor? For example, we said sleep. Okay, maybe we can instead of having this heat map we can build some kind of dashboard as you know it, maybe from your Whoop, that you know, okay, this person has slept around this time in the last week, and you sort of have an overview of from when to when he slept. And like, what kind of information would you track for everybody? Like, for example, I can imagine sleep, maybe social network use, maybe visits to sites that are associated with suicidality as sort of this alarm thing or risk thing you mentioned. But to come to the second part, we thought about having a sort of configuration process as an onboarding for a patient, for you as a clinician, to say, okay, right now this person that is onboarded on this network analysis, he's already, as you mentioned, he's maybe very depressed, he has the symptom for, I don't know, 2 years. So what do I want to actually monitor with the system? Do I just want to see, okay, is the situation worsening? Is there any specific, I don't know, page or any specific category you want to monitor? For example, you want to know if he visits, I don't know, news websites because he's very concerned with the state of the world, or is it maybe something else? what we can do is we can have a very personalized experience and say you can configure what you want to sort of have as a pop-up, um, or, or what, what does at risk mean for this person?
+
+Speaker A (52:13): I think it's a very good question. For me, I think there's like 2 parts. I feel like one aspect is like the if you're still like in the diagnostic phase, I think you would want to track other things. And if you're really— or there you would actually want to look at the information just to see what the status at the moment is. And I think if you're in treatment, I think you would also want to see the changes, not in the sense if there's like an acute endangerment, but also, oh, is the sleep getting more regular, or is it like— Is the therapy working in this sense?
+
+Speaker C (52:53): Yeah. And also, I think I already mentioned this, but I think that the deviation from the person average is one point. But I also think it would be nice to have kind of norm validation, right? Kind of also to have, like, let's say, typical— we are talking about How we are— what's the name— like neurotypical development, and for example, in the case of autism, this is the most famous expression, like that there are neurodivergent comparisons. Mm-hmm. So, I think it would also be in the future to have kind of a norm that has been validated across like healthy population and have this as a reference, and also to have this person-centered average, and then to talk about deviations compared to the norm, to the average norm, and compared to the person-centered norm. I think I would do this switch.
+
+Speaker B (53:58): That's an excellent point. We had this as a challenge in the previous instance of this project, that if a person is— we start to consider abnormal behavior But if the person is already depressed and the average is already not normal, the person is already depressed when we start to consider normal. Averaging this with a healthy population helps to see this difference. So very good input.
+
+Speaker C (54:29): 2 practical points. I don't want to prolong, but maybe give you something practical, Bruno, Thierry, and Carla. So the first point is, do you think you would have ideas for data analysis that we have? So from the smartphone that we are having, or would you suggest— I mean, Bronner, you also— this is actually our first, first, first analysis, to be honest. Or would you suggest us to contact— I think you mentioned Clemens? that is doing a lot of webbing research examining smartphones, or do you have experience with passive sensing analysis? And for example, what I mentioned that we would like to see the prediction, whether the prediction increases based on passive sensing versus EMR, this kind of things.
+
+Speaker B (55:19): I think that the alternatives are not exclusive there. We have a few ideas there. I think the data that you collect already helps to show a few interesting points. Um, contacting Clemens is definitely also a good point. He's the specialist in well-being and taking smartphone data. We are also in contact with Clemens for a few things. He gave, uh, for instance, this idea of using an LLM to make things useful. So
+
+Speaker C (55:49): yeah. We can make our circle bigger, you know. I mean, this is also— this comes also with couch ownership. But if Sauli would like to start and to maybe kind of having a bit of guidance regarding this passive sensing analytics. I mean, we have our own ideas too, right? But for sure, someone that has been doing this for a longer time, we would also appreciate their expertise and some help if possible.
+
+Speaker B (56:15): Definitely, definitely. And Koen has always been a very nice and supportive person, so I That's lovely. Yes, I mean, from the data that you presented there, depending on how much time or how much data you collect, it is possible to infer some useful information.
+
+Speaker C (56:35): Yeah, so far we have only up to 10, I think up to 10 participants. I think it's, in my opinion, it's not too much, so data collection is ongoing. I don't know what is feasible. Because, as Silja mentioned, our population is a bit difficult. You know, we have so many exclusion criteria. Yeah, but maybe starting slowly, you know, like kind of coding in error, or, you know, kind of gathering concepts. What can we do with our data would be nice, I think.
+
+Speaker B (57:10): Definitely. Yeah, I can support there. And from our side as well, I mean, if we can present or do a demonstration of this at some point, or even in the future try to deploy this once it's in a more stable stage, that would be lovely.
+
+Speaker C (57:30): Yeah, and the last point, that is what I also wanted to show this to Karla and Kielis, this DIGIT Innovation Grant. Yeah, you are right, Bruno. This is only from— for— I mean, I could be someone applying for this grant. Yes. So this is the grant for— so I already got one grant from them. This is Thierry and Karay. This is a digital initiative in our Zurich area. So they are funding the projects that are digitalization-oriented in different areas. And I got one grant for one PhD student together with the PH. So we want to digitalize ADHD diagnostic and monitoring using fNIRS. So this is a kind of functional near-infrared spectroscopy. So this is— these are like electrodes on the head. on the, on the, on the SCARP. So we got a, we got a bigger grant for 3 years, but there is a possibility of this smaller grant for €75,000 for, for 1 year, uh, in which we could test certain, certain concepts. Also, you have, you are so advanced, so we told you, of course, makes sense only to make it with cooperation with you. You can think of it. There is that. So the deadline is January 13th. The effort is not so big. I think there are like a small piece of text and also kind of, you know, I would need to make a video of me probably explaining.
+
+Speaker B (59:27): Yeah, this is a new requirement.
+
+Speaker C (59:28): Yeah, yeah, yeah. I kind of advertisement Which is— But I also don't want to take away anything from you, you know. That's why I'm asking to be only in cooperation with you. But I would probably be the person that would have to apply also with, also with your names and presenting us as a team. You can think of it whether it's
