@@ -159,6 +159,7 @@ def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig) -
     obs = observed.build(days, [rec.get("activity") for _, rec in records], baseline_stats,
                          lambda k: labels.get(k, k), reference=healthy_reference(settings, profile),
                          day_types=day_types, focus=clinical.get("focus"), normals=clinical.get("normals"))
+    obs["flags"] = care_mod.apply_purpose(obs["flags"], care.get("clinical"))   # "notable change" flags per purpose
     return {
         "profile": {**profile.to_json(), "has_plan": has_plan,
                     "phase_labels": {"baseline": "Baseline", "current": "Clinical" if has_plan else "Recent"}},
@@ -425,7 +426,12 @@ def create_app(settings: Settings | None = None, llm_client: Any = None,
 
     def _care_out(user: auth.User, pid: str) -> dict[str, Any]:
         c = carestore.get(pid)
-        return c if user.role == "multi" else {**c, "clinical": None}
+        if user.role == "multi":
+            return c
+        out = {**c, "clinical": None}       # the purpose is part of the clinical setup
+        for k in ("purpose", "change_flags"):
+            out.pop(k, None)
+        return out
 
     @app.put("/api/profiles/{pid}/care/routine")
     def put_routine(pid: str, body: RoutineBody, user: auth.User = Depends(current_user)) -> dict[str, Any]:

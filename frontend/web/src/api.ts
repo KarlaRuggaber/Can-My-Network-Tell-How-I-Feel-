@@ -16,7 +16,7 @@ export interface Config {
   // clinicians and parents only:
   observability?: Record<CritKey, Observability>;
   risk_criteria?: Record<string, CritKey[]>;
-  risks?: { id: string; title: string; track: string }[];
+  risks?: { id: string; title: string; track: string; icon?: string }[];
 }
 
 export type Role = "single" | "multi";
@@ -155,11 +155,17 @@ export interface Clinical {
   history: string; concerns: string; treatment: string; criteria: CritKey[];
   focus: Record<string, { enabled: boolean; sensitivity: Sensitivity }>;
   normals: Record<string, { min: number | null; max: number | null }>;
+  purpose?: CarePurpose;
+  change_flags?: boolean | null;    // null: follow the purpose (on for treatment monitoring)
 }
+/** Why a person is monitored: assessment (status vs. the typical range first) or treatment
+ *  monitoring (change over time first, "notable change" flags on by default). */
+export type CarePurpose = "assessment" | "treatment";
 export interface Care {
-  purpose?: "assessment" | "treatment";   // v3 (K5): which comparison the overview shows first
   routine: Routine | null; away_periods: AwayPeriod[]; clinical: Clinical | null;
   updated: Record<string, { by: string; at: string }>;
+  purpose?: CarePurpose;            // clinicians and parents only; "assessment" without a setup
+  change_flags?: boolean;           // effective: whether "notable change" flags are shown
 }
 export interface FocusSuggestion {
   criteria: { criterion: CritKey; priority: "high" | "medium" | "low"; reason: string }[];

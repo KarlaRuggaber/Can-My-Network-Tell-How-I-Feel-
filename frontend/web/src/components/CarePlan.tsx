@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  api, CRIT_KEYS, type AwayPeriod, type Care, type Clinical, type Config, type CritKey, type FocusSuggestion,
+  api, CRIT_KEYS, type AwayPeriod, type Care, type CarePurpose, type Clinical, type Config, type CritKey, type FocusSuggestion,
   type Routine, type Sensitivity, type SourceDevice, type Timeline,
 } from "../api";
 import { fmtClock, fmtHours } from "../lib/observed";
@@ -16,7 +16,50 @@ type Props = {
   onAsk: (question: string, focus: string) => void;
 };
 
-const emptyClinical = (): Clinical => ({ history: "", concerns: "", treatment: "", criteria: [], focus: {}, normals: {} });
+const emptyClinical = (): Clinical => ({
+  purpose: "assessment", change_flags: null, history: "", concerns: "", treatment: "", criteria: [], focus: {}, normals: {},
+});
+
+/** Why the person is monitored; decides what the overview shows first (Feedback-v3-Plan §5.2, E2). */
+const PURPOSES: { id: CarePurpose; title: string; question: string; effect: string }[] = [
+  { id: "assessment", title: "Assessment", question: "Where does this person stand?",
+    effect: "The overview shows the comparison with the typical range first. Notable changes (improvements) are off unless you switch them on." },
+  { id: "treatment", title: "Treatment monitoring", question: "How is this person changing over time?",
+    effect: "The overview shows the change against the person's own usual weeks first. Notable changes (improvements) are flagged, to discuss." },
+];
+
+/** Safety signal that is never switched off (the only red risk). */
+const ALWAYS_ON = new Set(["sensitive_sites"]);
+
+/** Icon per risk, the same names the flags use (Icon contract, Feedback-v3-Plan §2). */
+type IconName = "moon" | "sunrise" | "clock" | "night-use" | "chat" | "globe" | "alert" | "irregular" | "change";
+const RISK_ICON: Record<string, IconName> = {
+  later_nights: "moon", shorter_quiet: "moon", later_mornings: "sunrise", night_use: "night-use",
+  more_use: "clock", less_use: "clock", fewer_chats: "chat", fewer_sites: "globe",
+  irregular_nights: "irregular", sensitive_sites: "alert",
+};
+const ICON_PATH: Record<IconName, string> = {
+  moon: "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z",
+  sunrise: "M4 18h16M7 18a5 5 0 0 1 10 0M12 4v4M5 9l2 2M19 9l-2 2",
+  clock: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2",
+  "night-use": "M16 13.5A6.5 6.5 0 0 1 7.5 5a6.5 6.5 0 1 0 8.5 8.5zM19 18.5a1.5 1.5 0 1 0 0 .01",
+  chat: "M4 5h16v10H9l-5 4z",
+  globe: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18",
+  alert: "M12 3 2 20h20zM12 9v5M12 17v.01",
+  irregular: "M3 12l3-5 3 10 3-10 3 10 3-10 3 5",
+  change: "M5 19 19 5M10 5h9v9",
+};
+/** Stand-in until T0's Icon.tsx is merged: then this becomes <Icon name={name} label={label} />. */
+function RiskIcon({ name, label }: { name: IconName; label: string }) {
+  return (
+    <svg className={`icon icon-${name}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label={label}
+      style={{ verticalAlign: "-3px", flexShrink: 0 }}>
+      <title>{label}</title><path d={ICON_PATH[name]} />
+    </svg>
+  );
+}
+const ALERT_COLOR = "var(--alert, var(--red-text))";
 const LEVEL: Record<string, string> = { good: "well observable", partial: "partly observable", none: "barely observable" };
 const NORMAL_TRACKS: { key: string; label: string; kind: "evening" | "morning" | "hours" | "number" }[] = [
   { key: "quiet_start", label: "Went quiet (bedtime)", kind: "evening" },
@@ -52,7 +95,13 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
   const obs = cfg.observability ?? ({} as Record<CritKey, never>);
   const riskCrit = cfg.risk_criteria ?? {};
   const risks = cfg.risks ?? [];
-  const effective = (id: string) => clinical.focus[id] ?? { enabled: true, sensitivity: "standard" as Sensitivity };
+  const effective = (id: string) => {
+    const e = clinical.focus[id] ?? { enabled: true, sensitivity: "standard" as Sensitivity };
+    return ALWAYS_ON.has(id) ? { ...e, enabled: true } : e;
+  };
+  const purpose: CarePurpose = clinical.purpose ?? "assessment";
+  const changeFlags = clinical.change_flags ?? purpose === "treatment";
+  const iconFor = (r: { id: string; icon?: string }) => (r.icon ?? RISK_ICON[r.id]) as IconName | undefined;
   const linked = routine.devices.filter((d) => d.ip);
   const status = [
     { ok: !!care?.routine, text: care?.routine ? `Routine filled in (last changed by ${care.updated?.routine?.by ?? "—"})` : "Routine not filled in yet (the patient does this at first login)" },
@@ -68,6 +117,15 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
       onSaved(await api.putAway(pid, away));
       say("routine", "ok", "Routine, devices and away periods saved.");
     } catch (e) { say("routine", "error", String((e as Error).message)); }
+  };
+  const savePurpose = async () => {
+    try {      // only the purpose: unsaved edits further down stay in the form
+      const saved = { ...emptyClinical(), ...(care?.clinical ?? {}), purpose, change_flags: clinical.change_flags ?? null };
+      onSaved(await api.putClinical(pid, saved));
+      say("purpose", "ok", purpose === "treatment"
+        ? "Purpose saved: treatment monitoring. The overview now leads with change over time."
+        : "Purpose saved: assessment. The overview now leads with the comparison with the typical range.");
+    } catch (e) { say("purpose", "error", String((e as Error).message)); }
   };
   const saveClinical = async () => {
     try {
@@ -115,7 +173,7 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
   const applySuggestion = () => {
     if (!suggestion) return;
     const focus = { ...clinical.focus };
-    for (const r of suggestion.risks) focus[r.id] = { enabled: r.enabled, sensitivity: r.sensitivity };
+    for (const r of suggestion.risks) focus[r.id] = { enabled: r.enabled || ALWAYS_ON.has(r.id), sensitivity: r.sensitivity };
     setClinical({ ...clinical, criteria: suggestion.criteria.filter((c) => c.priority !== "low").map((c) => c.criterion), focus });
     say("clinical", "ok", "Suggestion applied to the form. Check it, then save.");
   };
@@ -125,14 +183,22 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
     return { inFocus, other: risks.filter((r) => !inFocus.includes(r)) };
   }, [risks, riskCrit, clinical.criteria]);
 
-  const riskRow = (r: { id: string; title: string }) => {
+  const riskRow = (r: { id: string; title: string; icon?: string }) => {
     const e = effective(r.id);
+    const icon = iconFor(r);
+    const locked = ALWAYS_ON.has(r.id);
     return (
       <tr key={r.id} className={e.enabled ? "" : "unconfigured"}>
-        <td><label className="toggle"><input type="checkbox" checked={e.enabled} onChange={(ev) => setRisk(r.id, { enabled: ev.target.checked })} /> {r.title}</label></td>
+        <td><label className="toggle" title={locked ? "Safety signal: always on" : undefined}
+          style={locked ? { color: ALERT_COLOR } : undefined}>
+          <input type="checkbox" checked={e.enabled} disabled={locked} aria-label={`Flag ${r.title}`}
+            onChange={(ev) => setRisk(r.id, { enabled: ev.target.checked })} />{" "}
+          {icon && <RiskIcon name={icon} label={r.title} />} {r.title}
+          {locked && <span className="muted small" style={{ color: "var(--text2)" }}> · always on</span>}
+        </label></td>
         <td className="muted small">{(riskCrit[r.id] ?? []).join(", ")}</td>
         <td>
-          <div className="seg" role="group" aria-label={`Sensitivity for ${r.title}`}>
+          <div className="seg" role="group" aria-label={`Sensitivity for ${r.title}`} title="How many days beyond the usual range it takes to flag">
             {(["strict", "standard", "relaxed"] as Sensitivity[]).map((s) => (
               <button key={s} disabled={!e.enabled} className={e.sensitivity === s ? "active" : ""} onClick={() => setRisk(r.id, { sensitivity: s })}>{s}</button>
             ))}
@@ -152,6 +218,34 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
         <ul className="status-list">
           {status.map((s) => <li key={s.text} className={s.ok ? "ok" : "todo"}>{s.ok ? "✓" : "○"} {s.text}</li>)}
         </ul>
+      </section>
+
+      <section className="card">
+        <div className="card-head"><h2>Purpose of the monitoring</h2>
+          <p className="sub">Clinicians and parents only. Decides what the overview shows first and whether notable changes are flagged.</p></div>
+        {msg?.where === "purpose" && <p className={msg.kind === "error" ? "error" : "notice"}>{msg.text}</p>}
+        <fieldset className="purpose-pick" style={{ border: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+          <legend className="small muted">Purpose</legend>
+          {PURPOSES.map((p) => (
+            <label key={p.id} className={`crit-option ${purpose === p.id ? "on" : ""}`}>
+              <input type="radio" name="care-purpose" value={p.id} checked={purpose === p.id}
+                onChange={() => setClinical({ ...clinical, purpose: p.id })} />
+              <span><b>{p.title}</b> — {p.question}<br /><span className="muted small">{p.effect}</span></span>
+            </label>
+          ))}
+        </fieldset>
+        <label className="toggle" style={{ marginTop: 10, display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="checkbox" checked={changeFlags} onChange={(e) => setClinical({ ...clinical, change_flags: e.target.checked })} />
+          <RiskIcon name="change" label="Notable change" />
+          Flag notable changes (improvements), to discuss
+          <span className="muted small">
+            {clinical.change_flags == null ? `default for ${purpose === "treatment" ? "treatment monitoring" : "assessment"}` : "set by you"}
+          </span>
+          {clinical.change_flags != null && (
+            <button type="button" className="link small" onClick={() => setClinical({ ...clinical, change_flags: null })}>follow the purpose</button>
+          )}
+        </label>
+        <div className="row-actions"><button className="btn btn-primary" onClick={savePurpose}>Save purpose</button></div>
       </section>
 
       <section className="card">
@@ -201,7 +295,7 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
             <h3 className="flag-group-title">Suggested focus</h3>
             <ul>
               {suggestion.criteria.map((c) => (
-                <li key={c.criterion}><b>{c.criterion} {cfg.criterion_names[c.criterion]}</b> <span className={`pill pill-${c.priority === "high" ? "red" : "outline"}`}>{c.priority}</span>
+                <li key={c.criterion}><b>{c.criterion} {cfg.criterion_names[c.criterion]}</b> <span className={`pill pill-${c.priority === "high" ? "neutral" : "outline"}`} title="Priority suggested by the assistant">{c.priority}</span>
                   {obs[c.criterion] && <span className={`obs obs-${obs[c.criterion].level}`}>{LEVEL[obs[c.criterion].level]}</span>} — {c.reason}</li>
               ))}
             </ul>
@@ -233,19 +327,20 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
 
         <h3 className="flag-group-title">Risks to flag</h3>
         <table className="risk-table">
-          <thead><tr><th>Risk</th><th>Criteria</th><th>Sensitivity</th></tr></thead>
+          <thead><tr><th>Risk (flag icon)</th><th>Criteria</th><th>Sensitivity</th></tr></thead>
           <tbody>
             {groupedRisks.inFocus.map(riskRow)}
             {groupedRisks.other.length > 0 && <tr><td colSpan={3} className="muted small">Not linked to a criterion in focus:</td></tr>}
             {groupedRisks.other.map(riskRow)}
           </tbody>
         </table>
-        <p className="muted small">Strict: 2 of the last 7 days beyond 1 SD. Standard: 3 of 7 beyond 1.5 SD. Relaxed: 4 of 7 beyond 2 SD.</p>
+        <p className="muted small">Strict: 2 of the last 7 days beyond 1 SD. Standard: 3 of 7 beyond 1.5 SD. Relaxed: 4 of 7 beyond 2 SD.
+          Each risk carries the same icon as its flag in the overview. Crisis or self-harm sites are a safety signal and stay on.</p>
 
         <h3 className="flag-group-title">Normal for this patient</h3>
         <p className="muted small">Optional. A range here replaces the range learned from the baseline weeks: a day outside it counts as clearly different.</p>
         <table className="normals-table">
-          <thead><tr><th>Track</th><th>Learned usual</th><th>Normal from</th><th>to</th></tr></thead>
+          <thead><tr><th>Track</th><th>Usual range (learned, mean ± 1 SD)</th><th>Normal from</th><th>to</th></tr></thead>
           <tbody>
             {NORMAL_TRACKS.map((t) => {
               const n = clinical.normals[t.key] ?? { min: null, max: null };
@@ -253,8 +348,8 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
               const learned = !u ? "–" : t.kind === "evening" || t.kind === "morning" ? `${fmtClock(u.mean - u.sd)}–${fmtClock(u.mean + u.sd)}`
                 : t.kind === "hours" ? `${fmtHours(u.mean - u.sd)}–${fmtHours(u.mean + u.sd)}` : `${fmtNum(u.mean - u.sd, 0)}–${fmtNum(u.mean + u.sd, 0)}`;
               const input = (side: "min" | "max") => t.kind === "evening" || t.kind === "morning"
-                ? <input type="time" value={toHHMM(n[side])} onChange={(e) => setNormal(t.key, side, e.target.value ? toMin(e.target.value, t.kind) : null)} />
-                : <input type="number" step={t.kind === "hours" ? 0.5 : 1} min={0} value={n[side] ?? ""} onChange={(e) => setNormal(t.key, side, e.target.value === "" ? null : Number(e.target.value))} />;
+                ? <input type="time" aria-label={`${t.label}: normal ${side === "min" ? "from" : "to"}`} value={toHHMM(n[side])} onChange={(e) => setNormal(t.key, side, e.target.value ? toMin(e.target.value, t.kind) : null)} />
+                : <input type="number" aria-label={`${t.label}: normal ${side === "min" ? "from" : "to"}`} step={t.kind === "hours" ? 0.5 : 1} min={0} value={n[side] ?? ""} onChange={(e) => setNormal(t.key, side, e.target.value === "" ? null : Number(e.target.value))} />;
               return (
                 <tr key={t.key}><td>{t.label}</td><td className="muted small">{learned}</td><td>{input("min")}</td><td>{input("max")}</td></tr>
               );
