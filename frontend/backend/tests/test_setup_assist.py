@@ -74,7 +74,7 @@ def test_suggest_routine_returns_the_questions_with_the_form():
                "bedtime": "23:00", "wake": "07:00", "bedtime_free": None, "wake_free": None, "devices": [], "note": ""}
     payload["week"]["sat"] = payload["week"]["sun"] = {"am": "free", "pm": "free"}
     fake = _Fake(payload)
-    out = sa.suggest_routine({"model": "m", "api_key": "k"}, "School, bed at 11", anthropic_client=fake)
+    out = sa.suggest_routine({"model": "m", "api_key": "k"}, "School, bed at 11", client=fake)
     assert out["bedtime"] == "23:00"
     assert [q["id"] for q in out["missing"]] == ["week", "away_times", "sleep_free", "devices"]
     # the routine part is still a valid routine (the extra key is ignored when it is saved)
