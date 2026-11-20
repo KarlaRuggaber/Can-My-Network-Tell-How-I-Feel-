@@ -26,7 +26,11 @@ export interface ProfileListItem {
   id: string; name: string; condition: string; source: string; scripted: boolean;
   first_day: string | null; last_day: string | null; n_days: number;
   config: Profile;
+  attention?: ProfileAttention;   // added by the backend (v3); absent until then
 }
+
+/** What needs a clinician's look per person: new flags, and whether crisis/self-harm sites appeared. */
+export interface ProfileAttention { flags: number; alert: boolean }
 
 export interface DeviceRef { ip: string; label: string }
 

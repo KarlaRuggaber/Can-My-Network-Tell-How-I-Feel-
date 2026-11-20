@@ -1,0 +1,52 @@
+/* App shell (T3): header brand, person picker, tab icons, assistant answer controls.
+   Loaded before styles.css (imported from App.tsx), so rules that override styles.css use a
+   parent selector. Colours only from the tokens in styles.css; red only for the alert icon. */
+
+.top .brand h1 { font-size: 34px; }
+.top .brand .tagline { margin: 4px 0 6px; }
+.about-line { color: var(--muted); }
+
+/* ---- person picker ---- */
+.person-picker { position: relative; display: flex; align-items: center; gap: 8px; }
+.pp-label { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text2); }
+.pp-trigger { display: flex; align-items: center; gap: 10px; min-width: 260px; max-width: 380px; padding: 6px 12px;
+  border: 1px solid var(--ink); border-radius: 12px; background: #fff; font: inherit; cursor: pointer; text-align: left; color: var(--text); }
+.pp-trigger:hover { background: var(--beige-faint); }
+.pp-trigger:focus-visible { outline: 2px solid var(--beige); outline-offset: 1px; }
+.pp-current { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.pp-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-sub { font-size: 11.5px; color: var(--text2); }
+.pp-chevron { color: var(--text2); font-size: 12px; }
+.pp-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: min(420px, calc(100vw - 32px));
+  background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px rgba(38,38,38,0.16);
+  padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.pp-search { font: inherit; padding: 8px 12px; border: 1px solid var(--border); border-radius: 99px; }
+.pp-search:focus { outline: 2px solid var(--beige); border-color: var(--ink); }
+.pp-filter { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text2); }
+.pp-list { list-style: none; margin: 0; padding: 0; max-height: min(420px, 60vh); overflow-y: auto; }
+.pp-option { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; cursor: pointer; }
+.pp-option.is-active { background: var(--beige-soft); }
+.pp-option.is-selected { box-shadow: inset 3px 0 0 var(--ink); }
+.pp-empty, .pp-count { margin: 0 4px; }
+.pp-marker { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.pp-flags { font-size: 11.5px; padding: 1px 8px; border-radius: 99px; background: #f1ede8; color: var(--text2); white-space: nowrap; }
+.pp-alert { display: inline-flex; color: var(--alert); }
+
+/* ---- tabs with icons ---- */
+.layer-tabs .tab-label { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---- assistant ---- */
+.assistant-tab-icon .icon { width: 14px; height: 14px; }
+/* suggestions: calm, short, text-like; no pill border */
+.assistant-drawer .suggestions { gap: 4px; }
+.assistant-drawer button.suggestion { border: none; background: var(--beige-faint); color: var(--text2); border-radius: 8px;
+  padding: 5px 10px; font-size: 12.5px; }
+.assistant-drawer button.suggestion:hover:not(:disabled) { background: var(--beige-soft); color: var(--ink); }
+.answer-controls { display: flex; flex-direction: column; gap: 6px; margin: -2px 0 4px; }
+.answer-length { display: flex; gap: 4px; }
+.answer-length .btn { padding: 2px 10px; border: 1px solid var(--border); }
+.answer-length .btn:hover { border-color: var(--ink); }
+
+/* "care plan incomplete" is a to-do, not an alert: neutral dot (red is for alerts only) */
+.layer-tabs .tab-dot { background: var(--text2); }
+.layer-tabs button.active .tab-dot { background: #fff; }

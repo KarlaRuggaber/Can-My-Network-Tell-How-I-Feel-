@@ -16,13 +16,44 @@ import { Overview } from "./components/Overview";
 import { Timeline as TimelineView } from "./components/Timeline";
 import { MetricTrends } from "./components/MetricTrends";
 import { ProfileSettings } from "./components/ProfileSettings";
+import { PersonPicker } from "./components/PersonPicker";
+import { Icon, type IconName } from "./components/Icon";
+import { PRODUCT_NAME, PRODUCT_SUBTITLE } from "./theme";
+import "./shell.css";
 import { episodeFlags, gatePresentRolling, phaseGate, type GateParams } from "./lib/gate";
 
 const PHASES: PhaseKey[] = ["baseline", "current"];
 
-export type Tab = "overview" | "timeline" | "details" | "care";
-const TABS: Tab[] = ["overview", "timeline", "details", "care"];
-const MULTI_ONLY: Tab[] = ["details", "care"];
+export type Tab = "overview" | "timeline" | "details" | "about" | "care";
+const TABS: Tab[] = ["overview", "timeline", "details", "about", "care"];
+const MULTI_ONLY: Tab[] = ["details", "about", "care"];
+
+/** The thesis behind the prototype: shown only as a small "About" line, not as the product name. */
+export const THESIS_TITLE = "Can My Network Tell How I Feel? Explainable depression indicators from network traffic metadata";
+
+/** Placeholder for T2's `AboutData` (same props) until it is merged; then import it instead. */
+function AboutData({ cfg, focus, onAsk }: { cfg: Config; focus: CritKey[]; onAsk: (q: string, f: string) => void }) {
+  return (
+    <>
+      <section className="card">
+        <h2>About the data</h2>
+        <p className="sub">What the home network can see (when devices are in use, how much, which kinds of sites by
+          name) and what it cannot see: no search terms, no page content, no messages.</p>
+      </section>
+      <ObservabilityCard cfg={cfg} focus={focus} onAsk={onAsk} step={1} />
+    </>
+  );
+}
+
+// Icons only where one of the fixed icon meanings (VISUAL.md) fits the tab.
+type TabDef = { key: Tab; label: string; icon?: IconName; sub: (multi: boolean) => string; multiOnly?: boolean };
+const TAB_DEFS: TabDef[] = [
+  { key: "overview", label: "Overview", icon: "person", sub: (m) => (m ? "what the network observed" : "your recent days") },
+  { key: "timeline", label: "Timeline", sub: (m) => (m ? "day by day, with notes" : "day by day") },
+  { key: "details", label: "Details", icon: "explain", sub: () => "DSM-5 model, metrics, days", multiOnly: true },
+  { key: "about", label: "About the data", icon: "data", sub: () => "what the network can and cannot see", multiOnly: true },
+  { key: "care", label: "Care plan", icon: "note", sub: () => "routine, devices, focus, normals", multiOnly: true },
+];
 
 // URL state: #/<profile>/<day>/<criterion>/<tab>, or #/settings, so a view can be bookmarked.
 function readHash(): { pid?: string; day?: string; crit?: CritKey; tab?: Tab; settings: boolean } {
@@ -211,17 +242,13 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   return (
     <div className={`page ${drawer ? "page-with-drawer" : ""} ${reflow ? `reflow-${reflow}` : ""}`}>
       <header className="top">
-        <div>
-          <h1>Can My Network Tell How I Feel?</h1>
-          {multi ? <>
-            <p className="tagline">Explainable Depression Indicators from Network Traffic Metadata</p>
-            <p className="disclaimer">Router-level network metrics → DSM-5 criterion likelihoods.
-              Research prototype, not a diagnostic tool.</p>
-          </> : <>
-            {/* the person's view names no condition (no expectation effect) */}
-            <p className="tagline">Patterns in your home network use</p>
-            <p className="disclaimer">Research prototype, not a diagnostic tool.</p>
-          </>}
+        <div className="brand">
+          <h1>{PRODUCT_NAME}</h1>
+          <p className="tagline">{PRODUCT_SUBTITLE}</p>
+          {/* the person's view names no condition (no expectation effect), so the thesis line is clinician-only */}
+          <p className="disclaimer">{multi
+            ? <>Research prototype, not a diagnostic tool. <span className="about-line">About: {THESIS_TITLE}.</span></>
+            : "Research prototype, not a diagnostic tool."}</p>
         </div>
         <div className="top-right">
           <div className="usermenu">
@@ -237,14 +264,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
             <button className="btn btn-quiet" onClick={onLogout}>Log out</button>
           </div>
           {multi && !settings && profiles.length > 0 && (
-            <nav className="personas" aria-label="People">
-              {profiles.map((p) => (
-                <button key={p.id} className={p.id === pid ? "active" : ""} onClick={() => { setPid(p.id); setDay(null); }}>
-                  <span className="p-name">{p.name}</span>
-                  <span className="p-cond">{p.scripted ? "scripted run" : "live"} · {p.config.all_devices ? "all devices" : `${p.config.devices.length} device(s)`}</span>
-                </button>
-              ))}
-            </nav>
+            <PersonPicker profiles={profiles} value={pid} onChange={(id) => { if (id !== pid) { setPid(id); setDay(null); } }} />
           )}
         </div>
       </header>
@@ -310,23 +330,15 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
               {tl.status === "ready" && (
                 <nav className="layer-tabs" role="tablist" aria-label="View">
-                  <button role="tab" aria-selected={tab === "overview"} className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>
-                    Overview <span className="tab-sub">{multi ? "what the network observed" : "your recent days"}</span>
-                  </button>
-                  <button role="tab" aria-selected={tab === "timeline"} className={tab === "timeline" ? "active" : ""} onClick={() => setTab("timeline")}>
-                    Timeline <span className="tab-sub">{multi ? "day by day, with notes" : "day by day"}</span>
-                  </button>
-                  {multi && (
-                    <button role="tab" aria-selected={tab === "details"} className={tab === "details" ? "active" : ""} onClick={() => setTab("details")}>
-                      Details <span className="tab-sub">DSM-5 model, metrics, days</span>
+                  {TAB_DEFS.filter((t) => multi || !t.multiOnly).map((t) => (
+                    <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
+                      <span className="tab-label">
+                        {t.icon && <Icon name={t.icon} size={16} />} {t.label}
+                        {t.key === "care" && setupMissing.length > 0 && <span className="tab-dot" role="img" aria-label="incomplete" title="Care plan incomplete" />}
+                      </span>
+                      <span className="tab-sub">{t.sub(multi)}</span>
                     </button>
-                  )}
-                  {multi && (
-                    <button role="tab" aria-selected={tab === "care"} className={tab === "care" ? "active" : ""} onClick={() => setTab("care")}>
-                      Care plan {setupMissing.length > 0 && <span className="tab-dot" aria-label="incomplete" />}
-                      <span className="tab-sub">routine, devices, focus, normals</span>
-                    </button>
-                  )}
+                  ))}
                 </nav>
               )}
 
@@ -349,7 +361,8 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                   ) : tab === "timeline"
                     ? <TimelineView tl={tl} person notes={[]} onNotes={() => undefined} selectedDay={day} onSelectDay={setDay} onAsk={ask} />
                     : <Overview tl={tl} person selectedDay={day} onSelectDay={setDay} onAsk={ask} />}
-                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person focus={null} />
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person focus={null}
+                    focusInfo={{ day }} />
                 </>
               )}
 
@@ -374,7 +387,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                         onOpenDetails={(d) => { setDay(d); setTab("details"); }} onAsk={ask} />
                     : <Overview tl={tl} person={false} selectedDay={day} onSelectDay={setDay} seen={seen} onSeen={onSeen} onAsk={ask} />}
                   <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false}
-                    focus={`${tab}${day ? `, day ${day}` : ""}`} />
+                    focus={`${tab}${day ? `, day ${day}` : ""}`} focusInfo={{ day }} />
                 </>
               )}
 
@@ -397,7 +410,16 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                   )}
                   <ObservabilityCard cfg={cfg} focus={tl.care?.clinical?.criteria ?? []} onAsk={ask} step={7} />
                   <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false}
-                    focus={[day && `day ${day}`, activeCrit && `${activeCrit} ${cfg.criterion_names[activeCrit]}`].filter(Boolean).join(", ") || null} />
+                    focus={[day && `day ${day}`, activeCrit && `${activeCrit} ${cfg.criterion_names[activeCrit]}`].filter(Boolean).join(", ") || null}
+                    focusInfo={{ day, criterion: activeCrit ? { key: activeCrit, name: cfg.criterion_names[activeCrit] } : null }} />
+                </>
+              )}
+
+              {tl.status === "ready" && multi && tab === "about" && (
+                <>
+                  <AboutData cfg={cfg} focus={tl.care?.clinical?.criteria ?? []} onAsk={ask} />
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false}
+                    focus="about the data" focusInfo={{}} />
                 </>
               )}
             </>
