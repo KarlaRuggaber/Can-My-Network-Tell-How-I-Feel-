@@ -491,7 +491,7 @@ def main(argv: list[str] | None = None) -> int:
               f"({ctx['chars']:,} chars), {n} requests")
     if a.dry_run or not cases:
         return 0
-    if not cfg["api_key"] and not assistant._anthropic_profile():
+    if cfg.get("provider", "anthropic") == "anthropic" and not cfg["api_key"] and not assistant._anthropic_profile():
         print("No Claude key: set it in the portal (Settings → Assistant) or export ANTHROPIC_API_KEY.",
               file=sys.stderr)
         return 2
