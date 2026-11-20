@@ -98,7 +98,7 @@ export function ProfileSettings({ onChanged, onClose }: Props) {
                 <div>
                   <div className="p-name">{p.name}</div>
                   <div className="muted small">
-                    <code>{p.source}</code> · {p.all_devices ? "all devices of the source" : `${p.devices.length} device${p.devices.length === 1 ? "" : "s"}: ${p.devices.map((d) => d.label || d.ip).join(", ")}`}
+                    <code>{p.source}</code>, {p.all_devices ? "all devices of the source" : `${p.devices.length} device${p.devices.length === 1 ? "" : "s"}: ${p.devices.map((d) => d.label || d.ip).join(", ")}`}
                   </div>
                 </div>
                 <div className="row-actions">
@@ -123,7 +123,7 @@ export function ProfileSettings({ onChanged, onClose }: Props) {
               <select value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value, devices: [] })}>
                 {sources.map((s) => (
                   <option key={s.source} value={s.source}>
-                    {s.source} {s.has_plan ? "(scripted)" : "(live)"} · {s.n_days} days
+                    {s.source} {s.has_plan ? "(scripted)" : "(live)"}, {s.n_days} days
                   </option>
                 ))}
               </select>

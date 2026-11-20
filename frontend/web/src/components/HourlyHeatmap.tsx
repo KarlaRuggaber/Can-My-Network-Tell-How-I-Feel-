@@ -30,7 +30,7 @@ export function HourlyHeatmap({ tl, selectedDay, onSelectDay, step }: Props) {
           const [h, y, v] = p.data;
           const d = days[y];
           const ph = d.phase === "current" ? labels.current : d.phase === "baseline" ? labels.baseline : d.phase;
-          return `<b>${d.weekday} ${d.date}</b> · ${ph.toLowerCase()}<br/>${String(h).padStart(2, "0")}:00–${String(h + 1).padStart(2, "0")}:00: ${fmtNum(v)} packets`;
+          return `<b>${d.weekday} ${d.date}</b>, ${ph.toLowerCase()}<br/>${String(h).padStart(2, "0")}:00–${String(h + 1).padStart(2, "0")}:00: ${fmtNum(v)} packets`;
         },
       },
       xAxis: {

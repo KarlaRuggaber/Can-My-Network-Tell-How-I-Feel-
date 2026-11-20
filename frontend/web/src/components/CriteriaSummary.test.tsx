@@ -79,7 +79,7 @@ describe("CriteriaSummary", () => {
     expect(within(c4).getByText("✓ yes")).toBeTruthy();
     expect(screen.queryByRole("cell", { name: /Appetite/ })).toBeNull();   // not scored: footnote only
     expect(screen.getByText(/Not scored by the current configuration: C3 Appetite/)).toBeTruthy();
-    expect(screen.getByText("preliminary · day 2 of 14")).toBeTruthy();
+    expect(screen.getByText("preliminary, day 2 of 14")).toBeTruthy();
     expect(screen.getByText("26/10–08/11")).toBeTruthy();
     expect(screen.getByText(/expectations met so far/)).toBeTruthy();    // C4 met; C1 elevated met (absent)
   });

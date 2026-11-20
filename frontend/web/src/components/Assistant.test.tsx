@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { api, type ChatTurn } from "../api";
-import { Assistant, followUps, MORE_DETAIL, SHORTER } from "./Assistant";
+import { Assistant, followUps, MORE_DETAIL, SHORTER, resetConversations } from "./Assistant";
 
 vi.mock("../api", async (orig) => {
   const mod = await orig<typeof import("../api")>();
@@ -19,7 +19,7 @@ async function renderAnswered(props: Partial<Parameters<typeof Assistant>[0]> = 
 }
 
 describe("Assistant answer controls", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); resetConversations(); });
 
   it("sends Shorter and More detail as follow-up messages with the conversation so far", async () => {
     await renderAnswered();
@@ -64,5 +64,30 @@ describe("followUps", () => {
       expect(out.length).toBeLessThanOrEqual(3);
       expect(out.join(" ")).not.toMatch(/C\d|criterion|likelihood/);
     }
+  });
+});
+
+describe("Assistant across tabs", () => {
+  beforeEach(() => { vi.clearAllMocks(); resetConversations(); });
+
+  it("takes an Explain request once and keeps the conversation when another tab mounts its panel", async () => {
+    vi.mocked(api.assistant).mockResolvedValue({ enabled: true, notice: "" } as never);
+    vi.mocked(api.ask).mockImplementation(async (_id, _m, _f, onText) => { onText("Two late nights."); });
+    const handled = vi.fn();
+    const toggle = vi.fn();
+    const req = { id: 1, question: "Why later nights?", focus: "flag later_nights" };
+    const first = render(<Assistant request={req} onRequestHandled={handled} open={false} onToggle={toggle}
+      profileId="p1" person={false} focus="overview" />);
+    await screen.findByText("Two late nights.");
+    expect(handled).toHaveBeenCalledTimes(1);
+    expect(toggle).toHaveBeenCalledWith(true);
+    first.unmount();
+    // the page cleared the request after it was handled; the next tab mounts a fresh panel
+    toggle.mockClear();
+    render(<Assistant request={null} onRequestHandled={handled} open={false} onToggle={toggle}
+      profileId="p1" person={false} focus="timeline" />);
+    expect(await screen.findByText("Two late nights.")).toBeTruthy();   // conversation kept
+    expect(api.ask).toHaveBeenCalledTimes(1);                            // not asked again
+    expect(toggle).not.toHaveBeenCalled();                               // not reopened
   });
 });

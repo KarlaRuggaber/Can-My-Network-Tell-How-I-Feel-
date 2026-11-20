@@ -2,6 +2,7 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { Day, RiskFlag, SeenMarks, Timeline } from "../api";
 import { axisName, BAND_LABELS, baselineMarkArea, mergeMarkAreas, typicalBand, usualBand } from "../lib/chart";
 import { fmtDay, fmtNum } from "../lib/format";
+import { visitText } from "../lib/metrics";
 import {
   carePurpose, flagIcon, flagKind, flagSentence, fmtClock, fmtHours, fmtTrack, inRange, percentileText,
   trackAxis, trackIcon, typicalRange, typicalWording, usualRange, type RangeKey, type Typical,
@@ -109,7 +110,7 @@ function Flags({ tl, selectedDay, onSelectDay, seen, onSeen, onAsk }: Props) {
           {onSeen && (
             <div className="flag-actions">
               {isSeen(f)
-                ? <span className="muted small">Seen by {seen![f.id].by} on {fmtDay(seen![f.id].at.slice(0, 10))} ·{" "}
+                ? <span className="muted small">Seen by {seen![f.id].by} on {fmtDay(seen![f.id].at.slice(0, 10))} ,{" "}
                     <button className="link small" onClick={() => onSeen(f.id, null)}>undo</button></span>
                 : <button className="btn small" onClick={() => onSeen(f.id, lastDay(f))}>Mark as seen</button>}
               {seen?.[f.id] && !isSeen(f) && <span className="muted small">new days since it was marked as seen</span>}
@@ -423,7 +424,7 @@ function QuietWindows({ tl, days, person, flagged, selectedDay, onSelectDay }: {
           const d = days[p.data[0]];
           const o = d?.observed;
           if (!o) return "";
-          const head = `<b>${d.weekday} ${fmtDay(d.date)}</b>${flagged.has(d.date) ? " · in a flag" : ""}`;
+          const head = `<b>${d.weekday} ${fmtDay(d.date)}</b>${flagged.has(d.date) ? ", in a flag" : ""}`;
           if (o.quiet_start === null) return `${head}<br/>no quiet window found (no data, or no use at all)`;
           return `${head}<br/>went quiet ${fmtClock(o.quiet_start)}${person ? "" : pctLine(d, "quiet_start")}`
             + `<br/>back online ${fmtClock(o.quiet_end)}${person ? "" : pctLine(d, "quiet_end")}`
@@ -508,13 +509,13 @@ function TrackChart({ tl, days, track, person, group, selectedDay, onSelectDay }
           const v = vals[ps[0].dataIndex];
           if (sensitive) {
             const s = d.observed?.sensitive ?? [];
-            return `<b>${d.weekday} ${fmtDay(d.date)}</b><br/>${s.length ? s.map((x) => `${x.label}: ${fmtNum(x.value)}`).join("<br/>") : "nothing above the usual level"}`;
+            return `<b>${d.weekday} ${fmtDay(d.date)}</b><br/>${s.length ? s.map((x) => `${x.label}: ${x.visits ? visitText({ visits: x.visits, starts: x.starts ?? [], minutes: x.minutes ?? 0 }) : "more than usual"}`).join("<br/>") : "nothing above the usual level"}`;
           }
           const dev = d.observed?.deviation?.[track];
           const dref = d.observed?.deviation_ref?.[track];
           return `<b>${d.weekday} ${fmtDay(d.date)}</b><br/>${fmtTrack(track, v)}`
-            + (u ? `<br/>usual ${fmtTrack(track, u.lo)} – ${fmtTrack(track, u.hi)}${beyond(dev) ? " · <b>outside</b>" : ""}` : "")
-            + (ty ? `<br/>typical ${fmtTrack(track, ty.lo)} – ${fmtTrack(track, ty.hi)}${beyond(dref) ? " · <b>outside</b>" : ""}` : "")
+            + (u ? `<br/>usual ${fmtTrack(track, u.lo)} – ${fmtTrack(track, u.hi)}${beyond(dev) ? ", <b>outside</b>" : ""}` : "")
+            + (ty ? `<br/>typical ${fmtTrack(track, ty.lo)} – ${fmtTrack(track, ty.hi)}${beyond(dref) ? ", <b>outside</b>" : ""}` : "")
             + (person ? "" : pctLine(d, track))
             + (ty?.proxyNote ? `<br/><span style="color:${C.muted}">${ty.proxyNote}</span>` : "");
         },

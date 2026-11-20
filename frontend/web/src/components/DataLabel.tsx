@@ -38,7 +38,7 @@ export function DataLabel({ tl }: { tl: Timeline }) {
           <ul className="dl-list">
             {COLLECTED.map((c) => (
               <li key={c.text}><span className="dl-icon"><Icon name={c.icon} size={16} /></span>
-                <span><b>{c.text}</b>{c.detail && <span className="muted small"> · {c.detail}</span>}</span></li>
+                <span><b>{c.text}</b>{c.detail && <span className="muted small">, {c.detail}</span>}</span></li>
             ))}
           </ul>
           {devices.length > 0 && (

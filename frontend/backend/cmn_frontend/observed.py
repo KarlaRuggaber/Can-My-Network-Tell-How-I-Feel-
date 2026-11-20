@@ -28,6 +28,8 @@ from datetime import date, timedelta
 from statistics import NormalDist
 from typing import Any, Callable
 
+from . import metric_names
+
 BIN_MIN = 5
 BINS_PER_DAY = 24 * 60 // BIN_MIN
 NIGHT_FROM_HOUR = 18          # a night runs from 18:00 the day before ...
@@ -176,6 +178,38 @@ def quiet_window(prev_active: list[bool] | None, active: list[bool] | None) -> d
     start = (s0 - offset) * BIN_MIN
     end = (s1 - offset) * BIN_MIN
     return {"quiet_start": float(start), "quiet_end": float(end), "quiet_hours": (end - start) / 60}
+
+
+def _ddmm(iso: str) -> str:
+    return f"{iso[8:10]}.{iso[5:7]}."
+
+
+def _sensitive_item(metric: str, label: str, value: float | None, visits: dict[str, Any]) -> dict[str, Any]:
+    """One sensitive signal of a day, in visits where the traffic summary has them (not packets)."""
+    item: dict[str, Any] = {"metric": metric, "label": label, "value": value}
+    v = visits.get(metric_names.SITE_GROUP_OF.get(metric, ""))
+    if v:
+        item.update(visits=v["visits"], starts=v["starts"], minutes=v["minutes"])
+    return item
+
+
+def _visit_text(s: dict[str, Any]) -> str:
+    """ "2 visits (23:40, 23:58), about 3 min" or, without visit data, the measured value."""
+    if s.get("visits"):
+        n = s["visits"]
+        return (f"{s['label'].lower()} {n} visit{'s' if n != 1 else ''} ({', '.join(s['starts'])}), "
+                f"about {s['minutes']} min")
+    return s["label"].lower()
+
+
+def _visit_short(s: dict[str, Any], with_name: bool) -> str:
+    """ "at 02:34, 3 min" or "2 visits at 23:40 and 23:58, 4 min" (flag text)."""
+    name = f"{s['label'].lower()} " if with_name else ""
+    if not s.get("visits"):
+        return name.strip() or "more than usual"
+    times = " and ".join(s["starts"]) if len(s["starts"]) <= 2 else ", ".join(s["starts"])
+    lead = "at" if s["visits"] == 1 else f"{s['visits']} visits at"
+    return f"{name}{lead} {times}, {s['minutes']} min"
 
 
 def sensitive_metrics(metrics: dict[str, Any], baseline: dict[str, dict[str, float]]) -> list[str]:
@@ -409,7 +443,10 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
             "has_data": bool(act) and (d.get("packets_kept") or 0) > 0,
         }
         sens = sensitive_metrics(m, metric_baseline)
-        obs["sensitive"] = [{"metric": k, "label": labels(k) if labels else k, "value": _num(m[k])} for k in sens]
+        visits = (activity[i] or {}).get("site_visits") or {}
+        obs["site_visits"] = visits          # per site group: visits, start times, minutes (clinicians)
+        obs["sensitive"] = [_sensitive_item(k, labels(k) if labels else metric_names.plain(k), _num(m[k]), visits)
+                            for k in sens]
         obs["sensitive_days"] = 1.0 if sens else 0.0
         d["observed"] = obs
 
@@ -491,12 +528,15 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
     sens_days = [d for d in recent if d["observed"]["sensitive"]]
     if sens_days and risk_setting(focus, "sensitive_sites")[0]:
         names = sorted({s["label"] for d in sens_days for s in d["observed"]["sensitive"]})
+        one = len(names) == 1
+        detail = "; ".join(f"{_ddmm(d['date'])} " + ", ".join(_visit_short(s, with_name=not one) for s in d["observed"]["sensitive"])
+                           for d in sens_days)
         flags.append({"id": "sensitive_sites", "basis": "own", "kind": "risk", "icon": "alert",
                       "title": "Crisis or self-harm sites", "track": "sensitive_days",
                       "direction": 1, "days": [d["date"] for d in sens_days], "count": len(sens_days),
                       "window": len(recent), "unit": "days", "phrase": "", "names": names,
-                      "text": f"Visits above the person's usual level on {len(sens_days)} of the last "
-                              f"{len(recent)} days ({', '.join(names)}).",
+                      "text": f"{', '.join(names)} on {len(sens_days)} of the last {len(recent)} days, more than "
+                              f"usual for this person ({detail}).",
                       "sensitive": True})
 
     return {
@@ -529,6 +569,7 @@ def for_person(observed: dict[str, Any], days: list[dict[str, Any]]) -> None:
     for d in days:
         if d.get("observed"):
             d["observed"].pop("sensitive", None)
+            d["observed"].pop("site_visits", None)
             d["observed"].pop("sensitive_days", None)
             d["observed"].pop("deviation_ref", None)
             d["observed"].pop("percentile_ref", None)

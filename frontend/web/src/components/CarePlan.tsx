@@ -194,7 +194,7 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
           <input type="checkbox" checked={e.enabled} disabled={locked} aria-label={`Flag ${r.title}`}
             onChange={(ev) => setRisk(r.id, { enabled: ev.target.checked })} />{" "}
           {icon && <RiskIcon name={icon} label={r.title} />} {r.title}
-          {locked && <span className="muted small" style={{ color: "var(--text2)" }}> · always on</span>}
+          {locked && <span className="muted small" style={{ color: "var(--text2)" }}>, always on</span>}
         </label></td>
         <td className="muted small">{(riskCrit[r.id] ?? []).join(", ")}</td>
         <td>
@@ -300,7 +300,7 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
               ))}
             </ul>
             {suggestion.risks.length > 0 && <p className="small"><b>Risks:</b> {suggestion.risks.map((r) => `${risks.find((x) => x.id === r.id)?.title ?? r.id} (${r.enabled ? r.sensitivity : "off"}: ${r.reason})`).join("; ")}</p>}
-            {suggestion.caveats.length > 0 && <p className="small muted"><b>Caveats:</b> {suggestion.caveats.join(" · ")}</p>}
+            {suggestion.caveats.length > 0 && <p className="small muted"><b>Caveats:</b> {suggestion.caveats.join("; ")}</p>}
             <div className="row-actions">
               <button className="btn btn-primary" onClick={applySuggestion}>Apply to the form</button>
               <button className="btn btn-quiet" onClick={() => setSuggestion(null)}>Discard</button>
@@ -326,36 +326,40 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
         </div>
 
         <h3 className="flag-group-title">Risks to flag</h3>
-        <table className="risk-table">
-          <thead><tr><th>Risk (flag icon)</th><th>Criteria</th><th>Sensitivity</th></tr></thead>
-          <tbody>
-            {groupedRisks.inFocus.map(riskRow)}
-            {groupedRisks.other.length > 0 && <tr><td colSpan={3} className="muted small">Not linked to a criterion in focus:</td></tr>}
-            {groupedRisks.other.map(riskRow)}
-          </tbody>
-        </table>
+        <div className="table-wrap">
+          <table className="risk-table">
+            <thead><tr><th>Risk (flag icon)</th><th>Criteria</th><th>Sensitivity</th></tr></thead>
+            <tbody>
+              {groupedRisks.inFocus.map(riskRow)}
+              {groupedRisks.other.length > 0 && <tr><td colSpan={3} className="muted small">Not linked to a criterion in focus:</td></tr>}
+              {groupedRisks.other.map(riskRow)}
+            </tbody>
+          </table>
+        </div>
         <p className="muted small">Strict: 2 of the last 7 days beyond 1 SD. Standard: 3 of 7 beyond 1.5 SD. Relaxed: 4 of 7 beyond 2 SD.
           Each risk carries the same icon as its flag in the overview. Crisis or self-harm sites are a safety signal and stay on.</p>
 
         <h3 className="flag-group-title">Normal for this patient</h3>
         <p className="muted small">Optional. A range here replaces the range learned from the baseline weeks: a day outside it counts as clearly different.</p>
-        <table className="normals-table">
-          <thead><tr><th>Track</th><th>Usual range (learned, mean ± 1 SD)</th><th>Normal from</th><th>to</th></tr></thead>
-          <tbody>
-            {NORMAL_TRACKS.map((t) => {
-              const n = clinical.normals[t.key] ?? { min: null, max: null };
-              const u = tl.observed?.usual[t.key];
-              const learned = !u ? "–" : t.kind === "evening" || t.kind === "morning" ? `${fmtClock(u.mean - u.sd)}–${fmtClock(u.mean + u.sd)}`
-                : t.kind === "hours" ? `${fmtHours(u.mean - u.sd)}–${fmtHours(u.mean + u.sd)}` : `${fmtNum(u.mean - u.sd, 0)}–${fmtNum(u.mean + u.sd, 0)}`;
-              const input = (side: "min" | "max") => t.kind === "evening" || t.kind === "morning"
-                ? <input type="time" aria-label={`${t.label}: normal ${side === "min" ? "from" : "to"}`} value={toHHMM(n[side])} onChange={(e) => setNormal(t.key, side, e.target.value ? toMin(e.target.value, t.kind) : null)} />
-                : <input type="number" aria-label={`${t.label}: normal ${side === "min" ? "from" : "to"}`} step={t.kind === "hours" ? 0.5 : 1} min={0} value={n[side] ?? ""} onChange={(e) => setNormal(t.key, side, e.target.value === "" ? null : Number(e.target.value))} />;
-              return (
-                <tr key={t.key}><td>{t.label}</td><td className="muted small">{learned}</td><td>{input("min")}</td><td>{input("max")}</td></tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="table-wrap">
+          <table className="normals-table">
+            <thead><tr><th>Track</th><th>Usual range (learned, mean ± 1 SD)</th><th>Normal from</th><th>to</th></tr></thead>
+            <tbody>
+              {NORMAL_TRACKS.map((t) => {
+                const n = clinical.normals[t.key] ?? { min: null, max: null };
+                const u = tl.observed?.usual[t.key];
+                const learned = !u ? "–" : t.kind === "evening" || t.kind === "morning" ? `${fmtClock(u.mean - u.sd)}–${fmtClock(u.mean + u.sd)}`
+                  : t.kind === "hours" ? `${fmtHours(u.mean - u.sd)}–${fmtHours(u.mean + u.sd)}` : `${fmtNum(u.mean - u.sd, 0)}–${fmtNum(u.mean + u.sd, 0)}`;
+                const input = (side: "min" | "max") => t.kind === "evening" || t.kind === "morning"
+                  ? <input type="time" aria-label={`${t.label}: normal ${side === "min" ? "from" : "to"}`} value={toHHMM(n[side])} onChange={(e) => setNormal(t.key, side, e.target.value ? toMin(e.target.value, t.kind) : null)} />
+                  : <input type="number" aria-label={`${t.label}: normal ${side === "min" ? "from" : "to"}`} step={t.kind === "hours" ? 0.5 : 1} min={0} value={n[side] ?? ""} onChange={(e) => setNormal(t.key, side, e.target.value === "" ? null : Number(e.target.value))} />;
+                return (
+                  <tr key={t.key}><td>{t.label}</td><td className="muted small">{learned}</td><td>{input("min")}</td><td>{input("max")}</td></tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
         <div className="row-actions"><button className="btn btn-primary" onClick={saveClinical}>Save history and focus</button></div>
       </section>
     </>

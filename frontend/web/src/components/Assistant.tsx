@@ -17,6 +17,30 @@ type Props = {
   person: boolean;               // the person themself: everyday language, no clinical terms
   focus: string | null;          // what the screen shows now (day / criterion), sent with the question
   focusInfo?: FocusInfo;         // the same, structured: drives the follow-up suggestions
+  /** Called once a request was taken over, so a tab mounted later does not ask it again. */
+  onRequestHandled?: () => void;
+};
+
+/** The conversation per profile survives switching tabs (each tab mounts its own panel). */
+// Also kept in this browser tab's sessionStorage, so a reload keeps them; a new browser tab or
+// closing the browser starts empty, and logging out clears them.
+const STORE_KEY = "cmn.conversations";
+function loadStored(): Map<string, ChatTurn[]> {
+  try {
+    const raw = window.sessionStorage.getItem(STORE_KEY);
+    const obj = raw ? JSON.parse(raw) as Record<string, ChatTurn[]> : {};
+    return new Map(Object.entries(obj).map(([k, v]) => [k, v.filter((t) => t.content)]));
+  } catch { return new Map(); }
+}
+const conversations = loadStored();
+function saveStored() {
+  try { window.sessionStorage.setItem(STORE_KEY, JSON.stringify(Object.fromEntries(conversations))); } catch { /* convenience only */ }
+}
+const listeners = new Set<(profileId: string) => void>();
+/** Forget all conversations (tests, logout). */
+export const resetConversations = () => {
+  conversations.clear();
+  try { window.sessionStorage.removeItem(STORE_KEY); } catch { /* ignore */ }
 };
 
 /** What the screen is focused on, for follow-up suggestions under an answer. */
@@ -70,9 +94,24 @@ function storedWidth(): number {
 }
 
 /** Explanation layer: natural-language questions about the results shown, answered from the data. */
-export function Assistant({ request, open, onToggle, profileId, person, focus, focusInfo }: Props) {
+export function Assistant({ request, open, onToggle, profileId, person, focus, focusInfo, onRequestHandled }: Props) {
   const [status, setStatus] = useState<AssistantStatus | null>(null);
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [turns, setTurnsState] = useState<ChatTurn[]>(() => conversations.get(profileId) ?? []);
+  // The stored conversation is the source of truth, so an answer that is still streaming when the
+  // user switches tabs keeps arriving and shows up in the next tab's panel.
+  const setTurns = useCallback((v: ChatTurn[] | ((cur: ChatTurn[]) => ChatTurn[])) => {
+    const cur = conversations.get(profileId) ?? [];
+    const next = typeof v === "function" ? v(cur) : v;
+    conversations.set(profileId, next);
+    saveStored();
+    listeners.forEach((l) => l(profileId));
+  }, [profileId]);
+  useEffect(() => {   // follow the stored conversation (also updates from a panel in another tab)
+    const l = (pid: string) => { if (pid === profileId) setTurnsState(conversations.get(profileId) ?? []); };
+    listeners.add(l);
+    setTurnsState(conversations.get(profileId) ?? []);
+    return () => { listeners.delete(l); };
+  }, [profileId]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -113,7 +152,7 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
   };
 
   useEffect(() => { api.assistant().then(setStatus).catch(() => setStatus(null)); }, []);
-  useEffect(() => { setTurns([]); setError(null); setAskedFlag(null); }, [profileId]);
+  useEffect(() => { setError(null); setAskedFlag(null); }, [profileId]);   // another person
   useEffect(() => { endRef.current?.scrollIntoView?.({ block: "nearest" }); }, [turns, open]);
   useEffect(() => {   // Escape closes the panel
     if (!open) return;
@@ -150,6 +189,7 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
   useEffect(() => {
     if (!request || request.id === lastRequest.current || status === null) return;
     lastRequest.current = request.id;
+    onRequestHandled?.();
     setAskedFlag(flagOf(request.focus));
     onToggle(true);
     if (status.enabled) send(request.question, request.focus ?? focus);
@@ -171,14 +211,14 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
       aria-hidden={!open} {...(!open ? { inert: "" } : {})}>
       <div className="drawer-resize" role="separator" aria-orientation="vertical" aria-label="Resize the assistant panel"
         tabIndex={open ? 0 : -1} onPointerDown={startResize} onKeyDown={keyResize}
-        onDoubleClick={() => setWidth(DEFAULT_W)} title="Drag to resize · double-click to reset" />
+        onDoubleClick={() => setWidth(DEFAULT_W)} title="Drag to resize; double-click to reset" />
       <div className="drawer-head">
         <div>
           <h2>{person ? "Questions about your results" : "Ask about these results"}</h2>
           <p className="sub">
             {person
               ? "Ask in your own words where a result comes from. The assistant only explains what is shown; it does not diagnose."
-              : "Explanations of the computed results (metrics, μ, weights, gate) from this profile's data only. No diagnosis."}
+              : "Explains what the results show and how they come about, from this person's data only. No diagnosis."}
           </p>
         </div>
         <button className="drawer-close" onClick={() => onToggle(false)} aria-label="Close the assistant" title="Close">×</button>
@@ -234,13 +274,13 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
         <div className="drawer-foot">
           <form className="ask" onSubmit={(e) => { e.preventDefault(); send(input); }}>
             <input value={input} onChange={(e) => setInput(e.target.value)} disabled={busy}
-              placeholder={person ? "e.g. Why was last Tuesday different?" : "e.g. Which metric made C4 reach θ on 31/10?"}
+              placeholder={person ? "e.g. Why was last Tuesday different?" : "e.g. Why does Sleep count as present on 31/10?"}
               aria-label="Your question" />
             <Dictate disabled={busy} onText={(t) => setInput((old) => appendText(old, t))} />
             <button className="btn btn-primary" type="submit" disabled={busy || !input.trim()}>{busy ? "…" : "Ask"}</button>
           </form>
           <div className="row-between">
-            <p className="muted small">{status.notice}{focus && !person ? ` The current view (${focus}) is sent along.` : ""}</p>
+            {status.notice ? <p className="muted small">{status.notice}</p> : <span />}
             {turns.length > 0 && <button type="button" className="btn btn-quiet small" onClick={() => { setTurns([]); setAskedFlag(null); }} disabled={busy}>New conversation</button>}
           </div>
         </div>

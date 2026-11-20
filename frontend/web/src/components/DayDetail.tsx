@@ -2,10 +2,12 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import type { Block, Config, CritKey, Day, DayDetail as DD, PhaseKey } from "../api";
 import { api, CRIT_KEYS } from "../api";
 import { fmtDay, fmtNum, fmtTime, minutesInDay } from "../lib/format";
+import { fmtClock, fmtHours } from "../lib/observed";
 import { axisName } from "../lib/chart";
 import { C, deviceColor, deviceRole } from "../theme";
 import { Chart } from "./Chart";
 import { Icon } from "./Icon";
+import { metricName } from "../lib/metrics";
 
 /** Neutral hatch for scripted clinical blocks (rule §2.4: no red for periods). */
 const CLIN_HATCH = `repeating-linear-gradient(135deg, ${C.intensity[4]} 0 3px, ${C.intensity[0]} 3px 5px)`;
@@ -14,9 +16,11 @@ type Props = {
   onAsk?: (question: string, focus: string) => void;
   profileId: string; day: Day; cfg: Config; present: Partial<Record<CritKey, boolean[]>>; dayIndex: number;
   phaseLabels: Record<PhaseKey, string>;
+  /** Packets in 5 minutes from which a device counts as "in use" (the overview's rule). */
+  activePackets?: number;
 };
 
-export function DayDetail({ onAsk, profileId, day, cfg, present, dayIndex, phaseLabels }: Props) {
+export function DayDetail({ onAsk, profileId, day, cfg, present, dayIndex, phaseLabels, activePackets = 50 }: Props) {
   const [detail, setDetail] = useState<DD | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [onlyClinical, setOnlyClinical] = useState(false);
@@ -32,6 +36,39 @@ export function DayDetail({ onAsk, profileId, day, cfg, present, dayIndex, phase
     const fromTraffic = Object.keys(detail?.activity?.devices ?? {});
     return [...new Set([...fromTraffic, ...fromBlocks])].sort((a, b) => deviceRole(b).localeCompare(deviceRole(a)));
   }, [detail]);
+
+  // Minutes in use per hour and device: a 5-minute slot counts when the device sent at least
+  // `activePackets` packets in it (the same rule as the overview), so background syncing does not count.
+  const useOption = useMemo(() => {
+    if (!detail?.activity) return null;
+    const binMin = detail.activity.bin_minutes;
+    const hourly = (bins: number[]) => {
+      const out = Array<number>(24).fill(0);
+      bins.forEach((v, i) => { if (v >= activePackets) out[Math.min(23, Math.floor((i * binMin) / 60))] += binMin; });
+      return out;
+    };
+    const series = devices.filter((d) => detail.activity!.devices[d]).map((d, i) => ({
+      name: deviceRole(d), type: "bar", barGap: "10%", barCategoryGap: "30%",
+      data: hourly(detail.activity!.devices[d]), itemStyle: { color: deviceColor(d, i), borderRadius: [2, 2, 0, 0] },
+    }));
+    return {
+      animation: false,
+      legend: { top: 0, right: 0, data: series.map((x) => x.name), textStyle: { color: C.text2, fontSize: 11 }, icon: "roundRect", itemWidth: 12, itemHeight: 8 },
+      grid: { left: 64, right: 12, top: 28, bottom: 40 },
+      tooltip: { trigger: "axis", valueFormatter: (v: number) => `${fmtNum(v)} min in use` },
+      xAxis: {
+        type: "category", data: Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, "0")}:00`),
+        ...axisName("hour of the day", "hh:00"), nameRotate: 0, nameGap: 24,
+        axisLabel: { color: C.text2, fontSize: 10, interval: 2 }, axisTick: { show: false },
+        axisLine: { lineStyle: { color: C.grid } },
+      },
+      yAxis: {
+        type: "value", min: 0, max: 60, interval: 15, ...axisName("minutes in use", "per hour", 46),
+        axisLabel: { color: C.text2, fontSize: 10 }, splitLine: { lineStyle: { color: C.grid } },
+      },
+      series,
+    };
+  }, [detail, devices, activePackets]);
 
   const activityOption = useMemo(() => {
     if (!detail?.activity) return null;
@@ -76,24 +113,25 @@ export function DayDetail({ onAsk, profileId, day, cfg, present, dayIndex, phase
           ? <span className="pill pill-baseline">{phaseLabels.baseline.toLowerCase()}</span>
           : <span className="muted small" style={{ marginLeft: 8, fontFamily: "var(--sans)" }}>{(day.phase === "current" ? phaseLabels.current : day.phase).toLowerCase()}</span>}
           {!day.complete && <span className="pill pill-outline">still being recorded</span>}</h2>
-        <p className="sub">{gt ? "What the persona was scripted to do, and the traffic the gateway saw." : "The traffic of this person's devices over the day."}</p>
+        <p className="sub">{gt ? "When the devices were in use on this day, and what the test person was scripted to do." : "When this person's devices were in use on this day."}</p>
         <details className="howto">
-          <summary>Notes</summary>
+          <summary>How is "in use" counted?</summary>
           <p>
-            Traffic is shown after the app's background filter, the same packets the metrics use. Days are calendar
-            days, so a block planned for the evening of one day can show up on the next. {fmtNum(day.n_partitions)} capture
-            files on this day.
+            A device counts as in use for 5 minutes when it sends a clear amount of traffic in them; background syncing alone
+            does not count. A day runs from midnight to midnight, so a late evening can show up on the next day.
           </p>
         </details>
       </div>
 
       <div className="kpis">
-        <Kpi label="Packets" value={fmtNum(day.packets_kept)} />
+        {day.observed?.has_data && <Kpi label="Time in use" value={fmtHours(day.observed.online_hours)} />}
+        {day.observed?.has_data && <Kpi label="Went quiet (night before)" value={fmtClock(day.observed.quiet_start)} />}
+        {day.observed?.has_data && <Kpi label="Back online" value={fmtClock(day.observed.quiet_end)} />}
+        {day.observed?.has_data && day.observed.sites != null && <Kpi label="Different sites" value={fmtNum(day.observed.sites)} />}
         {gt && <Kpi label="Scripted blocks" value={fmtNum(gt.n_blocks)} />}
         {gt && <Kpi label="of them clinical" value={fmtNum(gt.n_profile_blocks)} />}
         {gt && gt.n_sensitive > 0 && <Kpi label="Sensitive blocks" value={fmtNum(gt.n_sensitive)} warn />}
         {gt && gt.n_failed > 0 && <Kpi label="Failed blocks" value={fmtNum(gt.n_failed)} warn />}
-        {day.first_packet && <Kpi label="First – last packet" value={`${fmtTime(day.first_packet)}–${fmtTime(day.last_packet)}`} />}
       </div>
 
       {err && <p className="error">{err}</p>}
@@ -101,13 +139,20 @@ export function DayDetail({ onAsk, profileId, day, cfg, present, dayIndex, phase
 
       {detail && activityOption && (
         <>
-          <Chart option={activityOption} height={200} ariaLabel="Packets per 5 minutes per device" />
+          {useOption && <Chart option={useOption} height={200} ariaLabel="Minutes in use per hour and device" />}
           {gt && <Gantt blocks={detail.blocks} devices={devices} day={day.date} />}
         </>
       )}
 
+      {detail && activityOption && (
+        <details className="fold">
+          <summary>Raw network traffic (packets per 5 minutes, {fmtNum(day.packets_kept)} packets on this day)</summary>
+          <Chart option={activityOption} height={200} ariaLabel="Packets per 5 minutes per device" />
+        </details>
+      )}
+
       <details className="fold">
-        <summary>Show model details: score of this day per criterion (L = Σ w · μ)</summary>
+        <summary>Show model details: score of this day per criterion (L = Σ w × μ)</summary>
         <CriterionBreakdown day={day} cfg={cfg} present={present} dayIndex={dayIndex} onAsk={onAsk} />
       </details>
       {gt && <details className="fold">
@@ -148,7 +193,7 @@ function Gantt({ blocks, devices, day }: { blocks: Block[]; devices: string[]; d
               return (
                 <div key={b.block_id} className={cls}
                   style={{ left: `${(s / 1440) * 100}%`, width: `max(3px, ${((e - s) / 1440) * 100}%)`, background: b.phase !== "profile" ? deviceColor(dev) : CLIN_HATCH, ...(b.flag === "sensitive" ? { outline: `2px solid ${C.alert}` } : {}) }}
-                  title={`${fmtTime(b.start)}–${fmtTime(b.end)} ${b.profile_block} (${b.activity})\n${b.block_id}\nphase: ${b.phase} · status: ${b.status}${b.flag ? " · " + b.flag : ""}`} />
+                  title={`${fmtTime(b.start)}–${fmtTime(b.end)} ${b.profile_block} (${b.activity})\n${b.block_id}\nphase: ${b.phase}, status: ${b.status}${b.flag ? ", " + b.flag : ""}`} />
               );
             })}
           </div>
@@ -199,7 +244,7 @@ function CriterionBreakdown({ day, cfg, present, dayIndex, onAsk }: { day: Day; 
   return (
     <div className="table-wrap">
       <table className="breakdown">
-        <thead><tr><th>Metric</th><th className="num">Value</th><th className="num">μ</th><th className="num">w·μ</th></tr></thead>
+        <thead><tr><th>Metric</th><th className="num">Value</th><th className="num">μ</th><th className="num">w × μ</th></tr></thead>
         <tbody>
           {crits.map((c) => (
             <Fragment key={c}>
@@ -212,7 +257,7 @@ function CriterionBreakdown({ day, cfg, present, dayIndex, onAsk }: { day: Day; 
               </tr>
               {Object.entries(day.parts[c]!).sort((a, b) => b[1].w * b[1].mu - a[1].w * a[1].mu).map(([k, m]) => (
                 <tr key={c + k}>
-                  <td className="indent" title={k}>{cfg.metric_labels[k] ?? k}</td>
+                  <td className="indent">{metricName(k, cfg)}</td>
                   <td className="num">{fmtNum(m.value)}</td>
                   <td className="num">{fmtNum(m.mu)}</td>
                   <td className="num">{fmtNum(m.mu * m.w)}</td>

@@ -7,6 +7,7 @@ import { C } from "../theme";
 import { Chart } from "./Chart";
 import { Icon } from "./Icon";
 import { metricUnit } from "./MetricTrends";
+import { metricName, SITE_GROUP_OF, visitText } from "../lib/metrics";
 
 type Props = { tl: Timeline; cfg: Config; selectedDay: string | null; onSelectDay: (d: string) => void; step: number;
   onAsk?: (question: string, focus: string) => void };
@@ -62,19 +63,27 @@ export function UnscoredMetrics({ tl, cfg, selectedDay, onSelectDay, step, onAsk
     <section className="card">
       <div className="card-head">
         <h2><span className="step">{step}</span>Other criteria (not scored)</h2>
-        <p className="sub">The thesis code computes these metrics every day, but <code>fasl_config.json</code> gives them no weights,
-          so they have no likelihood and do not count for the gate. Shown as raw values for review.</p>
+        <p className="sub">These criteria are measured every day but are not part of the model's scoring yet, so they have no daily
+          score and never count as present. Shown as measured, for review.</p>
       </div>
 
       {flags.length > 0 && (
         <div className="flag-box" role="note" style={{ background: C.alertSoft, borderColor: C.alert }}>
           <span style={{ color: C.alert, marginRight: 6 }}><Icon name="alert" label="Alert" /></span>
-          <b>C9 {cfg.criterion_names.C9}: signal on {flags.length} day{flags.length === 1 ? "" : "s"}</b>{" "}
-          (above the baseline, outside the gate): {flags.map((f, i) => (
-            <span key={f.date}>{i > 0 && ", "}<button className="link" onClick={() => onSelectDay(f.date)}>{fmtDay(f.date)}</button>
-              {" "}({f.metrics.map((m) => cfg.metric_labels[m] ?? m).join(", ")})
-              {onAsk && <button className="link small explain-link" onClick={() => onAsk(`How do the ${f.metrics.map((m) => cfg.metric_labels[m] ?? m).join(" and ")} on ${f.date} come about? What exactly was counted (hostnames, packets), how does it compare with the baseline, and what else could cause it?`, `C9, day ${f.date}`)}>✦ how do these hits come about?</button>}</span>
-          ))}
+          <b>{cfg.criterion_names.C9}: more than usual on {flags.length} day{flags.length === 1 ? "" : "s"}</b>{" "}
+          (not part of the scoring, shown as a warning): {flags.map((f, i) => {
+            const day = tl.days.find((d) => d.date === f.date);
+            const what = f.metrics.map((m) => {
+              const g = SITE_GROUP_OF[m];
+              const v = g ? day?.observed?.site_visits?.[g] : undefined;
+              return v ? `${metricName(m, cfg).toLowerCase()} ${visitText(v)}` : metricName(m, cfg).toLowerCase();
+            }).join("; ");
+            return (
+              <span key={f.date}>{i > 0 && "; "}<button className="link" onClick={() => onSelectDay(f.date)}>{fmtDay(f.date)}</button>
+                {" "}({what})
+                {onAsk && <button className="link small explain-link" onClick={() => onAsk(`What happened on ${f.date} with ${f.metrics.map((m) => metricName(m, cfg).toLowerCase()).join(" and ")}: how many visits, when, and how does it compare with this person's usual days? What else could explain it?`, `C9, day ${f.date}`)}>explain</button>}</span>
+            );
+          })}
         </div>
       )}
 
@@ -87,10 +96,10 @@ export function UnscoredMetrics({ tl, cfg, selectedDay, onSelectDay, step, onAsk
       </div>
 
       <div className="metric-grid">
-        {varying.map((k) => <RawMetric key={k} tl={tl} metric={k} label={cfg.metric_labels[k] ?? k} selectedDay={selectedDay} onSelectDay={onSelectDay} />)}
+        {varying.map((k) => <RawMetric key={k} tl={tl} metric={k} label={metricName(k, cfg)} selectedDay={selectedDay} onSelectDay={onSelectDay} />)}
       </div>
       {zero.length > 0 && (
-        <p className="muted small">Always 0 or missing: {zero.map((k) => cfg.metric_labels[k] ?? k).join(" · ")}</p>
+        <p className="muted small">Always 0 or missing: {zero.map((k) => metricName(k, cfg)).join("; ")}</p>
       )}
       {varying.length > 0 && (
         <div className="small muted" style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px" }}>
@@ -104,15 +113,25 @@ export function UnscoredMetrics({ tl, cfg, selectedDay, onSelectDay, step, onAsk
 }
 
 function RawMetric({ tl, metric, label, selectedDay, onSelectDay }: { tl: Timeline; metric: string; label: string; selectedDay: string | null; onSelectDay: (d: string) => void }) {
+  // site groups (crisis lines, therapy booking, …): visits per day instead of the packet count
+  const group = SITE_GROUP_OF[metric];
+  const asVisits = !!group && tl.days.some((d) => d.observed?.site_visits !== undefined);
   const option = useMemo(() => {
-    const vals = tl.days.map((d) => num(d.metrics[metric]));
-    const stats = tl.baseline_stats[metric];
-    const unit = metricUnit(metric);
+    const vals = asVisits
+      ? tl.days.map((d) => (d.observed?.has_data ? d.observed.site_visits?.[group]?.visits ?? 0 : null))
+      : tl.days.map((d) => num(d.metrics[metric]));
+    const stats = asVisits ? undefined : tl.baseline_stats[metric];
+    const unit = asVisits ? "visits" : metricUnit(metric);
     const sel = tl.days.findIndex((d) => d.date === selectedDay);
     return {
       animation: false,
       grid: { left: 60, right: 10, top: 22, bottom: 24 },
-      tooltip: { trigger: "axis", valueFormatter: (v: number) => `${fmtNum(v)}${unit === "value" ? "" : ` ${unit}`}` },
+      tooltip: asVisits
+        ? { trigger: "axis", formatter: (ps: { dataIndex: number }[]) => {
+            const d = tl.days[ps[0]?.dataIndex];
+            return d ? `<b>${d.weekday} ${fmtDay(d.date)}</b><br/>${visitText(d.observed?.site_visits?.[group])}` : "";
+          } }
+        : { trigger: "axis", valueFormatter: (v: number) => `${fmtNum(v)}${unit === "value" ? "" : ` ${unit}`}` },
       xAxis: { type: "category", data: tl.days.map((d) => fmtDay(d.date)), axisLabel: { color: C.text2, fontSize: 9 }, axisTick: { show: false }, axisLine: { lineStyle: { color: C.grid } } },
       yAxis: { type: "value", scale: true, ...axisName(unit, undefined, 44), axisLabel: { color: C.text2, fontSize: 9, formatter: (v: number) => fmtNum(v, 1) }, splitLine: { lineStyle: { color: C.grid } } },
       series: [{
@@ -122,14 +141,14 @@ function RawMetric({ tl, metric, label, selectedDay, onSelectDay }: { tl: Timeli
         markLine: sel >= 0 ? { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: C.text, width: 1, type: "solid" }, data: [{ xAxis: sel }] } : undefined,
       }],
     };
-  }, [tl, metric, selectedDay]);
+  }, [tl, metric, selectedDay, asVisits, group]);
   return (
     <div className="metric-card">
       <div className="metric-head">
-        <span className="metric-name" title={metric}>{label}</span>
-        <span className="metric-meta"><code>{metric}</code></span>
+        <span className="metric-name">{label}</span>
+        {asVisits && <span className="metric-meta">visits per day</span>}
       </div>
-      <Chart option={option} height={130} ariaLabel={`Daily values of ${metric}`}
+      <Chart option={option} height={130} ariaLabel={`Daily values: ${label}`}
         onClick={(p) => tl.days[p.dataIndex] && onSelectDay(tl.days[p.dataIndex].date)} />
     </div>
   );

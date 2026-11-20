@@ -5,6 +5,7 @@ import { fmtDay, fmtNum } from "../lib/format";
 import { C } from "../theme";
 import { Chart } from "./Chart";
 import { Icon } from "./Icon";
+import { metricName } from "../lib/metrics";
 
 type Props = {
   tl: Timeline;
@@ -18,7 +19,7 @@ type Props = {
 };
 
 // ---------------------------------------------------------------------------------------------
-// "What contributed" (D7): a plain-language sentence from the L = Σ w·μ breakdown, deterministic.
+// "What contributed" (D7): a plain-language sentence from the L = Σ w × μ breakdown, deterministic.
 
 /** How a metric reads in a sentence: "<n> <noun> with <desc>". Written for the direction that counts. */
 type Phrase = { noun: "days" | "nights" | "mornings"; desc: string };
@@ -86,7 +87,7 @@ const MAX_DATES = 4;
 
 export interface Contribution {
   metric: string;
-  share: number;          // of Σ w·μ over the days considered
+  share: number;          // of Σ w × μ over the days considered
   outlierDays: string[];  // dates with μ >= OUTLIER_MU
   phrase: Phrase;
 }
@@ -108,7 +109,7 @@ const joinAnd = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0,
 
 /**
  * Plain-language summary of what drove L for one criterion over the given days: the metrics with the
- * largest Σ w·μ (until they explain 75 % of it, at most 3, each at least 10 %), and per metric the
+ * largest Σ w × μ (until they explain 75 % of it, at most 3, each at least 10 %), and per metric the
  * days on which it scored μ >= 0.5. No numbers beyond counts and dates, so it reads without the model.
  */
 export function whatContributed(days: Day[], crit: CritKey, cfg: Config): WhatContributed {
@@ -202,7 +203,7 @@ export function MetricTrends({ tl, cfg, crit, theta, present, presentLabel, sele
         ...b.tooltip,
         formatter: (ps: { dataIndex: number }[]) => {
           const i = ps[0].dataIndex; const d = tl.days[i];
-          return `<b>${d.date}</b> · ${d.phase === "current" ? period : d.phase}<br/>likelihood ${fmtNum(L[i])}${present[i] ? ` · <b style="color:${C.alert}">${presentLabel}</b>` : ""}`;
+          return `<b>${d.date}</b>, ${d.phase === "current" ? period : d.phase}<br/>likelihood ${fmtNum(L[i])}${present[i] ? `, <b style="color:${C.alert}">${presentLabel}</b>` : ""}`;
         },
       },
       series: [{
@@ -213,7 +214,7 @@ export function MetricTrends({ tl, cfg, crit, theta, present, presentLabel, sele
         markLine: {
           silent: true, symbol: "none",
           data: [
-            { yAxis: theta, lineStyle: { color: C.muted, type: "dashed", width: 1 }, label: { formatter: `θ ${theta.toFixed(2)}`, color: C.text2, fontSize: 10, position: "insideEndTop" } },
+            { yAxis: theta, lineStyle: { color: C.muted, type: "dashed", width: 1 }, label: { formatter: `threshold ${theta.toFixed(2)}`, color: C.text2, fontSize: 10, position: "insideEndTop" } },
             ...selLine(b._sel),
           ],
         },
@@ -244,18 +245,18 @@ export function MetricTrends({ tl, cfg, crit, theta, present, presentLabel, sele
       {model && (
         <div className="small" style={{ color: "var(--text2)", margin: "0 0 10px", maxWidth: 880 }}>
           <p style={{ margin: 0 }}>
-            L<sub>{crit}</sub> = Σ w · μ(metric). Each metric's daily value is turned into a score μ between 0 and 1
+            L<sub>{crit}</sub> = Σ w × μ(metric). Each metric's daily value is turned into a score μ between 0 and 1
             (0 below lo, rising to 1 at mid, staying 1 up to hi; inverted metrics count when they are low) and weighted
             with w. A criterion is present when L ≥ θ = {theta.toFixed(2)} on enough days. z = (value − baseline mean) / baseline SD.
             A day counts as an outlier in the sentence above when μ ≥ {OUTLIER_MU}.
           </p>
           {why.items.length > 0 && (
             <table className="breakdown" style={{ marginTop: 6 }}>
-              <thead><tr><th>Metric</th><th className="num">w</th><th className="num">share of Σ w·μ</th><th className="num">days μ ≥ {OUTLIER_MU}</th></tr></thead>
+              <thead><tr><th>Metric</th><th className="num">w</th><th className="num">share of Σ w × μ</th><th className="num">days μ ≥ {OUTLIER_MU}</th></tr></thead>
               <tbody>
                 {why.items.map((it) => (
                   <tr key={it.metric}>
-                    <td title={it.metric}>{cfg.metric_labels[it.metric] ?? it.metric}</td>
+                    <td>{metricName(it.metric, cfg)}</td>
                     <td className="num">{spec[it.metric]?.w ?? "–"}</td>
                     <td className="num">{Math.round(it.share * 100)} %</td>
                     <td className="num">{it.outlierDays.length}</td>
@@ -272,7 +273,7 @@ export function MetricTrends({ tl, cfg, crit, theta, present, presentLabel, sele
       <ChartKey items={[
         { swatch: sw.line(C.ink), label: `daily likelihood ${crit}` },
         { swatch: sw.dot(C.alert), label: presentLabel },
-        { swatch: sw.line(C.muted, true), label: `θ = ${theta.toFixed(2)} (gate threshold)` },
+        { swatch: sw.line(C.muted, true), label: `threshold for "present" (${theta.toFixed(2)})` },
         ...(hasBaseline ? [{ swatch: sw.band(C.baselineShade), label: BAND_LABELS.baseline }] : []),
       ]} />
 
@@ -329,7 +330,7 @@ function MetricChart({ tl, cfg, crit, metric, w, lo, mid, hi, invert, model, sel
           if (stats) s += `<br/><span style="color:${C.text2}">usual ${fmtNum(stats.mean - stats.sd)}–${fmtNum(stats.mean + stats.sd)}</span>`;
           if (model) {
             const z = stats && stats.sd > 0 && v != null ? (v - stats.mean) / stats.sd : null;
-            s += `<br/><span style="color:${C.text2}">μ ${fmtNum(mus[i])} × w ${w} = ${fmtNum((mus[i] ?? 0) * w)}${z != null ? ` · z ${fmtNum(z, 1)}` : ""}</span>`;
+            s += `<br/><span style="color:${C.text2}">μ ${fmtNum(mus[i])} × w ${w} = ${fmtNum((mus[i] ?? 0) * w)}${z != null ? `, z ${fmtNum(z, 1)}` : ""}</span>`;
           }
           return s;
         },
@@ -360,10 +361,10 @@ function MetricChart({ tl, cfg, crit, metric, w, lo, mid, hi, invert, model, sel
   return (
     <div className="metric-card">
       <div className="metric-head">
-        <span className="metric-name" title={metric}>{cfg.metric_labels[metric] ?? metric}</span>
-        {model && <span className="metric-meta">w {w}{invert ? " · inverted" : ""} · <code>{metric}</code></span>}
+        <span className="metric-name">{metricName(metric, cfg)}</span>
+        {model && <span className="metric-meta">weight {w}{invert ? ", lower counts" : ""}</span>}
       </div>
-      <Chart option={option} height={150} ariaLabel={`Daily values of ${metric} in ${unit}`}
+      <Chart option={option} height={150} ariaLabel={`Daily values: ${metricName(metric, cfg)} in ${unit}`}
         onClick={(p) => tl.days[p.dataIndex] && onSelectDay(tl.days[p.dataIndex].date)} />
     </div>
   );

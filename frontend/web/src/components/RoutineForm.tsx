@@ -193,6 +193,27 @@ export function RoutineForm({ profileId, value, onChange, person, assistant, sec
               </tbody>
             </table>
           </div>
+          {/* phones: one line per day instead of a 14-column grid */}
+          <ul className="week-list" aria-label={person ? "Your week, day by day" : "Week, day by day"}>
+            {WEEKDAYS.map((d) => (
+              <li key={d} className={d === "sat" || d === "sun" ? "weekend" : ""}>
+                <span className="week-list-day">{DAY_NAMES[d]}</span>
+                {HALVES.map((h) => (
+                  <div key={h} className="week-list-half" role="radiogroup" aria-label={`${DAY_NAMES[d]} ${HALF_NAME[h]}`}>
+                    <span className="muted small">{h === "am" ? "Morning" : "Afternoon"}</span>
+                    <div className="seg seg-small">
+                      {(["away", "home", "free"] as DayType[]).map((t) => (
+                        <button key={t} type="button" role="radio" aria-checked={value.week[d][h] === t}
+                          className={value.week[d][h] === t ? "active" : ""} onClick={() => setHalf(d, h, t)}>
+                          <DayTypeIcon type={t} /> {TYPE_LABEL[t]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </li>
+            ))}
+          </ul>
           <p className="muted small">AM is the morning until about noon, PM the afternoon. A day counts as away if part of it is away.</p>
         </fieldset>
       )}
@@ -200,27 +221,29 @@ export function RoutineForm({ profileId, value, onChange, person, assistant, sec
       {show("times") && (
         <fieldset className="fieldset">
           <legend>{person ? "Your usual times" : "Usual times"}</legend>
-          <table className="times-table">
-            <thead><tr><th /><th>School / work days</th><th>Free days</th></tr></thead>
-            <tbody>
-              <tr><th scope="row">Wake up</th>
-                <td><TimeInput label="Wake up on school or work days" value={value.wake} onChange={(v) => set({ wake: v })} /></td>
-                <td><TimeInput label="Wake up on free days" value={value.wake_free} onChange={(v) => set({ wake_free: v })} /></td></tr>
-              {hasAway && (
-                <>
-                  <tr><th scope="row">Leave home</th>
-                    <td><TimeInput label="Leave home on away days" value={value.away_from} onChange={(v) => set({ away_from: v })} /></td>
-                    <td className="muted">–</td></tr>
-                  <tr><th scope="row">Back home</th>
-                    <td><TimeInput label="Back home on away days" value={value.away_to} onChange={(v) => set({ away_to: v })} /></td>
-                    <td className="muted">–</td></tr>
-                </>
-              )}
-              <tr><th scope="row">Bedtime</th>
-                <td><TimeInput label="Bedtime on school or work days" value={value.bedtime} onChange={(v) => set({ bedtime: v })} /></td>
-                <td><TimeInput label="Bedtime on free days" value={value.bedtime_free} onChange={(v) => set({ bedtime_free: v })} /></td></tr>
-            </tbody>
-          </table>
+          <div className="table-wrap">
+            <table className="times-table">
+              <thead><tr><th /><th>School / work days</th><th>Free days</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Wake up</th>
+                  <td><TimeInput label="Wake up on school or work days" value={value.wake} onChange={(v) => set({ wake: v })} /></td>
+                  <td><TimeInput label="Wake up on free days" value={value.wake_free} onChange={(v) => set({ wake_free: v })} /></td></tr>
+                {hasAway && (
+                  <>
+                    <tr><th scope="row">Leave home</th>
+                      <td><TimeInput label="Leave home on away days" value={value.away_from} onChange={(v) => set({ away_from: v })} /></td>
+                      <td className="muted">–</td></tr>
+                    <tr><th scope="row">Back home</th>
+                      <td><TimeInput label="Back home on away days" value={value.away_to} onChange={(v) => set({ away_to: v })} /></td>
+                      <td className="muted">–</td></tr>
+                  </>
+                )}
+                <tr><th scope="row">Bedtime</th>
+                  <td><TimeInput label="Bedtime on school or work days" value={value.bedtime} onChange={(v) => set({ bedtime: v })} /></td>
+                  <td><TimeInput label="Bedtime on free days" value={value.bedtime_free} onChange={(v) => set({ bedtime_free: v })} /></td></tr>
+              </tbody>
+            </table>
+          </div>
           <p className="muted small">Leave fields empty if you are not sure.{!hasAway && " Leave and back home times appear when a day is set to away."}</p>
         </fieldset>
       )}
@@ -242,7 +265,7 @@ export function RoutineForm({ profileId, value, onChange, person, assistant, sec
                 <select value={d.ip ?? ""} onChange={(e) => setDevice(i, { ip: e.target.value || null })} aria-label="Network address">
                   <option value="">not linked</option>
                   {linkOptions.map((o) => (
-                    <option key={o.ip} value={o.ip}>{o.ip}{o.label ? ` · ${o.label}` : ""} · {fmtNum(o.packets)} packets{o.assigned_to.length ? ` · ${o.assigned_to.join(", ")}` : ""}</option>
+                    <option key={o.ip} value={o.ip}>{o.ip}{o.label ? `, ${o.label}` : ""}, {fmtNum(o.packets)} packets{o.assigned_to.length ? `, ${o.assigned_to.join(", ")}` : ""}</option>
                   ))}
                 </select>
               )}
@@ -327,7 +350,7 @@ export function AwayEditor({ value, onChange, person }: { value: { id?: string; 
       {value.length > 0 && (
         <ul className="away-list">
           {value.map((p, i) => (
-            <li key={p.id ?? i}><b>{p.from === p.to ? p.from : `${p.from} – ${p.to}`}</b>{p.reason && ` · ${p.reason}`}
+            <li key={p.id ?? i}><b>{p.from === p.to ? p.from : `${p.from} – ${p.to}`}</b>{p.reason && `, ${p.reason}`}
               <button className="link small" onClick={() => onChange(value.filter((_, j) => j !== i))}>remove</button></li>
           ))}
         </ul>

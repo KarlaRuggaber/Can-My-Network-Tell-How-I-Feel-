@@ -145,8 +145,8 @@ Anthropic's Claude answer instead"**, Save. The container runs with thinking off
 
 **Fallback.** When the laptop is closed, offline or Ollama is not running, the connection fails
 within a few seconds and Claude answers that question with the stored Claude key; the answer starts
-with "(Could not reach the local model at …; Claude (Anthropic) answered instead.)". The notice people
-see says that this can happen. Errors after the connection (wrong model name, cut-off answer) do not
+with "(The local model was not reachable, so Claude (Anthropic) answered.)". With the local model
+the assistant panel shows no notice (nothing leaves our computers); with Claude, one short line. Errors after the connection (wrong model name, cut-off answer) do not
 fall back. Without the tick, the answer is just the error note.
 
 Before a demo on the laptop: Ollama running with the 32k context (§2, after a restart of the Mac set

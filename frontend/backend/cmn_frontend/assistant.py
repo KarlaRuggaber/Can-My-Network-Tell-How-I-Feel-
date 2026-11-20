@@ -133,18 +133,9 @@ class AssistantConfig:
         f = self._file()
         base_url = (f.get("base_urls") or {}).get("local") or os.environ.get("CMN_LOCAL_URL") \
             or PROVIDERS["local"]["default_base_url"]
-        if local and c.get("fallback"):
-            notice = (f"Your question and this profile's daily results (no raw traffic, addresses or device names) "
-                      f"are sent to a model running on the team's own computer ({c['model']}). Only when that "
-                      f"computer cannot be reached do they go to Anthropic's Claude ({c['fallback']['model']}) "
-                      f"instead; the answer then says so.")
-        elif local:
-            notice = (f"Your question and this profile's daily results (no raw traffic, addresses or device names) "
-                      f"are sent to a model running on the team's own computer ({c['model']}); nothing goes to "
-                      f"an outside company.")
-        else:
-            notice = (f"Your question and this profile's daily results (no raw traffic, addresses or device "
-                      f"names) are sent to Anthropic's Claude ({c['model']}) to write the answer.")
+        # Local model: nothing leaves the team's computers, so no notice. Claude: one short sentence.
+        # (When Claude stands in for an unreachable local model, that answer says so itself.)
+        notice = "" if local else "Answers are written by Anthropic's Claude (USA)."
         return {"enabled": c["enabled"], "provider": c["provider"], "model": c["model"],
                 "default_model": p["default_model"],
                 "has_key": True if local else (bool(c["api_key"]) or _anthropic_profile()),
@@ -223,7 +214,7 @@ You are the explanation assistant of {PRODUCT_NAME} ({PRODUCT_SUBTITLE}), a rese
 daily metrics from a home router's network traffic metadata (packet timing, volume, DNS lookups; no
 content) and turns them into likelihoods L between 0 and 1 for DSM-5 depression criteria with a fuzzy
 scoring model (FASL): each metric value is mapped to a membership degree μ between 0 and 1 and weighted
-with w; L = Σ w·μ, clipped to [0, 1]. A criterion counts as "present" in a period when L ≥ θ on at
+with w; L = Σ w × μ, clipped to [0, 1]. A criterion counts as "present" in a period when L ≥ θ on at
 least N of the period's last M days. The data you get is in <results>.
 
 Your only job is to explain these results: what a value means, which metrics drove a likelihood on a

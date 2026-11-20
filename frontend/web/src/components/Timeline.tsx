@@ -240,7 +240,7 @@ export function HourStrip({ hourly, compact = false }: { hourly: number[] | null
       {hourly.map((m, h) => (
         <span key={h} className={`hour ${h >= 22 || h < 6 ? "hour-night" : ""}`}
           style={{ background: m <= 0 ? EMPTY_HOUR : C.intensity[Math.min(n - 1, Math.floor((m / 60) * n))] }}
-          title={`${String(h).padStart(2, "0")}:00–${String(h + 1).padStart(2, "0")}:00 · ${m} min in use`} />
+          title={`${String(h).padStart(2, "0")}:00–${String(h + 1).padStart(2, "0")}:00, ${m} min in use`} />
       ))}
       <span className="hour-scale muted small"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></span>
     </div>
