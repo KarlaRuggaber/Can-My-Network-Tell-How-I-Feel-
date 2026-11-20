@@ -194,7 +194,7 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
           <input type="checkbox" checked={e.enabled} disabled={locked} aria-label={`Flag ${r.title}`}
             onChange={(ev) => setRisk(r.id, { enabled: ev.target.checked })} />{" "}
           {icon && <RiskIcon name={icon} label={r.title} />} {r.title}
-          {locked && <span className="muted small" style={{ color: "var(--text2)" }}> · always on</span>}
+          {locked && <span className="muted small" style={{ color: "var(--text2)" }}>, always on</span>}
         </label></td>
         <td className="muted small">{(riskCrit[r.id] ?? []).join(", ")}</td>
         <td>
@@ -300,7 +300,7 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
               ))}
             </ul>
             {suggestion.risks.length > 0 && <p className="small"><b>Risks:</b> {suggestion.risks.map((r) => `${risks.find((x) => x.id === r.id)?.title ?? r.id} (${r.enabled ? r.sensitivity : "off"}: ${r.reason})`).join("; ")}</p>}
-            {suggestion.caveats.length > 0 && <p className="small muted"><b>Caveats:</b> {suggestion.caveats.join(" · ")}</p>}
+            {suggestion.caveats.length > 0 && <p className="small muted"><b>Caveats:</b> {suggestion.caveats.join("; ")}</p>}
             <div className="row-actions">
               <button className="btn btn-primary" onClick={applySuggestion}>Apply to the form</button>
               <button className="btn btn-quiet" onClick={() => setSuggestion(null)}>Discard</button>

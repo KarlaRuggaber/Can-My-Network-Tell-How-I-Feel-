@@ -31,7 +31,7 @@ export function filterPeople(profiles: ProfileListItem[], query: string): Profil
 }
 
 const describe = (p: ProfileListItem) =>
-  `${p.scripted ? "scripted run" : "live"} · ${p.config.all_devices ? "all devices" : `${p.config.devices.length} device${p.config.devices.length === 1 ? "" : "s"}`}`;
+  `${p.scripted ? "scripted run" : "live"}, ${p.config.all_devices ? "all devices" : `${p.config.devices.length} device${p.config.devices.length === 1 ? "" : "s"}`}`;
 
 /** Attention per person (from /api/profiles): new flags as a neutral count, crisis/self-harm sites
  *  as the red alert icon. Nothing is shown while the backend does not send `attention`. */
@@ -179,7 +179,7 @@ export function PersonPicker({ profiles, value, onChange }: Props) {
           {shown.length === 0 && <p className="muted small pp-empty">Nobody matches “{query}”.</p>}
           <p className="muted small pp-count" aria-live="polite">
             {shown.length === profiles.length ? `${profiles.length} people` : `${shown.length} of ${profiles.length} people`}
-            {hasAttention && " · flagged people first"}
+            {hasAttention && ", flagged people first"}
           </p>
         </div>
       )}

@@ -39,7 +39,8 @@ def _metric_labels(app_dir: str) -> tuple[dict[str, str], dict[str, str]]:
     try:
         from .daily import load_metric_code
         code = load_metric_code(app_dir)  # type: ignore[arg-type]
-        return code.labels, code.criterion_of
+        from .metric_names import plain_labels
+        return plain_labels(code.labels.keys()), code.criterion_of
     except Exception:
         return {}, {}
 
@@ -616,7 +617,8 @@ def create_app(settings: Settings | None = None, llm_client: Any = None,
         blocks = [] if user.role == "single" else blocks_on_day(load_plan(settings.run_dir, p.source), d)
         activity = rec.get("activity")
         if user.role == "single" and activity:
-            activity = {**activity, "devices": {f"Device {i + 1}": v for i, v in enumerate(activity.get("devices", {}).values())}}
+            activity = {k: v for k, v in activity.items() if k != "site_visits"}   # never crisis sites for the person
+            activity["devices"] = {f"Device {i + 1}": v for i, v in enumerate(activity.get("devices", {}).values())}
         return {"profile": pid, "date": day, "activity": activity,
                 "blocks": [b.to_json() for b in blocks],
                 "packets_raw": rec.get("packets_raw"), "packets_kept": rec.get("packets_kept"),

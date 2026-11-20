@@ -133,7 +133,7 @@ def test_config_keeps_model_key_and_endpoint_per_provider(tmp_path, monkeypatch)
                  "base_url": "http://user:pw@100.64.0.5:11434/v1"}
     pub = cfg.public()
     assert pub["has_key"] is True and pub["base_url"] == "http://100.64.0.5:11434/v1"   # no credentials shown
-    assert "outside company" in pub["notice"] and "Anthropic" not in pub["notice"]
+    assert pub["notice"] == ""   # local model: nothing leaves our computers, no notice
     assert [p["id"] for p in pub["providers"]] == ["anthropic", "local"]
     cfg.save(True, "claude-sonnet-5-5", None, provider="anthropic")          # back: Claude key still there
     assert cfg.load()["api_key"] == "sk-ant-x" and cfg.public()["base_url"] == "http://100.64.0.5:11434/v1"
@@ -209,7 +209,7 @@ def test_unreachable_local_model_falls_back_to_claude_only_when_configured():
                     return FakeStream()
     cfg = {**LOCAL, "fallback": {"provider": "anthropic", "model": "claude-x", "api_key": "k"}}
     out = "".join(llm.stream_text(cfg, "s", [{"role": "user", "content": "q"}], dead, fallback_client=FakeClaude()))
-    assert "Claude (Anthropic) answered instead" in out and out.endswith("From Claude.") and calls == ["claude-x"]
+    assert out.startswith("(The local model was not reachable, so Claude (Anthropic) answered.)") and out.endswith("From Claude.") and calls == ["claude-x"]
     # without a fallback the error note stays, and no Claude call is made
     out = "".join(llm.stream_text(LOCAL, "s", [{"role": "user", "content": "q"}], dead))
     assert out.startswith("(The assistant failed:")
@@ -223,6 +223,6 @@ def test_fallback_setting_is_saved_and_needs_a_claude_key(tmp_path, monkeypatch)
     assert c.public()["fallback"] is True and c.public()["fallback_ready"] is False and "fallback" not in c.load()
     c.save(True, "claude-x", "sk-test", "anthropic")
     c.save(True, "qwen", None, "local", None)          # fallback None: kept
-    assert c.load()["fallback"]["model"] == "claude-x" and "Only when that computer" in c.public()["notice"]
+    assert c.load()["fallback"]["model"] == "claude-x" and c.public()["notice"] == ""
     c.save(True, "qwen", None, "local", None, fallback=False)
     assert "fallback" not in c.load() and c.public()["fallback"] is False

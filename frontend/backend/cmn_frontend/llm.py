@@ -19,7 +19,7 @@ Providers (``cfg["provider"]``):
 ``local``, base_url and optionally ``fallback`` (an Anthropic cfg: provider, model, api_key). With a
 fallback, a local model that cannot be reached at all (connection refused or timed out before any
 answer: laptop closed, offline, Ollama not running) is replaced by Claude for that request, and the
-answer starts with a note that says so. Errors after the connection (wrong model, cut-off answer)
+answer starts with a short note that says so. Errors after the connection (wrong model, cut-off answer)
 never fall back. Errors never raise out of ``stream_text`` (the answer ends with a short note
 instead); ``complete_json`` raises ``LLMError`` (a ``ValueError``) with a short, user-facing reason.
 """
@@ -71,7 +71,8 @@ def _unreachable(e: Exception) -> bool:
 
 
 def fallback_note(e: Exception) -> str:
-    return f"({str(e)[0].upper()}{str(e)[1:]}; Claude (Anthropic) answered instead.)\n\n"
+    """Short note before an answer Claude wrote because the local model was not reachable."""
+    return "(The local model was not reachable, so Claude (Anthropic) answered.)\n\n"
 
 
 # ---- shared helpers ----

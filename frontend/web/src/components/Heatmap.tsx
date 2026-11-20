@@ -6,6 +6,7 @@ import { C } from "../theme";
 import { Chart } from "./Chart";
 import { Icon } from "./Icon";
 import { c9Signal } from "./UnscoredMetrics";
+import { metricName, SITE_GROUP_OF, visitText } from "../lib/metrics";
 
 type Cell = { x: number; y: number; fill: string; text: string; textFill: string; above?: boolean; present?: boolean };
 
@@ -30,7 +31,7 @@ type Props = {
 /** Day × criterion grid of daily likelihoods L, with the phase strip and gate state. */
 export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selectedDay, onSelectDay, onAsk }: Props) {
   const [pop, setPop] = useState<{ x: number; y: number; i: number; row: string } | null>(null);
-  const gateWord = rolling ? `rolling ${M}-day window, mixes phases` : "gate of this day's period";
+  const gateWord = rolling ? `its own last ${M} days, can mix periods` : "rule for this day's period";
   const labels = tl.profile.phase_labels;
   const curShort = labels.current === "Clinical" ? "clin" : "recent";
   const phaseName = (ph: string) => (ph === "current" ? labels.current : ph === "baseline" ? labels.baseline : ph).toLowerCase();
@@ -91,9 +92,16 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
           const i = p.data[0];
           const d = days[i];
           const row = rows[p.data[1]];
-          const head = `<b>${d.date} (${d.weekday})</b> · ${phaseName(d.phase)}${d.complete ? "" : " · incomplete"}`;
+          const head = `<b>${d.date} (${d.weekday})</b>, ${phaseName(d.phase)}${d.complete ? "" : ", incomplete"}`;
           if (row === "Phase") return d.ground_truth ? `${head}<br/>${d.ground_truth.n_blocks} scripted blocks, ${d.ground_truth.n_profile_blocks} clinical` : head;
-          if (row === "C9 signal") return `${head}<br/>${c9Flags[i].length ? `C9 above baseline: ${c9Flags[i].map((k) => cfg.metric_labels[k] ?? k).join(", ")}` : "no C9 signal"} (not scored, outside the gate)`;
+          if (row === "C9 signal") {
+            const vis = days[i].observed?.site_visits ?? {};
+            const items = c9Flags[i].map((k) => {
+              const v = SITE_GROUP_OF[k] ? vis[SITE_GROUP_OF[k]] : undefined;
+              return v ? `${metricName(k, cfg)}: ${visitText(v)}` : metricName(k, cfg);
+            });
+            return `${head}<br/>${items.length ? items.join("<br/>") : "nothing above the usual level"}<br/><span style="color:${C.muted}">a warning, not part of the scoring</span>`;
+          }
           if (row === "Criteria present") return `${head}<br/>${nPresent[i]} criteria present (${gateWord})`;
           if (row === "Episode") return `${head}<br/>episode ${episode[i] ? "likely" : "not likely"} (${gateWord})`;
           const c = row as CritKey;
@@ -102,8 +110,8 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
             .filter(([, m]) => m.w * m.mu > 0)
             .sort((a, b) => b[1].w * b[1].mu - a[1].w * a[1].mu)
             .slice(0, 3)
-            .map(([k]) => cfg.metric_labels[k] ?? k);
-          return `${head}<br/><b>${c}</b> likelihood ${L == null ? "–" : L.toFixed(2)}${present[c]?.[i] ? ` · <b style="color:${C.alert}">present</b> (${gateWord})` : ""}` +
+            .map(([k]) => metricName(k, cfg));
+          return `${head}<br/><b>${c}</b> likelihood ${L == null ? "–" : L.toFixed(2)}${present[c]?.[i] ? `, <b style="color:${C.alert}">present</b> (${gateWord})` : ""}` +
             `<br/><span style="color:${C.text2}">${lines.length ? `mainly: ${lines.join(", ")}` : "no metric counted on this day"}</span>`;
         },
       },
@@ -114,7 +122,7 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
       },
       yAxis: {
         type: "category",
-        data: rows.map((r) => (/^C\d$/.test(r) ? `${r} ${cfg.criterion_names[r as CritKey]}` : r)),
+        data: rows.map((r) => (/^C\d$/.test(r) ? `${r} ${cfg.criterion_names[r as CritKey]}` : r === "C9 signal" ? "Crisis or self-harm sites" : r)),
         axisLabel: { color: C.text, fontSize: 11, width: 140, overflow: "truncate" },
         axisTick: { show: false }, axisLine: { show: false },
       },
@@ -153,11 +161,11 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
           <span className="key" title="Neutral scale: lighter = weaker, darker = stronger signal">
             likelihood 0 {C.intensity.map((c) => <i key={c} style={{ display: "inline-block", width: 10, height: 10, background: c }} />)} 1
           </span>
-          <span className="key"><i className="dot" style={{ background: C.ink }} /> reaches θ</span>
+          <span className="key"><i className="dot" style={{ background: C.ink }} /> score at or above the threshold</span>
           <span className="key"><i className="bar" style={{ background: C.alert }} /> present{rolling
             ? <> (rolling {M}-day window, mixes phases)</> : <> in this period</>}</span>
           <span className="key"><i style={{ display: "inline-block", width: 14, height: 10, background: C.baselineShade, marginRight: 4 }} /> Baseline (usual weeks)</span>
-          {c9 > 0 && <span className="key" style={{ color: C.alert }}><Icon name="alert" label="C9 signal" /> C9 signal (outside the gate)</span>}
+          {c9 > 0 && <span className="key" style={{ color: C.alert }}><Icon name="alert" label="Crisis or self-harm sites" /> crisis or self-harm sites, more than usual (a warning, not part of the scoring)</span>}
           {canEpisode && <span className="key"><i style={{ display: "inline-block", width: 14, height: 10, background: C.alert, marginRight: 4 }} /> episode likely</span>}
         </div>
       </div>
@@ -173,18 +181,18 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
           }} />
         {pop && onAsk && days[pop.i] && (
           <ExplainPop x={pop.x} y={pop.y} onClose={() => setPop(null)}
-            title={`${days[pop.i].weekday} ${days[pop.i].date} · ${pop.row}`}
+            title={`${days[pop.i].weekday} ${days[pop.i].date}, ${pop.row}`}
             actions={[
               ...(/^C\d$/.test(pop.row) && days[pop.i].L[pop.row as CritKey] != null ? [{
                 label: `Explain L = ${days[pop.i].L[pop.row as CritKey]!.toFixed(2)}`,
                 run: () => onAsk(`Explain why ${pop.row} ${cfg.criterion_names[pop.row as CritKey]} has a likelihood of ${days[pop.i].L[pop.row as CritKey]!.toFixed(2)} on ${days[pop.i].date}: which metrics and values drove it, how they compare with the usual range, and how much this can be trusted from network data.`, `heatmap, ${pop.row}, day ${days[pop.i].date}`),
               }] : []),
               ...(pop.row === "C9 signal" ? [{
-                label: "How do these hits come about?",
-                run: () => onAsk(`How do the C9 signals on ${days[pop.i].date} come about? Which metric counted what (domain hits, not content), how does it compare with the baseline, and what else could cause it?`, `C9 signal, day ${days[pop.i].date}`),
+                label: "Explain these visits",
+                run: () => onAsk(`What happened on ${days[pop.i].date} with crisis or self-harm sites: how many visits, when, how long, and how does it compare with this person's usual days? What else could explain it?`, `C9 signal, day ${days[pop.i].date}`),
               }] : []),
               ...(pop.row === "Criteria present" || pop.row === "Episode" ? [{
-                label: "Explain the gate on this day",
+                label: "Explain which criteria count as present on this day",
                 run: () => onAsk(`Explain the gate state on ${days[pop.i].date}: which criteria count as present, why, and why an episode is or is not likely.`, `heatmap, gate, day ${days[pop.i].date}`),
               }] : []),
             ]} />

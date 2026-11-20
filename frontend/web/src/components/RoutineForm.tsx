@@ -193,6 +193,27 @@ export function RoutineForm({ profileId, value, onChange, person, assistant, sec
               </tbody>
             </table>
           </div>
+          {/* phones: one line per day instead of a 14-column grid */}
+          <ul className="week-list" aria-label={person ? "Your week, day by day" : "Week, day by day"}>
+            {WEEKDAYS.map((d) => (
+              <li key={d} className={d === "sat" || d === "sun" ? "weekend" : ""}>
+                <span className="week-list-day">{DAY_NAMES[d]}</span>
+                {HALVES.map((h) => (
+                  <div key={h} className="week-list-half" role="radiogroup" aria-label={`${DAY_NAMES[d]} ${HALF_NAME[h]}`}>
+                    <span className="muted small">{h === "am" ? "Morning" : "Afternoon"}</span>
+                    <div className="seg seg-small">
+                      {(["away", "home", "free"] as DayType[]).map((t) => (
+                        <button key={t} type="button" role="radio" aria-checked={value.week[d][h] === t}
+                          className={value.week[d][h] === t ? "active" : ""} onClick={() => setHalf(d, h, t)}>
+                          <DayTypeIcon type={t} /> {TYPE_LABEL[t]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </li>
+            ))}
+          </ul>
           <p className="muted small">AM is the morning until about noon, PM the afternoon. A day counts as away if part of it is away.</p>
         </fieldset>
       )}
@@ -242,7 +263,7 @@ export function RoutineForm({ profileId, value, onChange, person, assistant, sec
                 <select value={d.ip ?? ""} onChange={(e) => setDevice(i, { ip: e.target.value || null })} aria-label="Network address">
                   <option value="">not linked</option>
                   {linkOptions.map((o) => (
-                    <option key={o.ip} value={o.ip}>{o.ip}{o.label ? ` · ${o.label}` : ""} · {fmtNum(o.packets)} packets{o.assigned_to.length ? ` · ${o.assigned_to.join(", ")}` : ""}</option>
+                    <option key={o.ip} value={o.ip}>{o.ip}{o.label ? `, ${o.label}` : ""}, {fmtNum(o.packets)} packets{o.assigned_to.length ? `, ${o.assigned_to.join(", ")}` : ""}</option>
                   ))}
                 </select>
               )}
@@ -327,7 +348,7 @@ export function AwayEditor({ value, onChange, person }: { value: { id?: string; 
       {value.length > 0 && (
         <ul className="away-list">
           {value.map((p, i) => (
-            <li key={p.id ?? i}><b>{p.from === p.to ? p.from : `${p.from} – ${p.to}`}</b>{p.reason && ` · ${p.reason}`}
+            <li key={p.id ?? i}><b>{p.from === p.to ? p.from : `${p.from} – ${p.to}`}</b>{p.reason && `, ${p.reason}`}
               <button className="link small" onClick={() => onChange(value.filter((_, j) => j !== i))}>remove</button></li>
           ))}
         </ul>

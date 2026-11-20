@@ -104,7 +104,8 @@ export interface DayObserved {
   deviation: Record<string, number | null>;   // z against the person's usual range
   deviation_ref?: Record<string, number | null>;   // z against the typical range (from percentile_ref; clinicians and parents)
   quiet_start_sd7?: number | null;   // SD of the went-quiet time over the last 7 nights (min)
-  sensitive?: { metric: string; label: string; value: number | null }[];   // clinicians and parents only
+  sensitive?: { metric: string; label: string; value: number | null; visits?: number; starts?: string[]; minutes?: number }[];   // clinicians and parents only
+  site_visits?: Record<string, { visits: number; starts: string[]; minutes: number }>;   // per site group (clinicians and parents)
   sensitive_days?: number;
   percentile_ref?: Record<string, number | null>;   // v3 (K1): position in the typical range, 0–100, per track
 }

@@ -6,10 +6,10 @@ import { DayDetail } from "./components/DayDetail";
 import { Heatmap } from "./components/Heatmap";
 import { HourlyHeatmap } from "./components/HourlyHeatmap";
 import { UnscoredMetrics } from "./components/UnscoredMetrics";
-import { Assistant, type AskRequest } from "./components/Assistant";
+import { Assistant, resetConversations, type AskRequest } from "./components/Assistant";
 import { CarePlan } from "./components/CarePlan";
 import { MyWeek, Onboarding } from "./components/Onboarding";
-import { ObservabilityCard } from "./components/ObservabilityCard";
+import { AboutData } from "./components/AboutData";
 import { AssistantSettings } from "./components/AssistantSettings";
 import { Login } from "./components/Login";
 import { Overview } from "./components/Overview";
@@ -30,20 +30,6 @@ const MULTI_ONLY: Tab[] = ["details", "about", "care"];
 
 /** The thesis behind the prototype: shown only as a small "About" line, not as the product name. */
 export const THESIS_TITLE = "Can My Network Tell How I Feel? Explainable depression indicators from network traffic metadata";
-
-/** Placeholder for T2's `AboutData` (same props) until it is merged; then import it instead. */
-function AboutData({ cfg, focus, onAsk }: { cfg: Config; focus: CritKey[]; onAsk: (q: string, f: string) => void }) {
-  return (
-    <>
-      <section className="card">
-        <h2>About the data</h2>
-        <p className="sub">What the home network can see (when devices are in use, how much, which kinds of sites by
-          name) and what it cannot see: no search terms, no page content, no messages.</p>
-      </section>
-      <ObservabilityCard cfg={cfg} focus={focus} onAsk={onAsk} step={1} />
-    </>
-  );
-}
 
 // Icons only where one of the fixed icon meanings (VISUAL.md) fits the tab.
 type TabDef = { key: Tab; label: string; icon?: IconName; sub: (multi: boolean) => string; multiOnly?: boolean };
@@ -74,7 +60,7 @@ export default function App() {
 
   if (me === undefined) return <div className="page"><p className="muted">Loading…</p></div>;
   if (me === null) return <Login onLogin={setMe} />;
-  return <Portal me={me} onLogout={() => { api.logout().finally(() => setMe(null)); }} />;
+  return <Portal me={me} onLogout={() => { resetConversations(); api.logout().finally(() => setMe(null)); }} />;
 }
 
 const ASSISTANT_KEY = "cmn.assistantOpen";
@@ -116,6 +102,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [rolling, setRolling] = useState(false);   // optional extra view; mixes phases
   const [tab, setTab] = useState<Tab>(init.tab && (multi || !MULTI_ONLY.includes(init.tab)) ? init.tab : "overview");
   const [askReq, setAskReq] = useState<AskRequest | null>(null);
+  const clearAsk = useCallback(() => setAskReq(null), []);
   const [assistantOn, setAssistantOn] = useState(false);
   const [myWeek, setMyWeek] = useState(false);                       // the person's "My week" page
   const [skipOnboarding, setSkipOnboarding] = useState(() => {
@@ -289,27 +276,28 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
           {multi && tab === "details" && (
             <details className="gatebar card">
               <summary>
-                <span className="gate-title">Gate</span>
-                <span>a criterion counts as <b>present</b> when L ≥ <b>{gate.theta.toFixed(2)}</b> on <b>{gate.N}</b> of a phase's
-                  last <b>{gate.M}</b> days</span>
+                <span className="gate-title">Rule for "present"</span>
+                <span>a criterion counts as <b>present</b> in a period when its daily score is at least <b>{gate.theta.toFixed(2)}</b> on
+                  {" "}<b>{gate.N}</b> or more of that period's last <b>{gate.M}</b> days. One unusual day is not enough; a pattern is.</span>
                 {!isDefault && <span className="pill pill-beige">changed</span>}
                 {rolling && <span className="pill pill-beige">day marks: rolling window</span>}
                 <span className="gate-adjust">Adjust</span>
               </summary>
               <div className="gate-controls">
-                <label>θ <input type="range" min={0} max={1} step={0.01} value={gate.theta}
+                <label>Daily score at least <input type="range" min={0} max={1} step={0.01} value={gate.theta}
                   onChange={(e) => setGate({ ...gate, theta: Number(e.target.value) })} /> <b>{gate.theta.toFixed(2)}</b></label>
-                <label>N <input type="number" min={1} max={60} value={gate.N}
-                  onChange={(e) => setGate({ ...gate, N: Math.max(1, Number(e.target.value)) })} /> days ≥ θ</label>
-                <label>within M <input type="number" min={1} max={60} value={gate.M}
+                <label>on <input type="number" min={1} max={60} value={gate.N}
+                  onChange={(e) => setGate({ ...gate, N: Math.max(1, Number(e.target.value)) })} /> days</label>
+                <label>of the last <input type="number" min={1} max={60} value={gate.M}
                   onChange={(e) => setGate({ ...gate, M: Math.max(1, Number(e.target.value)) })} /> days</label>
                 <button className="btn" disabled={isDefault}
                   onClick={() => setGate({ ...gate, theta: cfg.theta, N: cfg.N, M: cfg.M })}>Reset</button>
                 <label className="rolling-toggle" title="Right after the baseline, a rolling window is mostly baseline days.">
                   <input type="checkbox" checked={rolling} onChange={(e) => setRolling(e.target.checked)} />
-                  mark days with a rolling {gate.M}-day window instead (mixes phases)
+                  mark each day by its own last {gate.M} days (can mix baseline and recent days)
                 </label>
-                <p className="muted small gate-note">Changes apply in this browser only. Weights and membership functions come from <code>fasl_config.json</code>.</p>
+                <p className="muted small gate-note">A stricter rule (higher score, more days) shows fewer criteria as present; a looser one shows more,
+                  including chance patterns. Changes apply in this browser only and are not saved.</p>
               </div>
             </details>
           )}
@@ -323,8 +311,8 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                   <h2>{tl.persona.name}</h2>
                 </div>
                 <dl className="facts">
-                  <div><dt>Traffic</dt><dd>{tl.profile.has_plan ? "scripted run" : "live"} · {tl.profile.all_devices ? "all devices" : tl.profile.devices.map((d) => d.label || d.ip).join(", ")}</dd></div>
-                  <div><dt>Recorded days</dt><dd>{tl.days.filter((d) => d.phase === "baseline").length} {labels.baseline.toLowerCase()} · {tl.days.filter((d) => d.phase === "current").length} {labels.current.toLowerCase()}</dd></div>
+                  <div><dt>Traffic</dt><dd>{tl.profile.has_plan ? "scripted run" : "live"}, {tl.profile.all_devices ? "all devices" : tl.profile.devices.map((d) => d.label || d.ip).join(", ")}</dd></div>
+                  <div><dt>Recorded days</dt><dd>{tl.days.filter((d) => d.phase === "baseline").length} {labels.baseline.toLowerCase()}, {tl.days.filter((d) => d.phase === "current").length} {labels.current.toLowerCase()}</dd></div>
                 </dl>
               </section>}
 
@@ -361,7 +349,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                   ) : tab === "timeline"
                     ? <TimelineView tl={tl} person notes={[]} onNotes={() => undefined} selectedDay={day} onSelectDay={setDay} onAsk={ask} />
                     : <Overview tl={tl} person selectedDay={day} onSelectDay={setDay} onAsk={ask} />}
-                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person focus={null}
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} profileId={tl.profile.id} person focus={null}
                     focusInfo={{ day }} />
                 </>
               )}
@@ -369,7 +357,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
               {tl.status === "ready" && multi && tab === "care" && (
                 <>
                   <CarePlan tl={tl} cfg={cfg} assistant={assistantOn} onSaved={onCareSaved} onAsk={ask} />
-                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false} focus="care plan" />
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} profileId={tl.profile.id} person={false} focus="care plan" />
                 </>
               )}
 
@@ -386,7 +374,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                     ? <TimelineView tl={tl} person={false} notes={notes} onNotes={setNotes} selectedDay={day} onSelectDay={setDay}
                         onOpenDetails={(d) => { setDay(d); setTab("details"); }} onAsk={ask} />
                     : <Overview tl={tl} person={false} selectedDay={day} onSelectDay={setDay} seen={seen} onSeen={onSeen} onAsk={ask} />}
-                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false}
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} profileId={tl.profile.id} person={false}
                     focus={`${tab}${day ? `, day ${day}` : ""}`} focusInfo={{ day }} />
                 </>
               )}
@@ -406,10 +394,10 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                   <UnscoredMetrics tl={tl} cfg={cfg} selectedDay={day} onSelectDay={setDay} step={5} onAsk={ask} />
                   {dayIndex >= 0 && (
                     <DayDetail profileId={tl.profile.id} day={tl.days[dayIndex]} cfg={cfg} present={present}
-                      dayIndex={dayIndex} phaseLabels={labels} onAsk={ask} />
+                      dayIndex={dayIndex} phaseLabels={labels} onAsk={ask}
+                      activePackets={tl.observed?.params.active_packets} />
                   )}
-                  <ObservabilityCard cfg={cfg} focus={tl.care?.clinical?.criteria ?? []} onAsk={ask} step={7} />
-                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false}
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} profileId={tl.profile.id} person={false}
                     focus={[day && `day ${day}`, activeCrit && `${activeCrit} ${cfg.criterion_names[activeCrit]}`].filter(Boolean).join(", ") || null}
                     focusInfo={{ day, criterion: activeCrit ? { key: activeCrit, name: cfg.criterion_names[activeCrit] } : null }} />
                 </>
@@ -418,7 +406,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
               {tl.status === "ready" && multi && tab === "about" && (
                 <>
                   <AboutData cfg={cfg} focus={tl.care?.clinical?.criteria ?? []} onAsk={ask} />
-                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} profileId={tl.profile.id} person={false}
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} profileId={tl.profile.id} person={false}
                     focus="about the data" focusInfo={{}} />
                 </>
               )}
@@ -428,7 +416,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
       )}
       {multi && <footer className="muted small">
         Metrics computed with the unchanged thesis metric code (<code>app_pcap_to_dsm5/app/metrics</code>) on the
-        person's devices.{tl?.profile.has_plan && " Expected outcomes: profile §9."}
+        person's devices.{tl?.profile.has_plan && " Expected outcomes come from the test script."}
       </footer>}
     </div>
   );

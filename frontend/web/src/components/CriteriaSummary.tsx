@@ -25,7 +25,7 @@ type Props = {
 const EXPECT_LABEL: Record<Expectation, string> = {
   present: "present",
   no: "absent",
-  elevated: "raised, below gate",
+  elevated: "raised, below the rule",
   borderline: "borderline",
   flag: "flag only",
 };
@@ -63,7 +63,7 @@ function PhaseTile({ ph, title, p, crits, cfg, gate }: { ph: PhaseKey; title: st
       <div className="phase-tile-head">
         <span className="phase-tile-title">{title}</span>
         <span className="muted small">{phaseSpan(p)}</span>
-        {ph === "current" && prelim && <span className="pill pill-neutral">preliminary · day {p.days} of {gate.M}</span>}
+        {ph === "current" && prelim && <span className="pill pill-neutral">preliminary, day {p.days} of {gate.M}</span>}
       </div>
       {p.days === 0 ? <p className="muted">No complete days yet.</p> : (
         <>
@@ -103,14 +103,14 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
       <div className="card-head">
         <h2><span className="step">1</span>DSM-5 criteria</h2>
         <p className="sub">
-          Which DSM-5 criteria pass the gate in each period. Each period is judged on its own days only.
+          Which DSM-5 criteria count as present in each period. Each period is judged on its own days only.
         </p>
       </div>
 
       <div className="phase-tiles">
         {order.map((ph) => <PhaseTile key={ph} ph={ph} title={title[ph]} p={phases[ph]} crits={scored} cfg={cfg} gate={gate} />)}
         {hasExpect && <div className="phase-tile phase-tile-verdict">
-          <div className="phase-tile-head"><span className="phase-tile-title">Expected (profile §9)</span></div>
+          <div className="phase-tile-head"><span className="phase-tile-title">Expected (test script)</span></div>
           <div className="phase-tile-big">
             <b>{matched.length}</b> <span>of {judged.length} expectations met{prelim ? " so far" : ""}</span>
           </div>
@@ -137,7 +137,7 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
               <th>Criterion</th>
               {hasExpect && <th>Expected</th>}
               {order.map((ph) => (
-                <th key={ph}>{title[ph]} <span className="muted">· days ≥ θ</span></th>
+                <th key={ph}>{title[ph]} <span className="muted">, days with score ≥ {gate.theta.toFixed(2)}</span></th>
               ))}
               {hasExpect && <th>Match</th>}
             </tr>
@@ -183,24 +183,25 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
       {unscored.length > 0 && (
         <p className="small muted unscored">
           Not scored by the current configuration: {unscored.map((c) => `${c} ${cfg.criterion_names[c]}`
-            + (hasExpect && tl.persona.expected[c] ? ` (expected ${EXPECT_LABEL[tl.persona.expected[c]!.present]})` : "")).join(" · ")}.
+            + (hasExpect && tl.persona.expected[c] ? ` (expected ${EXPECT_LABEL[tl.persona.expected[c]!.present]})` : "")).join("; ")}.
         </p>
       )}
 
       <details className="howto">
         <summary>How is this decided?</summary>
         <p>
-          Every day gets a likelihood L between 0 and 1 per criterion. A criterion is <b>present</b> in a phase when
-          L ≥ θ = {gate.theta.toFixed(2)} on at least N = {gate.N} of that period's last M = {gate.M} days. An
-          <b> episode</b> is likely when at least {gate.minPresent} criteria are present, including a core criterion
-          ({cfg.core.join(", ")}).{!episodePossible(cfg, gate) && <> With the current <code>fasl_config.json</code> only {scored.length} criteria
-          are scored, so an episode cannot be reached; the episode result is shown for completeness.</>} {tl.profile.has_plan
+          Every day, each criterion gets a score between 0 and 1 from the network measures behind it (how far they are from the
+          person's usual range). A criterion counts as <b>present</b> in a period when its score is at least {gate.theta.toFixed(2)} on
+          {" "}{gate.N} or more of that period's last {gate.M} days, so a single unusual day never decides it. Like the DSM-5, an
+          <b> episode</b> needs at least {gate.minPresent} present criteria, one of them a core criterion
+          ({cfg.core.join(", ")}).{!episodePossible(cfg, gate) && <> The model scores only {scored.length} criteria so far, so an
+          episode cannot be reached; it is shown for completeness.</>} {tl.profile.has_plan
             ? <>The {title.baseline.toLowerCase()} and {title.current.toLowerCase()} phase come from the scripted plan; the warm-up day is not counted.</>
             : <>The baseline is the person's usual behaviour ({phaseSpan(phases.baseline) || "first 14 days"}, set under People and devices); every later day is “{title.current.toLowerCase()}”.</>}
           {" "}Today (still being recorded
           {clin.inProgress.length > 0 && `, ${clin.inProgress.map(fmtDay).join(", ")}`}) are not counted.
           {prelim && clin.days > 0 && <> The {title.current.toLowerCase()} period has {clin.days} of {gate.M} days so far, so its result can still change.</>}
-          {hasExpect && <> Expectations come from the scripted profile's §9; "raised, below gate" means the criterion should move but not pass the gate.</>}
+          {hasExpect && <> Expectations come from the script of this test person; "raised, below the rule" means the criterion should rise but not count as present.</>}
           Click a criterion to see the metrics behind it.
         </p>
       </details>

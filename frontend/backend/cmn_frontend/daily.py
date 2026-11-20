@@ -15,7 +15,7 @@ import ipaddress
 import math
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
@@ -36,6 +36,7 @@ class MetricCode:
     criteria: tuple[Any, ...]
     labels: dict[str, str]          # dist_col -> label from the criterion definitions
     criterion_of: dict[str, str]    # dist_col -> "C1".."C9"
+    site_groups: dict[str, frozenset] = field(default_factory=dict)   # group -> site domains (SLD)
 
 
 def _memoize_is_private_ip(modules: list[Any]) -> None:
@@ -95,6 +96,9 @@ def load_metric_code(app_dir: Path, ip_cache: bool | None = None) -> MetricCode:
         criteria=tuple(criteria),
         labels=labels,
         criterion_of=criterion_of,
+        site_groups={"crisis": frozenset(getattr(common, "CRISIS_SLDS", ())),
+                     "therapy": frozenset(getattr(common, "THERAPY_SLDS", ())),
+                     "mental_health": frozenset(getattr(common, "MENTAL_HEALTH_SLDS", ()))},
     )
 
 
@@ -175,6 +179,36 @@ def activity_bins(df_day: pd.DataFrame, day: date, ip_to_device: dict[str, str])
     return out
 
 
+VISIT_GAP_MIN = 10     # a new visit starts after 10 minutes without traffic to the same kind of site
+
+
+def site_visits(df_day: pd.DataFrame, day: date, groups: dict[str, frozenset]) -> dict[str, Any]:
+    """Visits per site group (crisis lines, therapy booking, mental-health information) on this day.
+
+    The thesis metrics count packets to these domains, which says little to a clinician (one page
+    load is hundreds of packets). Here the packets to a group's domains are joined into visits: a new
+    visit starts after VISIT_GAP_MIN minutes without such traffic. Per group: number of visits, their
+    start times (HH:MM) and the minutes spent (at least 1 per visit). Hostnames only, never content.
+    """
+    out: dict[str, Any] = {}
+    if df_day.empty or "SLD" not in df_day.columns:
+        return out
+    for name, slds in groups.items():
+        if not slds:
+            continue
+        ts = df_day.loc[df_day["SLD"].isin(slds), "Timestamp"].sort_values()
+        if ts.empty:
+            continue
+        gaps = ts.diff().dt.total_seconds().fillna(float("inf")) > VISIT_GAP_MIN * 60
+        visit_id = gaps.cumsum()
+        starts, minutes = [], 0
+        for _, t in ts.groupby(visit_id):
+            starts.append(t.iloc[0].strftime("%H:%M"))
+            minutes += max(1, int(round((t.iloc[-1] - t.iloc[0]).total_seconds() / 60)))
+        out[name] = {"visits": len(starts), "starts": starts, "minutes": minutes}
+    return out
+
+
 def local_ip_counts(df_day: pd.DataFrame) -> dict[str, int]:
     """Packets per local (private) IP address, for choosing a person's devices."""
     if df_day.empty or "Source IP" not in df_day.columns or "Destination IP" not in df_day.columns:
@@ -233,6 +267,7 @@ def compute_day(files: list[Path], day: date, history: pd.DataFrame, code: Metri
     else:
         row = compute_metric_row(df_day, day, history, code)
         bins = activity_bins(df_day, day, ip_to_device)
+        bins["site_visits"] = site_visits(df_day, day, code.site_groups)
         first = df_day["Timestamp"].iloc[0].isoformat()
         last = df_day["Timestamp"].iloc[-1].isoformat()
     n_kept = int(len(df_day))
@@ -269,7 +304,7 @@ def activity_for_day(files: list[Path], day: date, code: MetricCode,
     del raw
     out = {
         "local_ips": local_ip_counts(df_day),
-        "activity": activity_bins(df_day, day, ip_to_device),
+        "activity": {**activity_bins(df_day, day, ip_to_device), "site_visits": site_visits(df_day, day, code.site_groups)},
         "packets_raw": n_raw,
         "packets_kept": int(len(df_day)),
         "first_packet": df_day["Timestamp"].iloc[0].isoformat() if len(df_day) else None,

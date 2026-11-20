@@ -283,7 +283,7 @@ def test_assistant_on_a_local_model(portal, scripted, monkeypatch):
                                         "base_url": "http://100.64.0.5:11434/v1"})
     assert r.status_code == 200 and r.json()["provider"] == "local" and r.json()["has_key"] is True
     assert person.get("/api/assistant").json()["enabled"] is True          # no Claude key needed
-    assert "outside company" in person.get("/api/assistant").json()["notice"]
+    assert person.get("/api/assistant").json()["notice"] == ""
     r = person.post(f"/api/profiles/{scripted}/assistant", json={"messages": [{"role": "user", "content": "Sleep?"}]})
     assert r.status_code == 200 and r.text == "Quieter nights."
     url, body = sent[-1]

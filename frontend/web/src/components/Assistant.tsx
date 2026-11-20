@@ -17,7 +17,14 @@ type Props = {
   person: boolean;               // the person themself: everyday language, no clinical terms
   focus: string | null;          // what the screen shows now (day / criterion), sent with the question
   focusInfo?: FocusInfo;         // the same, structured: drives the follow-up suggestions
+  /** Called once a request was taken over, so a tab mounted later does not ask it again. */
+  onRequestHandled?: () => void;
 };
+
+/** The conversation per profile survives switching tabs (each tab mounts its own panel). */
+const conversations = new Map<string, ChatTurn[]>();
+/** Forget all conversations (tests, logout). */
+export const resetConversations = () => conversations.clear();
 
 /** What the screen is focused on, for follow-up suggestions under an answer. */
 export type FocusInfo = { day?: string | null; criterion?: { key: string; name: string } | null; flag?: string | null };
@@ -70,9 +77,14 @@ function storedWidth(): number {
 }
 
 /** Explanation layer: natural-language questions about the results shown, answered from the data. */
-export function Assistant({ request, open, onToggle, profileId, person, focus, focusInfo }: Props) {
+export function Assistant({ request, open, onToggle, profileId, person, focus, focusInfo, onRequestHandled }: Props) {
   const [status, setStatus] = useState<AssistantStatus | null>(null);
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [turns, setTurnsState] = useState<ChatTurn[]>(() => conversations.get(profileId) ?? []);
+  const setTurns = useCallback((v: ChatTurn[] | ((cur: ChatTurn[]) => ChatTurn[])) => setTurnsState((cur) => {
+    const next = typeof v === "function" ? v(cur) : v;
+    conversations.set(profileId, next);
+    return next;
+  }), [profileId]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -113,7 +125,12 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
   };
 
   useEffect(() => { api.assistant().then(setStatus).catch(() => setStatus(null)); }, []);
-  useEffect(() => { setTurns([]); setError(null); setAskedFlag(null); }, [profileId]);
+  const shownProfile = useRef(profileId);
+  useEffect(() => {   // another person: their own conversation
+    if (shownProfile.current === profileId) return;
+    shownProfile.current = profileId;
+    setTurnsState(conversations.get(profileId) ?? []); setError(null); setAskedFlag(null);
+  }, [profileId]);
   useEffect(() => { endRef.current?.scrollIntoView?.({ block: "nearest" }); }, [turns, open]);
   useEffect(() => {   // Escape closes the panel
     if (!open) return;
@@ -150,6 +167,7 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
   useEffect(() => {
     if (!request || request.id === lastRequest.current || status === null) return;
     lastRequest.current = request.id;
+    onRequestHandled?.();
     setAskedFlag(flagOf(request.focus));
     onToggle(true);
     if (status.enabled) send(request.question, request.focus ?? focus);
@@ -171,7 +189,7 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
       aria-hidden={!open} {...(!open ? { inert: "" } : {})}>
       <div className="drawer-resize" role="separator" aria-orientation="vertical" aria-label="Resize the assistant panel"
         tabIndex={open ? 0 : -1} onPointerDown={startResize} onKeyDown={keyResize}
-        onDoubleClick={() => setWidth(DEFAULT_W)} title="Drag to resize · double-click to reset" />
+        onDoubleClick={() => setWidth(DEFAULT_W)} title="Drag to resize; double-click to reset" />
       <div className="drawer-head">
         <div>
           <h2>{person ? "Questions about your results" : "Ask about these results"}</h2>
@@ -234,13 +252,13 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
         <div className="drawer-foot">
           <form className="ask" onSubmit={(e) => { e.preventDefault(); send(input); }}>
             <input value={input} onChange={(e) => setInput(e.target.value)} disabled={busy}
-              placeholder={person ? "e.g. Why was last Tuesday different?" : "e.g. Which metric made C4 reach θ on 31/10?"}
+              placeholder={person ? "e.g. Why was last Tuesday different?" : "e.g. Why does Sleep count as present on 31/10?"}
               aria-label="Your question" />
             <Dictate disabled={busy} onText={(t) => setInput((old) => appendText(old, t))} />
             <button className="btn btn-primary" type="submit" disabled={busy || !input.trim()}>{busy ? "…" : "Ask"}</button>
           </form>
           <div className="row-between">
-            <p className="muted small">{status.notice}{focus && !person ? ` The current view (${focus}) is sent along.` : ""}</p>
+            {status.notice ? <p className="muted small">{status.notice}</p> : <span />}
             {turns.length > 0 && <button type="button" className="btn btn-quiet small" onClick={() => { setTurns([]); setAskedFlag(null); }} disabled={busy}>New conversation</button>}
           </div>
         </div>

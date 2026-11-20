@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { api, type ChatTurn } from "../api";
-import { Assistant, followUps, MORE_DETAIL, SHORTER } from "./Assistant";
+import { Assistant, followUps, MORE_DETAIL, SHORTER, resetConversations } from "./Assistant";
 
 vi.mock("../api", async (orig) => {
   const mod = await orig<typeof import("../api")>();
@@ -19,7 +19,7 @@ async function renderAnswered(props: Partial<Parameters<typeof Assistant>[0]> = 
 }
 
 describe("Assistant answer controls", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); resetConversations(); });
 
   it("sends Shorter and More detail as follow-up messages with the conversation so far", async () => {
     await renderAnswered();
