@@ -1,6 +1,6 @@
 # Capturing mobile data through a VPN to the gateway (concept, not built)
 
-Status 17.11.2026: **design only, nothing of this is implemented or configured on the gateway.** This
+Status 17.11.2026: **design only, nothing of this is implemented or configured on the gateway** (current status: Section 0). This
 file describes how a participant's phone would be recorded on mobile data (and on foreign WiFi) in a
 future real deployment, and what exactly has to be done for it. Nothing here is needed for the
 simulated profiles of the live run.
@@ -9,6 +9,44 @@ Reviewed 17.11.2026 against the gateway's actual configuration (read-only: tapca
 dnsmasq, tmpfiles, tapingest flags) and the code (ingest background filter, app metrics, portal). The
 ingest part was tested locally with a raw-IP capture. Points that can only be tested with a real phone
 and router are marked "to test".
+
+## 0. Status and next steps (20.11.2026)
+
+**Decision (20.11):** set it up for real with Karla's iPhone as the first device (dataset
+`gw_karla_a`), **after the live run** (it ends Sun 22.11). Karla was not at home on 20.11 (router steps
+need the home WiFi), so all steps were moved to the week of 23.11. **Nothing is configured yet**: no
+change on the router, the gateway or the phone.
+
+**Already done (read-only checks, 20.11):**
+
+| Check | Result |
+|---|---|
+| Home router | Swisscom Internet-Box at `192.168.0.254`; the gateway is a DHCP client on it (`wlp2s0` = `192.168.0.43/24`) |
+| Carrier-grade NAT (Section 4, step 1) | The public IPv4 the gateway sees is a normal public address (not `100.64.0.0/10`). **Still to confirm:** the same address as "public IPv4" on the Internet-Box overview page |
+| WireGuard on the gateway | Not installed |
+| Real-device setup (`ingest/README.md`, "Real devices") | Not done: no `/etc/tapingest/`, and the gateway still runs the ingest from before PR #18 (`git` on the gateway is at `eaac070`) |
+| What a `git pull` on the gateway would change | Only app, ingest and docs; **no** scheduler or runner code (diff `eaac070..main`), so the pull itself does not affect running executors |
+| Risk during a live run (for future runs) | Safe: router, installing WireGuard, `wg0`, phone config. Risky: firewall reload (a typo cuts the simulated devices' internet), dnsmasq restart (1–2 s without DNS for `eno1`/`br-sim`), a new recording under `/var/lib/tapcap` (memory, and Thierry's live-run rules). Do those only between runs |
+
+**Still missing, in this order (from Mon 23.11, once the executors are stopped):**
+
+1. **Router** (at home, on the home WiFi; Section 4): confirm the public IPv4 on the overview page;
+   "always the same IP" for the gateway (device with the MAC of `wlp2s0`, `ip link show wlp2s0`);
+   port forward UDP 51820 → `192.168.0.43:51820`; a DynDNS name (Internet-Box → Internet → DynDNS; if no
+   suitable free provider is listed, a DuckDNS updater on the gateway). Upload speed test.
+2. **Gateway prerequisite:** `sudo git -C /opt/can-my-network pull --ff-only` (brings PR #17/#18), then
+   the one-time real-device setup from `ingest/README.md` ("Before the first user").
+3. **WireGuard** (Section 5.1). Install with `sudo NEEDRESTART_SUSPEND=1 apt-get install -y
+   --no-install-recommends wireguard-tools qrencode` so the installer restarts no running service, and
+   write the private key into `wg0.conf` with
+   `printf "…PrivateKey = %s\n" "$(cat /etc/wireguard/server.key)"` instead of copying it by hand.
+4. **Firewall, dnsmasq, recording, ingest** (Sections 5.2–5.5). For `tapcap@wg0`, a smaller buffer is
+   enough (`--buffer-mb 32`): one phone, and the gateway has about 2 GB free.
+5. **Karla's iPhone** (Section 6): peer, QR code, On-Demand except the access point's WiFi, iCloud
+   Private Relay off; `karla_iphone_vpn,phone,,10.42.2.21,gw_karla_a` in `devices.real.csv`. Register
+   the phone's home-WiFi MAC too (Fixed private address), so home and away land in the same dataset.
+6. **Checks** (Section 7), then a first full day away from home in the portal.
+7. Afterwards: update this section, `process.md` and HardwareSetup.md with what was actually done.
 
 ## 1. Problem
 
