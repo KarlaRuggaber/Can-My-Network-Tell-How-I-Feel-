@@ -22,10 +22,26 @@ type Props = {
 };
 
 /** The conversation per profile survives switching tabs (each tab mounts its own panel). */
-const conversations = new Map<string, ChatTurn[]>();
+// Also kept in this browser tab's sessionStorage, so a reload keeps them; a new browser tab or
+// closing the browser starts empty, and logging out clears them.
+const STORE_KEY = "cmn.conversations";
+function loadStored(): Map<string, ChatTurn[]> {
+  try {
+    const raw = window.sessionStorage.getItem(STORE_KEY);
+    const obj = raw ? JSON.parse(raw) as Record<string, ChatTurn[]> : {};
+    return new Map(Object.entries(obj).map(([k, v]) => [k, v.filter((t) => t.content)]));
+  } catch { return new Map(); }
+}
+const conversations = loadStored();
+function saveStored() {
+  try { window.sessionStorage.setItem(STORE_KEY, JSON.stringify(Object.fromEntries(conversations))); } catch { /* convenience only */ }
+}
 const listeners = new Set<(profileId: string) => void>();
 /** Forget all conversations (tests, logout). */
-export const resetConversations = () => conversations.clear();
+export const resetConversations = () => {
+  conversations.clear();
+  try { window.sessionStorage.removeItem(STORE_KEY); } catch { /* ignore */ }
+};
 
 /** What the screen is focused on, for follow-up suggestions under an answer. */
 export type FocusInfo = { day?: string | null; criterion?: { key: string; name: string } | null; flag?: string | null };
@@ -87,6 +103,7 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
     const cur = conversations.get(profileId) ?? [];
     const next = typeof v === "function" ? v(cur) : v;
     conversations.set(profileId, next);
+    saveStored();
     listeners.forEach((l) => l(profileId));
   }, [profileId]);
   useEffect(() => {   // follow the stored conversation (also updates from a panel in another tab)
