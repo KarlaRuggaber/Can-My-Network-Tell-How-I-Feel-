@@ -23,6 +23,9 @@ export const ICON_MEANING = {
   data: "Data",
   lock: "Private / protected",
   days: "Timeline, day by day",
+  show: "Show (e.g. the charts)",
+  hide: "Hide (e.g. the charts)",
+  home: "Back to the overview",
 } as const;
 
 export type IconName = keyof typeof ICON_MEANING;
@@ -54,6 +57,9 @@ const PATHS: Record<IconName, ReactNode> = {
   data: <path d="M4 20h16M7 16v-4M12 16V7M17 16V9" />,
   lock: <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>,
   days: <><rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M3.5 10h17M8 3v4M16 3v4" />{dot(8, 14)}{dot(12, 14)}{dot(16, 14)}</>,
+  show: <><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="3" /></>,
+  hide: <><path d="M9.9 5.8A9 9 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a16 16 0 0 1-2.6 3.4M6.6 6.9C4 8.6 2.5 12 2.5 12S6 18.5 12 18.5c1.8 0 3.3-.5 4.6-1.3" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" /></>,
+  home: <><path d="M3.5 11 12 4l8.5 7" /><path d="M5.5 9.5V20h4.5v-5.5h4V20h4.5V9.5" /></>,
 };
 
 export interface IconProps {

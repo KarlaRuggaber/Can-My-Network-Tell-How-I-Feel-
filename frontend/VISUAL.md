@@ -53,6 +53,8 @@ settings, login and assistant. The tools are `web/src/theme.ts`, `web/src/styles
 | `data` | Data / about the data |
 | `lock` | Private / protected |
 | `days` | Timeline, day by day (section icon) |
+| `show` / `hide` | Show or hide a section (eye, crossed-out eye; icon-only button with a name) |
+| `home` | Back to the overview (icon-only button with a name) |
 
 ## Colours (validated)
 

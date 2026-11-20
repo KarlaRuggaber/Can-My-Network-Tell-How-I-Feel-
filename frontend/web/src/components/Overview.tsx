@@ -53,8 +53,9 @@ export function Overview(props: Props) {
               <h2>Charts</h2>
               <p className="sub">The same days as charts: use over the day and when your devices were quiet at night.</p>
             </div>
-            <button className="btn" aria-expanded={showCharts} onClick={() => setShowCharts((s) => !s)}>
-              {showCharts ? "Hide charts" : "Show charts"}
+            <button className="btn btn-icon" aria-expanded={showCharts} onClick={() => setShowCharts((s) => !s)}
+              aria-label={showCharts ? "Hide charts" : "Show charts"} title={showCharts ? "Hide charts" : "Show charts"}>
+              <Icon name={showCharts ? "hide" : "show"} size={22} />
             </button>
           </div>
           {showCharts && <Charts tl={tl} person selectedDay={selectedDay} onSelectDay={onSelectDay} />}
