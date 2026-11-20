@@ -398,3 +398,29 @@ def test_command_line_provider_wins_over_saved_settings(tmp_path, monkeypatch):
     assert cfg["base_url"] == "http://127.0.0.1:11434/v1" and cfg["api_key"] == ""    # never the Claude key
     assert ev.model_config(s, "local", None, "http://10.0.0.5:1234/v1")["base_url"] == "http://10.0.0.5:1234/v1"
     assert ev.model_config(s, None, None, None)["provider"] == "anthropic"
+
+
+# ---- names instead of variables, rounded numbers ----
+
+def test_context_has_named_scores_as_whole_percentages_and_rounded_values():
+    tl = timeline()
+    crit = next(c for c in assistant.fasl.CRIT_KEYS if CFG.configured(c))
+    tl["days"][-1]["L"] = {crit: 0.6234}
+    tl["days"][-1]["parts"] = {crit: {"m": {"value": 5.23456, "mu": 0.8149, "w": 0.35}}}
+    ctx = assistant.build_context(tl, CFG, False, {})
+    row = ctx["days"][-1]
+    assert "L" not in row and 62 in row["probability_percent"].values()
+    part = next(iter(row["parts"].values()))["m"]
+    assert part == {"value": 5.23, "risk_degree_percent": 81, "weight_percent": 35}
+    assert ctx["rule_for_present"] == {"threshold_percent": 50, "days_needed": 3, "out_of_last_days": 7}
+    assert "gate" not in ctx
+    text = json.dumps(ctx)
+    for key in ('"L"', '"mu"', '"w"', '"theta"', "days_with_L"):
+        assert key not in text
+
+
+def test_prompt_asks_for_names_rounded_numbers_and_paired_bold_markers():
+    s = assistant.SYSTEM_COMMON
+    assert "never write variable names" in s and '"probability"' in s and "whole" in s
+    assert "never \"Mon 16/11:**\"" in s
+    assert "scoring notation" not in assistant.SYSTEM_CLINICIAN

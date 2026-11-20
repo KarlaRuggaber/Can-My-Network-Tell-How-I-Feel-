@@ -111,6 +111,17 @@ def _num(v: Any) -> float | None:
     return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) else None
 
 
+def _fmt_h(v: float) -> str:
+    """Hours with one decimal at most ("4.6", "16.5", "8")."""
+    return f"{round(v, 1):g}"
+
+
+def _fmt_n(v: float) -> str:
+    """A value rounded for reading: whole from 100, 1 decimal from 10, else 2 ("1094", "16.5", "0.24")."""
+    a = abs(v)
+    return f"{round(v, 0 if a >= 100 else 1 if a >= 10 else 2):g}"
+
+
 def _fmt(v: float) -> str:
     """2 decimals at most, no trailing zeros ("5.2", "0.62", "12")."""
     return f"{round(v, 2):g}"
@@ -151,7 +162,7 @@ def _show(unit: str, v: Any) -> str | None:
     if n is None:
         return None
     if unit == "h":
-        return f"{_fmt(n)} h"
+        return f"{_fmt_h(n)} h"
     if unit == "min":
         return f"{int(round(n))} min"
     return str(int(round(n)))
@@ -168,7 +179,7 @@ def _usual(unit: str, u: dict[str, Any] | None) -> str | None:
         return f"{a} to {b}" if a and b else None
     lo = max(lo, 0.0)
     if unit == "h":
-        return f"{_fmt(lo)} to {_fmt(hi)} h"
+        return f"{_fmt_h(lo)} to {_fmt_h(hi)} h"
     if unit == "min":
         return f"{int(round(lo))} to {int(round(hi))} min"
     return f"{int(round(lo))} to {int(round(hi))}"
@@ -281,15 +292,19 @@ def _scored_item(ix: _Index, label: str, days: list[str]) -> dict[str, Any]:
     if not show and not days:
         last = ix.latest_day(lambda d: part(d) is not None)
         show = [last] if last else []
-    vals = [{"day": d, "text": _fmt(_num(part(d)["value"])) + (f" {unit}" if unit else "")} for d in show]
+    f = _fmt_h if unit == "h" else _fmt_n
+    vals = [{"day": d, "text": f(_num(part(d)["value"])) + (f" {unit}" if unit else "")} for d in show]
     b = ix.baseline.get(label) or {}
     mean, sd = _num(b.get("mean")), _num(b.get("sd"))
-    usual = f"{_fmt(mean - sd)} to {_fmt(mean + sd)}" + (f" {unit}" if unit else "") if mean is not None and sd is not None else None
+    usual = None
+    if mean is not None and sd is not None:
+        lo = max(mean - sd, 0.0) if mean >= 0 else mean - sd     # a non-negative metric never shows a range below 0
+        usual = f"{f(lo)} to {f(mean + sd)}" + (f" {unit}" if unit else "")
     detail = None
     if show and not ix.person:
         p = part(show[0])
-        bits = [f"μ {_fmt(_num(p['mu']))}" if _num(p.get("mu")) is not None else None,
-                f"w {_fmt(_num(p['w']))}" if _num(p.get("w")) is not None else None]
+        bits = [f"risk degree {int(_num(p['risk_degree_percent']))} %" if _num(p.get("risk_degree_percent")) is not None else None,
+                f"weight {int(_num(p['weight_percent']))} %" if _num(p.get("weight_percent")) is not None else None]
         detail = ", ".join(b for b in bits if b) or None
     name = label[:1].upper() + label[1:] if ix.person else label       # person: everyday phrase, sentence case
     return {"kind": "metric", "id": ix.code_of.get(label, label), "name": name, "icon": None, "unit": unit or None,
@@ -302,11 +317,14 @@ def _criterion_item(ix: _Index, ctx_name: str, days: list[str]) -> dict[str, Any
     if ix.person:        # everyday area name, no code and no scores
         return {"kind": "criterion", "id": ctx_name, "name": ctx_name, "icon": None, "unit": None, "values": [],
                 "usual": None, "detail": None, "code": None, "days": []}
-    show = [d for d in days if _num(((ix.rows.get(d) or {}).get("L") or {}).get(ctx_name)) is not None][:MAX_VALUE_DAYS]
+    def prob(d: str) -> float | None:
+        return _num(((ix.rows.get(d) or {}).get("probability_percent") or {}).get(ctx_name))
+
+    show = [d for d in days if prob(d) is not None][:MAX_VALUE_DAYS]
     if not show and not days:
-        last = ix.latest_day(lambda d: _num(((ix.rows.get(d) or {}).get("L") or {}).get(ctx_name)) is not None)
+        last = ix.latest_day(lambda d: prob(d) is not None)
         show = [last] if last else []
-    vals = [{"day": d, "text": f"L {_fmt(_num(ix.rows[d]['L'][ctx_name]))}"} for d in show]
+    vals = [{"day": d, "text": f"probability {int(round(prob(d)))} %"} for d in show]
     present = [f"{ph}: {'present' if r['present'] else 'not present'}" for ph, p in ix.periods.items()
                if isinstance((r := (p.get("results") or {}).get(ctx_name)), dict) and "present" in r]
     base = re.sub(r"^C[1-9]\s+", "", ctx_name)
