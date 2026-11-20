@@ -1,0 +1,449 @@
+(Transkribiert von TurboScribe. Upgrade auf Unbegrenzt, um diese Nachricht zu entfernen.)
+
+[Sprecher 3]
+Es soll immer die gleiche IP-Adresse gezeigt werden. Wir arbeiten daran, aber es gibt Lösungen. Für spätere Use-Cases könnte man sogar noch ein VPN aufsetzen.
+
+Und dann könnte man es sogar mit Mobile-Use auch zurück via den Router verbinden. Und dann sogar noch die Aktivität sehen, wenn jemand nicht mehr zu Hause ist. Das wäre dann so ein guter Outlook.
+
+Natürlich wäre das dann ein bisschen Latency, es wäre langsamer und alles. Aber es würde gehen.
+
+[Sprecher 2]
+Wieso wir da kurz drauf gekommen sind, wir hatten nochmal mit der UCH Kontakt anfangs dieser Woche. Und die haben ein Projekt, wo sie Jugendliche stationär erstmal bei sich behalten. Also nicht nur mit Depressionen, aber auch allgemein mit psychischen Problemen.
+
+Und dann anschließend werden die wieder in ihr normales Umfeld gelassen. Aber haben noch eine Handy-App, die das Handy-Usage so ein bisschen trackt. Auch wie sind die Interaktionen mit verschiedenen Apps und so weiter.
+
+Also mehr von der Hardware-Seite. Wer macht das denn heute? Entschuldige?
+
+[Sprecher 1]
+Wer macht das denn heute?
+
+[Sprecher 3]
+Lukas Jungilski, der ist der Psychiater. Und dann gibt es eine Peer-Dealerin, die heißt Cilia Bachmann, glaube ich. Genau, die dann eigentlich das Projekt konkret überwacht.
+
+[Sprecher 1]
+Ah ja, gut, dann können wir den Namen mal schicken.
+
+[Sprecher 2]
+Ja, sicher.
+
+[Sprecher 3]
+Ja, mal schicken, der ist nicht der Einzige.
+
+[Sprecher 2]
+Genau, und dann dachten wir, okay, eigentlich wird bei denen dieses passive Sensing erst relevant, wenn die gar nicht mehr in der Klinik sind. Das heißt, es wäre ja super cool, wenn wir quasi das Handy-Usage nicht nur Internet, weil allgemein haben sie die Lücke, dass sie nicht sehen, welche Apps genutzt werden. Und so könnten wir halt das ein bisschen ergänzen.
+
+Genau, das ist noch kurz, wieso wir auf diese Idee gekommen sind. Auf jeden Fall würde das dann nach dem Onboarding für die Person allgemein mal so aussehen. Sie hat quasi eine kleine Overview, wo sie so ein bisschen erklärt bekommt, was sie hier sieht.
+
+Und würde hier angezeigt bekommen, okay, das ist irgendwas, bei dir momentan was raussticht. Und der Rest ist dann eigentlich nur noch sehr high-level. Also einerseits einfach die Usage, so wann habe ich wie viel genutzt.
+
+Und was wir auch gemacht haben, ist quasi wie zu... Momentan heißt das quasi Quiet Window at Night. Aber das impliziert natürlich ein bisschen den Schlaf, je nachdem.
+
+Wo man so ein bisschen sieht, wann man die Geräte nicht genutzt hat. Genau, und dann das noch ein bisschen auf die Tage runtergebrochen. Einfach kann man sich da noch verschiedene Metriken anzeigen lassen.
+
+Aber wie gesagt, nur rein quasi informativ. Und hier sind keine Implikationen für Symptome oder irgendwelche Metriken drin. Und wenn man dann hier auf dieses Questions geht, dann kommt quasi dieses LLM raus.
+
+Und man kann sich dann halt noch gewisse Dinge anzeigen lassen, also erklären lassen, wenn man das möchte. Zum Beispiel, was war jetzt Unusual? Das könnte jetzt vielleicht was sein, was jemanden interessiert, der sich selbst monitort.
+
+Und dann bekommt man eine Antwort, was über die verschiedenen Tage so ein bisschen passiert ist.
+
+[Sprecher 3]
+Und dann vielleicht hier dann noch, wir haben diese LLM. Die bedeutet ja unterschiedliche Skills, je nachdem, ob es jetzt ein User ist oder ein Permission. Ein User wäre auf jeden Fall wichtig, dass man diese Abwärtsspirale dann relativ schnell blockiert.
+
+Dass man nur sagt, hey, ich gebe dir auch keine Infos. Ich sehe nur, du hast hier weniger geschlafen und hier mehr fertig. Ohne, dass dann diese LLM schon irgendwelche Herleitungen oder so selbst gibt.
+
+Dass das halt eben blockiert werden.
+
+[Sprecher 1]
+Ich glaube, das ist es. Das ist nützlich. Und das sind ja auch nicht belastbar, diese Diagnostiken.
+
+[Sprecher 2]
+Genau, das kommt dazu. Das ist ja nur ein Indiz. Also, da braucht es immer noch den Psychiater, der das einordnen kann und das gesamte Bild sieht von Panzierten.
+
+[Sprecher 3]
+Also vielleicht Motivation Nummer 1, wieso man auch eine User-Seite macht, ist doch einfach, um dieser Überwachung hinwegzuwerten. Dass die User auch selbst sehen, okay, das sind meine Daten und ich sehe die auch. Und es ist nicht so eine Blindbox, wo die dann keine Ahnung haben, was sie eigentlich genau machen und was dann zum Klinischen geht.
+
+[Sprecher 1]
+Ja, ich kann einfach mal ein paar Gedanken teilen.
+
+[Sprecher 2]
+Sehr gerne.
+
+[Sprecher 1]
+Also, ich finde es ziemlich cool. Ich habe es ziemlich cool aufgesetzt. Was man sicher noch machen sollte, ist die Überlegung von der Granularität her von den Daten, die man zeigt.
+
+Also ich finde das für den Endnutzer immer noch sehr komplex. Vor allem, wenn man sagt, gerade unten diese DayNight und QuietRinger und so, da muss man schon... Also, ich würde mich schon wundern, wie wenige Leute z.B. ein Diagramm interpretieren können. Irgendwie so zwei Koordinatensysteme. Irgendwas ganz Einfaches. Da würde ich nochmal gut überlegen, vor allem gerade beim ersten, bei den DayNightern.
+
+Das wirkt super komplex und kann genau den Effekt haben, dass man sagt, boah krass, die tracken ja alles irgendwie. Ich weiß nicht mal, was das sein soll hier, das schaut irgendwie voll krass aus. Vielleicht irgendwie reicht es davon, neben mir eine runde gebrochene Tabelle.
+
+Man kann es aber aufmachen, wenn man will. Also die Möglichkeit ist da.
+
+[Sprecher 3]
+Man hat ein zweites Layer, wo man dann noch ein bisschen genauer...
+
+[Sprecher 1]
+Also sowas könnte ich überlegen, Layer. Und was mir noch aufgefallen ist, ganz um die Überschrift, die würde ich ganz anders machen. Also das Team zählen, also can my network tell how I feel.
+
+[Sprecher 2]
+Ja gut, das ist noch...
+
+[Sprecher 1]
+Ich weiß schon, das habt ihr wahrscheinlich, ich würde es eh ändern, aber da würde ich irgendwann hinschreiben, irgendeinen Namen für ein Produkt oder so. Irgendwas, was relativ trivial ist.
+
+[Sprecher 3]
+So ein Branding, das kommt dann auch noch. Im Moment ist ja wirklich, can my network tell how I feel, ist ja der Titel unserer Arbeit. Warum steht der einfach dort?
+
+[Sprecher 2]
+Definitiv.
+
+[Sprecher 3]
+Bruno hat genau dasselbe gesagt.
+
+[Sprecher 1]
+Also ansonsten ziemlich cool. Was ich mir noch gedacht habe, war die Aussucht, vor allem das hat jetzt irgendwo das, wo man das eingeben lassen kann. Die Routine, wo man reinsprechen kann oder so.
+
+[Sprecher 2]
+Genau, das ist hier.
+
+[Sprecher 1]
+Was man da noch überlegen könnte, ich habe das auch schon, dass quasi, es gibt jetzt nur noch ein paar Anwendungen, schon dass das LLM oder was dahinter läuft, selbst evaluiert, fehlt mir noch bestimmter Info. Also sowas wie, sag uns doch noch ein bisschen was zu deinem... Also zum Beispiel, der Mann denkt nicht darüber nach, dass er irgendwie seine Routinen erzählen sollte oder Tageszeiten oder sonst irgendwas.
+
+Ich weiß nicht, ob das möglich ist, aber vielleicht könnte man das gezielt nur prompten.
+
+[Sprecher 2]
+Ja.
+
+[Sprecher 1]
+Gib uns ein bisschen mehr Infos zu deinen Tagesabläufen, so gut wie es geht oder so.
+
+[Sprecher 2]
+Ja, ein guter Punkt.
+
+[Sprecher 1]
+Und dann füllst du ja schon mal vor und nach aus, wenn das möglich ist, diese Bälle. Ja, das macht er.
+
+[Sprecher 3]
+Die wird übernommen, die wird vom Input übernommen. Genau.
+
+[Sprecher 1]
+Okay, super.
+
+[Sprecher 2]
+Ja, cooler Punkt, ja, definitiv.
+
+[Sprecher 1]
+Ja, also ich glaube nur, das wird es euch einfacher machen, damit ihr komplett reparieren könnt.
+
+[Sprecher 2]
+Ja, definitiv.
+
+[Sprecher 1]
+Wenn es machbar ist, ich weiß es nicht, aber vielleicht kann man das machen.
+
+[Sprecher 2]
+Das kriegen wir hin.
+
+[Sprecher 1]
+Ja, super. Und ansonsten finde ich das eigentlich ganz gut, bei dem Question-Teil, rechts des Chat-Dings da.
+
+[Sprecher 2]
+Ja.
+
+[Sprecher 1]
+Da könnte ich mir vorstellen, dass man das vielleicht ein bisschen übersichtlicher gestalten kann beziehungsweise kürzen kann in der ersten Version. Und vielleicht kann man es so machen, dass man mehr Informationen hat und so klicken kann am Ende. Eigentlich ist ja bei Cloud auch.
+
+Da kriegst du dann frei, oder was ist bei Cloud jetzt? Irgendwo ist das quasi, soll ich das machen, das machen oder das machen?
+
+[Sprecher 2]
+Ja.
+
+[Sprecher 1]
+Summarize oder Extend oder frei nachfragen oder so. Aber in erstem Ausdruck könnte man das vielleicht sogar ein bisschen schärfer machen. Vielleicht wirkt es aber nur gerade so.
+
+Jetzt hast du es ein bisschen überschlagen. Ja, ist so.
+
+[Sprecher 2]
+Ich hatte gerade davor lustigerweise einen Call und ich glaube, was wichtig ist, ist, dass wir hier schauen, was ist überhaupt un-so-relevant. Also momentan wird man halt sehr überladen und an sich war die Frage ja nur, was war der most unusual day und es gibt eigentlich eine Wochenübersicht.
+
+[Sprecher 1]
+Genau, genau.
+
+[Sprecher 2]
+Aber guter Punkt.
+
+[Sprecher 1]
+Ja und vielleicht kann man auch, das muss ich mir erst vor das Buch lesen. Ne, ich glaube, das ist okay von der Flucke. Manchmal ist es auch sinnvoll, das nur in einfacher Sprache darzustellen.
+
+Aber ich glaube, es ist gar nicht so komplex.
+
+[Sprecher 2]
+Ja, das war eigentlich jetzt schon so ein bisschen die Idee.
+
+[Sprecher 3]
+Genau, man soll keine Fachwörter verwenden.
+
+[Sprecher 2]
+Alright, ansonsten würden wir sonst mal zur Clinicview springen.
+
+[Sprecher 3]
+Ah, ich wollte dir kurz die Timeline zeigen.
+
+[Sprecher 2]
+Die Timeline? Ah, stimmt, stimmt, stimmt. Vergessen, ja.
+
+Ja genau, das war so ein bisschen... Es ist auch noch ein bisschen, also wahrscheinlich ein bisschen voll, ein bisschen viel, aber die Idee ist quasi, dass man wie so eine Tagesübersicht hat. Okay, hier Dienstag, 17.
+
+war hier diese Quiet Window, was habe ich genutzt und dann war hier die Idee, dass wir so ein bisschen, wie wir es gerade hatten, sagen, okay, hier went quiet later, also was bedeutet das überhaupt? Und dann kann man hier klicken und es öffnet quasi direkt das Window. Das war so ein bisschen die Herangehensweise, dass man sich quasi erklären lassen kann, wieso sich das jetzt angezeigt wird.
+
+Und dann bekommt er aber eben als Explanation, bekommt er halt nur eben sehr generische Dinge. Also zum Beispiel hier, Other everyday explanations include late evening guests, travel, if you remember what happened, tell me and I can help you read it in that light. Also es kommt nix irgendwie zu, ja, es könnte sein, dass du irgendwie Insomnia hast oder sowas.
+
+[Sprecher 3]
+Die Symptome werden auch gar nicht angesprochen. Es geht eigentlich nur darum, was sieht man denn aus Daten. Okay.
+
+[Sprecher 1]
+Ja, also wie ich ja gesagt habe, meiner Meinung nach ist es sehr überladen für den Nutzer, für den Versuch, das zu entzehren, also das Reduzieren komplexer, die Farben selektiver einsetzen. Da ist z.B. gar nicht ganz klar, was hast du diese Farben bei, was ist diese komischen Kacheln. Da kann ich jetzt hinschauen und denke mir, okay, was ist, da gibt es die Zeit 0 bis 24, was ist dunkelrot, was ist hellrot.
+
+Das sind so Fragen, die sich die Jäger uns aber noch mehr stellen würden.
+
+[Sprecher 2]
+Ja.
+
+[Sprecher 1]
+Also alles, was ihr unbedingt braucht, geht raus, hätte ich gesagt. Genau, ansonsten ist es cool, auch mit diesen Klicks, dass ihr da drauf gehen könnt. Da könnt man, wenn man wollte, die noch kürzen.
+
+[Sprecher 2]
+Ja.
+
+[Sprecher 1]
+Z.B. Für kann man Minus machen oder Vor plus oder so. So hat er irgendwie so zwei Dinger. Wenn man wollte, aber es ist so auch okay.
+
+Es ist alles keine Hexerei. Genau, ansonsten finde ich das auch cool. Vielleicht gibt es nochmal eine einfache Timeline.
+
+Die habt ihr auf den ersten Zeiten wahrscheinlich schon gehabt, oder?
+
+[Sprecher 2]
+Die hatten wir so ein bisschen, um die Quiet Windows zu zeigen. Und das ist quasi die Usage. Wahrscheinlich könnte man die hier zu einer einfacheren Timeline machen, wo man einfach ein bisschen sieht, über eine Woche hinweg.
+
+[Sprecher 1]
+Was ist denn, was muss ich noch fragen stellen? Welches Ziel verfolgt man generell mit der Ansicht? Das ist jetzt für den, entweder den, der getrackt wird, oder jemanden, der, also nicht der Alte, oder die Person, die selber nicht mehr in der Lage ist, oder so.
+
+[Sprecher 2]
+Ja.
+
+[Sprecher 1]
+Da nochmal in Sitzungen nachdenken, welche Probleme für die lösen wir dann mit. Und ich würde sogar argumentieren, alles, was ihr zeigt da drin, soll direkt messen auf eine Frage, die auftauchen könnte, ein Problem, ein Insight, was benötigt wird. Und alles andere ist vielleicht gar nicht erst mal sichtbar.
+
+[Sprecher 2]
+Ja.
+
+[Sprecher 1]
+Ich weiß schon, ihr wollt uns ja nicht mehr nur was zeigen, weil ihr ja Bachelor seid. Ich denke jetzt nur gerade von der Perspektive her Endnutzer. Weil ihr ja auch schon richtigerweise gesagt habt, alles, was wir zu viel zeigen, was verwirrend ist, was irgendwie, das kann genau ein Gegenteil sein.
+
+Müssen die das alles tracken von mir? Brauchen die das wirklich? Also wir haben ja eine Frage an euch, was interessiert euch denn da in der Tat?
+
+Ja.
+
+[Sprecher 3]
+Ich denke, für den User, also wie gesagt, die Leute, dessen eigenen Daten dann verwendet werden, da sind wir relativ offen, das alles so weit runterzubrechen, wie wir Input von dir und von der UCTH kriegen. Auf der clinician Seite geht es natürlich dann auch darum, zu zeigen, was für Zahlen, was für Faktoren kriegen wir aus dem Modell raus, und die wollen wir dann natürlich auch zeigen, als Input. Genau.
+
+Das ist so ein bisschen der Split, hätte ich gesagt.
+
+[Sprecher 1]
+Aber ist doch gut. Aber dann jetzt auf der User Seite, was habt ihr da schon mal überlegt, was denn da die brennenden Fragen wären, die Leute interessieren würden?
+
+[Sprecher 2]
+Ja, also ich denke, schon viel eigentlich, so ein bisschen um zu verstehen, was wird denn getrackt? Ich glaube, das ist ein großer Punkt, und ich finde auch wahrscheinlich so eine Ansicht wie hier recht spannend, dass Leute mal so ein bisschen ihre eigene Usage ein bisschen angezeigt bekommen. Also es kann ja auch, also ich stelle mir das so ein bisschen vor, wie so ein Health Tracking, aber halt von Netzwerkseite.
+
+Also dass man einfach so ein bisschen Einblick bekommt in seine Gewohnheiten, in seine Aktivität, und so ein bisschen vielleicht auch einen eigenen Anreiz bekommt, Dinge anders zu strukturieren, weil man sieht, oh wow, ich war ja hier nur drei Stunden ohne Handy-Usage unterwegs, das ist ja schon ein bisschen krass. Ich glaube, das sind so die zwei Main-Punkte für mich. Was meinst du noch, Carla?
+
+[Sprecher 3]
+Nee, ich hätte auch so, es geht v.a. darum, oder hätte ich bis jetzt gedacht, dass ich als User sehen kann, was wird von mir getrackt. Und das wäre jetzt meine Überlegung, dass ich wissen will, welche Daten kriegt dann auch ein Klinischen, damit ich mich einfach besser fühle, in der Hinsicht, dass ich nicht einfach blind überwacht werde. Also dass ich auch im Loop bin, oder dass ich zu einer gewissen Ebene auch Kontrolle, vielleicht ist das das falsche Wort, aber dass ich auch informiert bin darüber, was eigentlich so ein bisschen läuft.
+
+[Sprecher 1]
+Weil Kontrolle hast du ja erlebt, du kannst ja nicht sagen, ich möchte das nicht.
+
+[Sprecher 3]
+Genau, darum habe ich es ja auch wieder anders formuliert, aber dass man vielleicht denkt, man hätte sie, dass man sich nicht ganz so blind und ausgesetzt fühlt.
+
+[Sprecher 1]
+Können Sie mal bei uns kurz ganz hoch gehen?
+
+[Sprecher 2]
+Jo.
+
+[Sprecher 1]
+Ich fand es gut, was die Carla jetzt halt dazu muss, oder ich weiß nicht, ob sie das auch so hat, diese Übersicht geben, ich glaube, du hast es gesagt, was eingetrackt wird. Vielleicht kann man das ganz oben liefern, quasi in einem ganz prägnanten Format. Weil manchmal ist das schon genug, dass die Leute sehen, ich denke jetzt an so eine Kriminalität wie im App Store, iPhone Store, da steht, data collected about me, not collected, so irgendwie.
+
+Und dann gibt es natürlich unten das ganze Detaillierte, aber da haben wir jetzt wahrscheinlich schon genug. Und vielleicht könnte man das, wenn es das wäre, dann kann man da so ein Spoiler-Playtext machen, einfach als super prägnante Summary, das hinmachen. Was war jetzt gerade noch aufwärts?
+
+What stands out? Da könnte man sich vorstellen, dass da Leute fragen, in welcher Hinsicht stands that out? Warum steht denn das raus?
+
+Und was heißt das eigentlich? Weil das ist ja eigentlich so ein Titel, wenn ihr böse sein dürft, euer Leitvariante, von dem wahrscheinlich was für ein Finition dann auch aufständig ist. Da würde die Frage, wollen wir das zeigen?
+
+[Sprecher 3]
+Oder eigentlich, ob man es überhaupt sogar wieder wegnimmt, weil es mehr Verwirrung als Gutes gibt.
+
+[Sprecher 1]
+Genau, wenn wir es haben, dann will man eigentlich eine gute Begründung haben, warum das da ist. Und ansonsten brauchen wir es dann. Das ist eigentlich wie beim Tufter, die Grafiken.
+
+Jede Linie muss eine Berechtigung haben.
+
+[Sprecher 3]
+Sonst tut man es nicht hin.
+
+[Sprecher 1]
+Sonst ist es schlägerlich. Sonst ist es eher schlecht. Das können Sie mal durchrechnen.
+
+Ich bin total gespannt auf die Chemiker-Antworten.
+
+[Sprecher 2]
+Lass uns gerne rüber streben. Das sieht so aus. Zuallererst, hier kann man dann zwischen den Personen switchen.
+
+Man kann sagen, schauen wir die verschiedenen an. Er kann auch hier in den Einstellungen sehen, welche Personen zu welchem Device gemappt wird. Ich glaube, das ist momentan hier deaktiviert.
+
+Aber das ist die Idee, dass er sieht, okay, die Geräte sind so und so zugeordnet. Und so entstehen quasi die Personen. hier gibt es eigentlich auch zuerst die Overview.
+
+Wo er auch dieses What stands out bekommt. Aber natürlich viel detaillierter. Lass uns sonst vielleicht mal kurz zu Ich glaube, er hat mich ausgelockt.
+
+Das ist das Problem. Ah, ja. Jetzt ist es gut.
+
+Jetzt siehst du auch hier die Devices. Und auch ein paar Admin-Einstellungen. Dann gehen wir mal zu Maria.
+
+In der Overview bekommt er dann, okay, was ist denn passiert? Beispielsweise ist sie jetzt in 5 der letzten 7 Nächte später schlafen gegangen als sonst. Und dann kann er sich das auch direkt explainen lassen.
+
+Ich glaube, die Explanation ist aktuell auch noch sehr technisch. Das ist noch etwas, was wir als To-Do haben. Es ist schon ein bisschen besser geworden, aber auch noch sehr viel natürlich.
+
+Aber es geht wiederum darum, dass er sehen kann, okay, was bedeutet denn das? The Went Quiet Times war erst 3.15 Uhr, 3.15 Uhr, 2.50 Uhr, 2.45 Uhr. Und in ihrer Baseline war es immer ungefähr halb eins.
+
+Dass er einfach so ein bisschen die Info bekommt. Und die kann er dann auch sagen, okay, das habe ich jetzt gesehen, ist mir klar, dann verschwindet das wieder. Also die Idee hier ist mehr, wir hatten das eben auch in Absprache mit der UCT gemacht und gesagt, ja für sie ist eigentlich ja schon, also es ist ja, sie wissen ja schon sehr viel über den Patienten, wenn der in so ein Programm quasi aufgenommen wird.
+
+Das heißt, für sie ist nur wichtig, was muss mich denn jetzt interessieren? Was ist denn jetzt neu? Und deswegen haben wir gedacht, okay, das muss das erste sein, was hier kommt, hey, ist irgendwas speziell, was davor noch nicht so war?
+
+Das ist quasi die Idee von What Stands Out. Und was wir auch gesagt haben im letzten Call, ist, dass wir sagen, okay, es gibt eigentlich immer zwei Comparisons. Es gibt einmal die Comparison von der Person zu ihrer Baseline, selbst.
+
+Also wie habe ich mein Verhalten selbst verändert? Und das andere ist die Comparison zu einem normalen, gesunden Menschen, in Anführungszeichen.
+
+[Sprecher 3]
+Genau, und vielleicht noch kurz zur Erklärung, wie wir im Moment einen gesunden Menschen definieren. Wir haben drei Profile, das heißt wir haben drei Baselines. Und um jetzt ein Profil gegen healthy Personen zu matchen, nehmen wir den Average von den anderen gesunden Baselines und matchen es damit.
+
+Weil wir im Moment noch keine Datenbank haben, die das so irgendwie zeigen. Idealerweise hätten wir eine Datenbank, da kann man dann ganz viel, genau den möglichen Average von, ich weiß nicht wie viele Menschen, nehmen. Weil wir das auch noch nicht haben, machen wir das so jetzt als Übergangslösung, dass wir die Baseline von den anderen und dann einfach nehmen, ohne aber die Baseline der eigentlichen Person mit einzubeziehen, damit die nicht wieder falsch vor uns sieht.
+
+Vielleicht hast du da auch noch einen Input, wie wir es machen könnten, ohne eine Datenbank.
+
+[Sprecher 1]
+Wir können jetzt mal schauen, wo die Normdaten sind. Man würde das auch später nicht mit dem Mittelwert machen, sondern man würde schauen, ob das Normbereiche sind. Es ist ja nicht so, dass der gesunde Mensch genau so sich fühlt, sondern es gibt einen Bereich, in dem man sagt, das ist unbedenklich und dann würde man wahrscheinlich mit Konfidenz arbeiten und sagen, fällt das in die Konfidenz rein.
+
+Oder Perzentil, dann wäre ein Perzentil von einer normalen Normverteilung für die Person. Und dann kann man sagen, es ist im Normbereich oder es ist anstandsunterweihung über- oder unter Normbereich. So ist unser Normbereich ja dann irgendwie anstandsunterweihung plus minus von der Mitte weg.
+
+Das wären dann irgendwie, wenn ich mich jetzt richtig erinnere, 68,3% von einer Normalverteilung.
+
+[Sprecher 3]
+Genau, da geht man ins Bett zwischen 10 und 1 und das ist so ein normaler... Das Lustige ist sogar bei uns zwei, Thierry und mir, wir sind komplette Gegenteile, wenn es um Alltagsprofile geht. Ich bin ein richtiger Morgenmensch und Thierry geht dann immer einiges später schlafen wie ich.
+
+Und das zeige ich auch genau schön, diese unterschiedlichen, aber trotzdem normalen Patterns.
+
+[Sprecher 1]
+Genau, diese... Wie heißt das? Boah, ich bin gerade zu müde, ich will nicht schlafen.
+
+Die Night Owls und die Morning Larks.
+
+[Sprecher 2]
+Ja, genau.
+
+[Sprecher 1]
+Da gibt es ja auch die Leute, die funktionieren einfach besser am Morgen, wie du schon sagst, Carla, das ist ja auch ganz normal. Hängt auch ein bisschen vom Lebenssituation aus, aber es ist auch ein biologisches Ding, also es gibt auch Tiere und so, manche sind eher morgens produktiv und wach und andere am Abend, am Nachmittag.
+
+[Sprecher 3]
+Das ist einfach so.
+
+[Sprecher 1]
+Deswegen ist es ja ganz wichtig, diesen Bereich anzuschauen. Nicht sagen, das ist normal und alle anderen abnormal oder so. Aber vielleicht könntest du irgendwo Daten kriegen aus irgendwelchen anderen Quellen, bevor ihr die selber habt.
+
+Vielleicht gibt es sowas wie, wie lange schlafen Leute durchschnittlich? Was ist normal? Da müssten eigentlich die clinicians eigentlich was haben.
+
+[Sprecher 3]
+Vielleicht noch eine Frage rein zum Wording. Im Moment benutzen wir ja das Wording healthy people. Normal ist noch schlimmer, also du kannst ja nicht sagen, du bist unnormal, weil du nicht normal bist.
+
+Healthy people finde ich auch schon nicht ideal eigentlich. Aber ich hätte auch gerade nicht die Idee, was man da besser sagen könnte. Norm oder Average.
+
+[Sprecher 1]
+Typical ist ein gutes Wort. Bei healthy hast du schon wieder die Diagnose drin. Deswegen gehen wir zu einem Typical.
+
+Later, night, then. Und ich meine, es sind ja Kliniker, die kennen sich schon ein bisschen aus mit Statistik und so. Da kannst du das Interface mit Informativ auch machen, solange es eine unnötige Informativ-Komplexion ist.
+
+Da kann man z.B. mit Patientin oder so arbeiten. Later, night, then, x% of people. Ja.
+
+Ja. Ja. Ansonsten finde ich das nicht schlecht.
+
+Ja, kommt noch einiges mehr. Ja, ja, ich wollte nur ganz kurz oben sagen, was passiert, ihr habt hier 3 Patienten oben, gell?
+
+[Sprecher 2]
+Ja.
+
+[Sprecher 1]
+Oder Personen. Da kannst du überlegen, was passiert, wenn du 300 hast.
+
+[Sprecher 2]
+Ja.
+
+[Sprecher 3]
+Das ist eigentlich Dropdown.
+
+[Sprecher 2]
+Genau. Aber ja, es ist mir auch schon durch den Kopf gegangen. Langsam wird der Platz eng.
+
+[Sprecher 1]
+Sicher, alles gut. Was ich immer ein großer Fan bin, ist der Einsatz von Icons. Also sowas wie Eyecatcher.
+
+Also wenn es jetzt irgendwas besonders Wichtiges gibt, bei einem von diesen Charakteren, kann man dann mit den eigenen Augen ein Zeichen oder irgendwas Ja, oder ein Bild oder irgendwas kurz erklärt. Oder es signalisiert eigentlich nur, was für ein Ding ist da. Weil die meisten Klinischen haben keine Zeit.
+
+Die gehen da kurz drüber, dann screenen die das. Aktuell müssen sie allen Text lesen. Wahrscheinlich suchen die erstmal ganz schnell, ist da irgendwo ein Fall, wo der ganz spät schlafen gegangen ist.
+
+Oder bei ein Klassiker ist ja bei Schlafproblemen Irregularity in Sleeping. Das heißt, einmal viel Schlaf, einmal weniger. Also quasi so ein Tierharmoniker-Ding.
+
+Gibt es da sowas wie eine hohe Fluktuation an Schlafdauer? Das könnte zum Beispiel sowas sein, wo man einmal so ein Icon hat und dann ist es sofort erkennbar. Aber das wäre was, wo man direkt das abklären sollte mit den Klinischen.
+
+Was sind denn die Sachen, wo ihr da mal drauf schaut? Sind das Sachen, die euch typischerweise so Red Flags oder Alarmblocken angehen lassen? Sowohl positiv als auch negativ.
+
+Das wäre klar wichtig. Das könnt ihr so machen, um das noch übersichtlicher zu machen.
+
+[Sprecher 2]
+Ja, danke. Gute Punkte. Die nächste Ansicht ist die gleiche wie für den User auch.
+
+Dass er einfach mal die Übersicht bekommt, wie ist die Usage, wie ist es mit dem Schlaf und so weiter. Und hier, das ist dann eigentlich schon sehr personalisiert. Hier.
+
+Das bedeutet in diesem Fall, Maria hat eigentlich das Profil von uns, dass sie eben Intentions hat. Und deswegen ist es zum Beispiel bei ihr dieses Crisis or Self-harm Sites, eine dieser Mädchen, die jetzt hier dargestellt wird. Genau.
+
+Und der Rest sind eigentlich auch wieder diese, die wir vorhin schon gesehen haben. Diese allgemeinen Metriken. Genau.
+
+Und auch hier.
+
+[Sprecher 3]
+Da sieht man ja immer den Balken von so Usual Range. Wenn man aus dieser Range rausfällt sozusagen.
+
+[Sprecher 2]
+Genau.
+
+[Sprecher 1]
+Ja, genau.
+
+[Sprecher 3]
+Der beige Balken ist immer der Usual Range.
+
+[Sprecher 2]
+Ja.
+
+[Sprecher 3]
+Und sogar noch das gestrichelte. Die Legende müssen wir ein bisschen größer machen. Die gestrichelte Box ist Healthy People, also das Typical.
+
+Und dann sieht man natürlich die Spikes, die oben oder unten rausgehen. Und im Moment sieht man sogar noch, weil das natürlich diese Scriptendaten sind, der Teil rechts, der rot hinterlegt ist, ein bisschen pink. Das ist im Moment unsere klinische Zeitperiode, weil am Anfang war die Baseline und jetzt kommen dann die Symptome rein und jetzt sieht man dann, wie sich das verändert.
+
+Genau.
+
+[Sprecher 2]
+Okay. Genau. Und hier kann er dann auch, er kann die alle personalisieren.
+
+Er kann sagen, die möchte ich gar nicht sehen. Ich möchte nur den sehen. Die drei.
+
+Und er kann dann auch quasi den Tag auswählen und sich dann im Assistenten also die Idee ist auch, dass er dann auch diese Buttons hat, wie bei dem User, wo er beispielsweise wirklich einfach sagen kann, okay, das hier unten, was bedeutet das jetzt? Was war das genau und was könnte das implizieren?
+
+(Diese Datei ist länger als 30 Minuten. Upgrade auf Unbegrenzt bei https://turboscribe.ai/de/, um Dateien von bis zu 10 Stunden Länge zu transkribieren.)
