@@ -36,7 +36,7 @@
 /* the orb: decorative mark, grey ink on white (theme pinned to light) */
 .assistant-orb { display: inline-flex; flex: none; line-height: 0; }
 .assistant-orb canvas { display: block; }
-.assistant-tab-icon .assistant-orb { transform: scale(0.9); }
+.assistant-tab-icon .assistant-orb { transform: scale(0.58); }   /* the 32 orb, shrunk into the 22px circle */
 .drawer-head-orb { margin-top: 2px; }
 .drawer-head-text { flex: 1; min-width: 0; }
 .composing { display: flex; align-items: flex-start; gap: 8px; padding: 4px 2px; }
@@ -148,7 +148,7 @@
   body:has(.assistant-tab:not(.is-hidden)) .tabbar { right: calc(12px + var(--tabbar-h) + 8px); }
 
   .tabbar-tabs { position: relative; display: flex; height: 100%; }
-  .tabbar-lens { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / var(--tabs)); border-radius: 999px;
+  .tabbar-lens { position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc((100% - 4px) / var(--tabs)); border-radius: 999px;
     transform: translateX(calc(100% * var(--tab-i)));
     background: rgba(38,38,38,0.075); box-shadow: inset 0 0 0 0.5px rgba(38,38,38,0.06), inset 0 1px 1px rgba(255,255,255,0.6);
     transition: transform 380ms cubic-bezier(0.22, 1.2, 0.36, 1); }
@@ -163,6 +163,9 @@
   .tabbar-tab .icon { width: 22px; height: 22px; }
   .tabbar-tab.active .icon { stroke-width: 2.1; }
   .tabbar-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* icons only (a label would be cut off): larger icons on a larger, round lens */
+  .tabbar.icons-only .tabbar-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; max-width: none; }
+  .tabbar.icons-only .tabbar-tab .icon { width: 26px; height: 26px; }
   .tabbar-dot { position: absolute; top: -1px; right: -4px; width: 7px; height: 7px; border-radius: 50%;
     background: var(--text2); box-shadow: 0 0 0 1.5px rgba(255,255,255,0.9); }
 
@@ -176,7 +179,7 @@
   body .assistant-tab:hover { background: rgba(255,255,255,0.8); padding: 0; }
   body .assistant-tab > span:last-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   body .assistant-tab-icon { width: 28px; height: 28px; background: transparent; }
-  body .assistant-tab .assistant-orb { transform: scale(1.3); }
+  body .assistant-tab .assistant-orb { transform: scale(1.25); }
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   @media (max-width: 640px) { .tabbar, body .assistant-tab { background: rgba(255,255,255,0.97); } }
@@ -185,3 +188,25 @@
   .tabbar-lens, .tabbar-tab { transition: none; }
   .tabbar-tab:active { transform: none; }
 }
+
+/* ---- scroll rail: the page's blocks as dots on the left edge, the screen's part as a marker ---- */
+.scroll-rail { position: fixed; z-index: 14; left: 4px; top: 50%; transform: translateY(-50%); width: 14px; height: min(46vh, 360px); }
+.scroll-rail-line { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; transform: translateX(-50%); background: var(--border); }
+.scroll-rail-view { position: absolute; left: 50%; width: 5px; transform: translateX(-50%); border-radius: 99px; background: rgba(38,38,38,0.16); }
+.scroll-rail ol { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
+.scroll-rail li { position: absolute; left: 50%; transform: translate(-50%, -50%); }
+.scroll-rail-dot { position: relative; display: block; width: 16px; height: 16px; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 50%; }
+.scroll-rail-dot::before { content: ""; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; border-radius: 50%; transform: translate(-50%, -50%);
+  background: #fff; box-shadow: 0 0 0 1.5px var(--muted); transition: transform 150ms ease, background-color 150ms ease, box-shadow 150ms ease; }
+.scroll-rail-dot.passed::before { background: var(--muted); }
+.scroll-rail-dot.active::before { width: 9px; height: 9px; background: var(--ink); box-shadow: 0 0 0 1.5px var(--ink), 0 0 0 4px #fff; }
+.scroll-rail-dot:hover::before { transform: translate(-50%, -50%) scale(1.3); }
+.scroll-rail-dot:focus-visible { outline: 2px solid var(--beige); outline-offset: 1px; }
+.scroll-rail-label { position: absolute; left: 20px; top: 50%; transform: translate(-4px, -50%); opacity: 0; pointer-events: none; white-space: nowrap;
+  font: 12px/1.3 var(--sans); color: var(--ink); background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 4px 9px;
+  box-shadow: 0 4px 14px rgba(38,38,38,0.1); transition: opacity 120ms ease, transform 120ms ease; }
+.scroll-rail-dot:hover .scroll-rail-label, .scroll-rail-dot:focus-visible .scroll-rail-label { opacity: 1; transform: translate(0, -50%); }
+@media (min-width: 641px) { body .page { padding-left: 26px; } }   /* room for the rail beside the cards */
+@media (max-width: 640px) { .scroll-rail { display: none; } }
+@media (prefers-reduced-motion: reduce) { .scroll-rail-dot::before, .scroll-rail-label { transition: none; } }
+@media print { .scroll-rail { display: none; } }

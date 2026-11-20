@@ -16,6 +16,7 @@ import { Overview } from "./components/Overview";
 import { Timeline as TimelineView } from "./components/Timeline";
 import { MetricTrends } from "./components/MetricTrends";
 import { ProfileSettings } from "./components/ProfileSettings";
+import { ScrollRail } from "./components/ScrollRail";
 import { AppBar } from "./components/AppBar";
 import type { IconName } from "./components/Icon";
 import { jumpTarget } from "./lib/jump";
@@ -239,6 +240,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const drawer = assistantOpen && !settings && tl?.status === "ready";
   return (
     <div className={`page ${drawer ? "page-with-drawer" : ""} ${reflow ? `reflow-${reflow}` : ""}`}>
+      <ScrollRail watch={`${pid ?? ""}/${tab}/${settings ? "settings" : ""}`} />
       <AppBar username={me.username} multi={multi} onLogout={onLogout}
         tabs={!settings && profiles.length > 0 && tl?.status === "ready"
           ? TAB_DEFS.filter((t) => multi || !t.multiOnly).map((t) => ({

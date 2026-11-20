@@ -81,8 +81,9 @@ describe("Assistant orb", () => {
     const big = document.querySelector(".assistant-orb-64") as HTMLElement;
     expect(big.getAttribute("aria-hidden")).toBe("true");
     expect(big.getAttribute("data-paused")).toBe("true");
-    // tab and header carry a paused small orb
-    expect(document.querySelectorAll(".assistant-orb-20[data-paused='true']").length).toBe(2);
+    // the header carries a paused small orb, the tab a paused 32 orb (scaled by CSS: small on desktop, large on phones)
+    expect(document.querySelectorAll(".drawer-head .assistant-orb-20[data-paused='true']").length).toBe(1);
+    expect(document.querySelectorAll(".assistant-tab .assistant-orb-32[data-paused='true']").length).toBe(1);
   });
 
   it("waits with an orb and an elapsed-time status, and the slow hint appears after 15 s", async () => {

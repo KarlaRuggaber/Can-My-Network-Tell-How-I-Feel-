@@ -239,7 +239,7 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
     <>
       <button className={`assistant-tab ${open ? "is-hidden" : ""}`} onClick={() => onToggle(true)}
         aria-expanded={open} aria-controls="assistant-panel" tabIndex={open ? -1 : 0}>
-        <span className="assistant-tab-icon" aria-hidden="true"><AssistantOrb size={20} paused /></span>
+        <span className="assistant-tab-icon" aria-hidden="true"><AssistantOrb size={32} paused /></span>
         <span>{person ? "Questions" : "Assistant"}</span>
       </button>
     <aside id="assistant-panel" className={`assistant-drawer ${open ? "is-open" : ""}`} aria-label="Assistant"

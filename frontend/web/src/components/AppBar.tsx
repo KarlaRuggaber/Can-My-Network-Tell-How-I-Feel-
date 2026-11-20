@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ProfileListItem } from "../api";
 import { Icon, type IconName } from "./Icon";
@@ -140,7 +140,29 @@ export function AppBar(p: Props) {
  */
 export function TabBar({ tabs, tab, onTab }: { tabs: AppTab[]; tab: string; onTab: (key: string) => void }) {
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const bar = useRef<HTMLElement>(null);
   const index = Math.max(0, tabs.findIndex((t) => t.key === tab));
+  // Icons only as soon as one label would be cut off: all labels go, never some. The labels stay in
+  // the DOM (visually hidden) as the tabs' names and to measure their natural width.
+  const [iconsOnly, setIconsOnly] = useState(false);
+  useLayoutEffect(() => {
+    const el = bar.current;
+    if (!el) return;
+    const check = () => {
+      const tabEls = Array.from(el.querySelectorAll<HTMLElement>(".tabbar-tab"));
+      if (!tabEls.length || !tabEls[0].clientWidth) return;            // hidden (desktop) or not laid out
+      const fits = tabEls.every((t) => {
+        const label = t.querySelector<HTMLElement>(".tabbar-label");
+        return !label || label.scrollWidth <= t.clientWidth - 6;
+      });
+      setIconsOnly(!fits);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    document.fonts?.ready.then(check).catch(() => undefined);
+    return () => ro.disconnect();
+  }, [tabs]);
   const onKey = (e: React.KeyboardEvent, i: number) => {
     const to = e.key === "ArrowRight" ? (i + 1) % tabs.length : e.key === "ArrowLeft" ? (i - 1 + tabs.length) % tabs.length
       : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
@@ -150,7 +172,7 @@ export function TabBar({ tabs, tab, onTab }: { tabs: AppTab[]; tab: string; onTa
     refs.current[tabs[to].key]?.focus();
   };
   return createPortal(
-    <nav className="tabbar" aria-label="Sections" style={{ "--tabs": tabs.length, "--tab-i": index } as React.CSSProperties}>
+    <nav ref={bar} className={`tabbar${iconsOnly ? " icons-only" : ""}`} aria-label="Sections" style={{ "--tabs": tabs.length, "--tab-i": index } as React.CSSProperties}>
       <span className="tabbar-lens" aria-hidden="true" />
       <div className="tabbar-tabs" role="tablist" aria-label="View">
         {tabs.map((t, i) => {
