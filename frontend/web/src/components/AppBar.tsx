@@ -7,7 +7,22 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PRODUCT_NAME, PRODUCT_SUBTITLE } from "../theme";
 
-export type AppTab = { key: string; label: string; short?: string; icon?: IconName; sub: string; dot?: string };
+export type AppTab = { key: string; label: string; short?: string; icon?: IconName; sub: string; dot?: string;
+  disabled?: string };                // greyed out and not selectable; the text says why
+
+/** The next selectable tab from index i for an arrow / Home / End key (skips disabled tabs), or -1. */
+export function nextTab(tabs: AppTab[], i: number, key: string): number {
+  const ok = (j: number) => !tabs[j].disabled;
+  const n = tabs.length;
+  if (key === "Home" || key === "End") {
+    const order = Array.from({ length: n }, (_, j) => (key === "Home" ? j : n - 1 - j));
+    return order.find(ok) ?? -1;
+  }
+  const dir = key === "ArrowRight" ? 1 : key === "ArrowLeft" ? -1 : 0;
+  if (!dir) return -1;
+  for (let s = 1; s < n; s++) { const j = (i + dir * s + n) % n; if (ok(j)) return j; }
+  return -1;
+}
 
 type Props = {
   username: string;
@@ -47,8 +62,7 @@ export function AppBar(p: Props) {
 
   const onKey = (e: React.KeyboardEvent, i: number) => {
     const tabs = p.tabs ?? [];
-    const to = e.key === "ArrowRight" ? (i + 1) % tabs.length : e.key === "ArrowLeft" ? (i - 1 + tabs.length) % tabs.length
-      : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
+    const to = nextTab(tabs, i, e.key);
     if (to < 0) return;
     e.preventDefault();
     p.onTab(tabs[to].key);
@@ -81,16 +95,17 @@ export function AppBar(p: Props) {
                     <Tooltip key={t.key}>
                       <TooltipTrigger asChild>
                         <button type="button" role="tab" id={`tab-${t.key}`} aria-selected={active} aria-describedby={subId}
-                          tabIndex={active ? 0 : -1} className={`appbar-tab${active ? " active" : ""}`}
+                          tabIndex={active ? 0 : -1} className={`appbar-tab${active ? " active" : ""}${t.disabled ? " disabled" : ""}`}
+                          aria-disabled={t.disabled ? true : undefined}
                           ref={(el) => { refs.current[t.key] = el; }}
-                          onClick={() => p.onTab(t.key)} onKeyDown={(e) => onKey(e, i)}>
+                          onClick={() => { if (!t.disabled) p.onTab(t.key); }} onKeyDown={(e) => onKey(e, i)}>
                           {t.icon && <Icon name={t.icon} size={16} />}
                           <span>{t.label}</span>
                           {t.dot && <span className="tab-dot" role="img" aria-label="incomplete" title={t.dot} />}
-                          <span id={subId} className="sr-only">{t.sub}</span>
+                          <span id={subId} className="sr-only">{t.disabled ?? t.sub}</span>
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom" sideOffset={6}>{t.sub}</TooltipContent>
+                      <TooltipContent side="bottom" sideOffset={6}>{t.disabled ?? t.sub}</TooltipContent>
                     </Tooltip>
                   );
                 })}
@@ -163,8 +178,7 @@ export function TabBar({ tabs, tab, onTab }: { tabs: AppTab[]; tab: string; onTa
     return () => ro.disconnect();
   }, [tabs]);
   const onKey = (e: React.KeyboardEvent, i: number) => {
-    const to = e.key === "ArrowRight" ? (i + 1) % tabs.length : e.key === "ArrowLeft" ? (i - 1 + tabs.length) % tabs.length
-      : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
+    const to = nextTab(tabs, i, e.key);
     if (to < 0) return;
     e.preventDefault();
     onTab(tabs[to].key);
@@ -179,8 +193,9 @@ export function TabBar({ tabs, tab, onTab }: { tabs: AppTab[]; tab: string; onTa
           return (
             <button key={t.key} type="button" role="tab" aria-selected={active} tabIndex={active ? 0 : -1}
               aria-label={t.short && t.short !== t.label ? t.label : undefined}
-              className={`tabbar-tab${active ? " active" : ""}`} ref={(el) => { refs.current[t.key] = el; }}
-              onClick={() => onTab(t.key)} onKeyDown={(e) => onKey(e, i)}>
+              aria-disabled={t.disabled ? true : undefined} title={t.disabled}
+              className={`tabbar-tab${active ? " active" : ""}${t.disabled ? " disabled" : ""}`} ref={(el) => { refs.current[t.key] = el; }}
+              onClick={() => { if (!t.disabled) onTab(t.key); }} onKeyDown={(e) => onKey(e, i)}>
               <span className="tabbar-icon">
                 {t.icon && <Icon name={t.icon} size={22} />}
                 {t.dot && <span className="tabbar-dot" role="img" aria-label="incomplete" title={t.dot} />}

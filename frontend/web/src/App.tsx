@@ -241,6 +241,8 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const labels = tl?.profile.phase_labels ?? { baseline: "Baseline", current: "Recent" };
 
   const drawer = assistantOpen && !settings && tl?.status === "ready";
+  // the person's Timeline needs their week first (it is compared with the routine)
+  const timelineLocked = !multi && !!tl && !tl.care?.routine;
   return (
     <div className={`page ${drawer ? "page-with-drawer" : ""} ${reflow ? `reflow-${reflow}` : ""}`}>
       <ScrollRail watch={`${pid ?? ""}/${tab}/${settings ? "settings" : ""}`} />
@@ -249,6 +251,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
           ? TAB_DEFS.filter((t) => multi || !t.multiOnly).map((t) => ({
             key: t.key, label: t.label, short: t.short, icon: t.icon, sub: t.sub(multi),
             dot: t.key === "care" && setupMissing.length > 0 ? "Care plan incomplete" : undefined,
+            disabled: t.key === "timeline" && timelineLocked ? "Available once your week is set up (My week)" : undefined,
           }))
           : null}
         tab={tab} onTab={(k) => { setMyWeek(false); setTab(k as Tab); }}
@@ -339,7 +342,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                     <Onboarding profileId={tl.profile.id} name={tl.persona.name} care={tl.care} assistant={assistantOn}
                       onDone={onCareSaved}
                       onSkip={() => { setSkipOnboarding(true); try { window.sessionStorage.setItem("cmn.skipOnboarding", "1"); } catch { /* ignore */ } }} />
-                  ) : tab === "timeline"
+                  ) : tab === "timeline" && !timelineLocked
                     ? <TimelineView tl={tl} person notes={[]} onNotes={() => undefined} selectedDay={day} onSelectDay={setDay} onAsk={ask} />
                     : <Overview tl={tl} person selectedDay={day} onSelectDay={setDay} onAsk={ask} />}
                   <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} onJump={jump} profileId={tl.profile.id} person focus={null}

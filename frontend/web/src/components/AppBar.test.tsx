@@ -90,3 +90,22 @@ describe("AppBar", () => {
     expect(document.querySelector(".tabbar")).toBeNull();
   });
 });
+
+describe("AppBar, a disabled tab", () => {
+  const LOCKED: AppTab[] = [
+    { key: "overview", label: "Overview", sub: "your recent days" },
+    { key: "timeline", label: "Timeline", sub: "day by day", disabled: "Available once your week is set up (My week)" },
+    { key: "about", label: "About the data", sub: "what this page is based on" },
+  ];
+  it("is greyed out, cannot be chosen and is skipped by the arrow keys", () => {
+    render(<Harness multi={false} tabs={LOCKED} />);
+    const tl = top().getByRole("tab", { name: /Timeline/ });
+    expect(tl.getAttribute("aria-disabled")).toBe("true");
+    expect(tl.className).toContain("disabled");
+    fireEvent.click(tl);
+    expect(top().getByRole("tab", { name: /Overview/ }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(top().getByRole("tab", { name: /Overview/ }), { key: "ArrowRight" });
+    expect(top().getByRole("tab", { name: /About the data/ }).getAttribute("aria-selected")).toBe("true");
+    expect(bottom().getByRole("tab", { name: /Timeline/ }).getAttribute("aria-disabled")).toBe("true");
+  });
+});
