@@ -526,3 +526,11 @@ button.pill-btn:hover { box-shadow: 0 0 0 1px var(--ink); }
   .normals-table input { width: 84px; }
   :root { --drawer-w: 100%; }
 }
+
+/* Phones: iOS Safari zooms the whole page in when a text field under 16px gets focus (the login
+   fields are focused right away) and stays zoomed after logging in. 16px fields avoid that without
+   disabling pinch-zoom. Text-like inputs only; ranges, checkboxes and buttons keep their size. */
+@media (pointer: coarse), (max-width: 640px) {
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]),
+  textarea, select { font-size: 16px !important; }
+}
