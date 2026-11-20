@@ -233,6 +233,7 @@ _SLASH_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})(?:/\d{2,4})?\b")
 _CLOCK = re.compile(r"\b(\d{1,2}):(\d{2})\b")
 _AMPM = re.compile(r"\b(\d{1,2})\s*(a\.?m\.?|p\.?m\.?)(?![a-z])", re.IGNORECASE)
 _NUMBER = re.compile(r"(?<![A-Za-z0-9_.,])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:[.,]\d+)?)(\s*%|\s*percent|k\b|M\b)?")
+_UNIT_RANGE = re.compile(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*(k|M)\b")
 CLOCK_TOLERANCE_MIN = 2              # "about 07:00" for 06:59
 _THOUSANDS = re.compile(r"^\d{1,3}(,\d{3})+(\.\d+)?$")
 
@@ -320,6 +321,7 @@ def ungrounded_numbers(answer: str, grounding: Grounding) -> list[str]:
         return " "
 
     text = _AMPM.sub(ampm_ok, text)
+    text = _UNIT_RANGE.sub(r"\1\3-\2\3", text)    # 2.6-6M: the unit belongs to both ends
     for m in _NUMBER.finditer(text):
         unit = (m[2] or "").strip()
         if unit in ("k", "M"):         # 498k / 0.5M: a value within half of the last shown digit

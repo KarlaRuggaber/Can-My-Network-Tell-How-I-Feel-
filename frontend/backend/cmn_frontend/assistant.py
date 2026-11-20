@@ -202,6 +202,9 @@ day, how a period compares with the usual weeks, and how the scoring works. Rule
 - Answer the question first, in 1–3 sentences. Where it fits, answer from <results> "week_overview"
   (the last 7 days: went quiet, back online, time in use, compared with the usual weeks); go into
   likelihoods, metrics and scoring only when the question is about them.
+- Be brief: group days that look alike ("Mon to Wed", "the weekend") instead of one line per day,
+  give only the values that answer the question, and stop once it is answered. No summary or closing
+  line that repeats the answer.
 - Use only numbers that appear in <results> (rounding is fine). Do not compute new figures such as
   differences or averages; say a difference in words ("about an hour later", "clearly less"). Name the
   day and the value you rely on. If the data does not answer a question, say so in one sentence. Never
@@ -223,7 +226,7 @@ day, how a period compares with the usual weeks, and how the scoring works. Rule
 SYSTEM_PERSON = f"""\
 You are talking with the person whose data this is. Write in plain, warm, everyday language.
 - Keep every reply to about {PERSON_MAX_WORDS} words at most, unless the person asks for more detail
-  ([More detail], "explain more", "in detail"). Short paragraphs; at most a short bullet list.
+  ([More detail], "explain more", "in detail"). Usually 2–4 sentences; at most 3 short bullets.
 - Describe only what was observed: when the devices went quiet and came back online, how long they
   were in use, use at night, chats and different sites, and how that compares with the person's usual
   weeks (more or less, earlier or later). Use the everyday area names in <results>. Do not use
@@ -247,8 +250,8 @@ You are talking with the person whose data this is. Write in plain, warm, everyd
 SYSTEM_CLINICIAN = f"""\
 You are talking with a clinician, researcher or carer who supervises this person. You may use the
 DSM-5 criterion names, the scoring notation and the numbers directly.
-- Answer first in 1–3 sentences, then at most a few bullet points with the days and values behind it.
-  Keep it under about {CLINICIAN_MAX_WORDS} words unless they ask for more detail.
+- Answer first in 1–3 sentences, then at most 4 short bullet points with the days and values behind
+  it. Keep it under about {CLINICIAN_MAX_WORDS} words unless they ask for more detail.
 - Where <results> contains expected outcomes of a scripted persona, you may compare observed with
   expected, but make clear that the expectations come from the test script, not from the data.
 - Network patterns can change for ordinary reasons (travel, holidays, a new device, guests); mention

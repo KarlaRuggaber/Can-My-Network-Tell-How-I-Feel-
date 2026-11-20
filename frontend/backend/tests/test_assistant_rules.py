@@ -39,6 +39,8 @@ def test_answer_first_short_and_from_the_week_overview():
     assert assistant.PERSON_MAX_WORDS == 80
     assert "unless the person asks for more detail" in prompt(True)
     assert f"under about {assistant.CLINICIAN_MAX_WORDS} words" in prompt(False)
+    assert "group days that look alike" in prompt(False) and "instead of one line per day" in prompt(False)
+    assert "at most 3 short bullets" in prompt(True) and "at most 4 short bullet points" in prompt(False)
 
 
 def test_person_guardrail_observations_only_even_when_asked_again():
@@ -200,6 +202,7 @@ GROUND = ev.Grounding.from_texts([json.dumps({
     ("Criterion C4 and F8 have no free numbers.", []),
     ("About 11,700 packets, not 9,500.", ["9,500"]),        # thousands separators
     ("About 12k packets, not 40k.", ["40k"]),               # abbreviated figures
+    ("Between 11.7–12k packets, not 30–40k.", ["30k", "40k"]),  # the unit of a range applies to both ends
     ("Usually about 01:35 or 01:37, not 01:45.", ["01:45"]),  # clock times within 2 minutes
 ])
 def test_numbers_must_exist_in_what_was_sent(answer, bad):
