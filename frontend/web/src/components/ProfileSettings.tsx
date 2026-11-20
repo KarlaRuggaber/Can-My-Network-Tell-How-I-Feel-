@@ -194,14 +194,14 @@ export function ProfileSettings({ onChanged, onClose }: Props) {
 
           <fieldset className="fieldset">
             <legend>Healthy reference</legend>
-            <p className="muted small">Whether this person's days count as "healthy people" when the others are compared.
-              Scripted personas count with their baseline weeks (a healthy everyday profile); add healthy volunteers with all their days.</p>
-            <label className="field">Counts as healthy reference
+            <p className="muted small">Whether this person's days count as "typical" (the reference group) when the others are compared.
+              Scripted personas count with their baseline weeks (a typical everyday profile); add reference volunteers with all their days.</p>
+            <label className="field">Counts as typical reference
               <select value={form.reference ?? (editing !== "new" && profiles?.find((p) => p.id === editing)?.persona ? "baseline" : "none")}
                 onChange={(e) => setForm({ ...form, reference: e.target.value as "none" | "baseline" | "all" })}>
                 <option value="none">Not used</option>
                 <option value="baseline">Baseline days only</option>
-                <option value="all">All days (healthy volunteer)</option>
+                <option value="all">All days (reference volunteer)</option>
               </select>
             </label>
           </fieldset>
