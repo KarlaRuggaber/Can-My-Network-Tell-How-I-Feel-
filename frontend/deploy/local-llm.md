@@ -41,7 +41,7 @@ Ollama settings (environment variables of the Ollama server):
 |---|---|---|
 | `OLLAMA_CONTEXT_LENGTH` | `32768` | see above; the OpenAI-compatible endpoint cannot set it per request |
 | `OLLAMA_KEEP_ALIVE` | `30m` | the model stays loaded between questions; loading 18 GB takes a while |
-| `OLLAMA_HOST` | `127.0.0.1:11434` for the laptop only; the Tailscale address for the gateway (§5) | where it listens |
+| `OLLAMA_HOST` | leave unset (`127.0.0.1:11434`) | the gateway reaches it through `tailscale serve` (§5), so Ollama never listens on a network address |
 
 **Ollama.app (menu bar):** set the variables for apps, then quit and reopen Ollama:
 
