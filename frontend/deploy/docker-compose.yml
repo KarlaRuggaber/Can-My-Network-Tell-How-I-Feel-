@@ -31,6 +31,9 @@ services:
       CMN_HOME: /data/home
       CMN_COOKIE_SECURE: "1"   # reached only over HTTPS (tailscale serve)
       CMN_WHISPER_URL: http://127.0.0.1:8601
+      # local model (Settings → Assistant → Local model): no "thinking", so the first answer comes in
+      # about half a minute instead of minutes (deploy/local-llm.md). Ignored when Claude answers.
+      CMN_LOCAL_EXTRA_BODY: '{"reasoning_effort": "none"}'
     volumes:
       - /opt/can-my-network/app_pcap_to_dsm5/app/processed_parquet:/data/processed_parquet:ro
       - /var/lib/traffic-executor:/data/run:ro
