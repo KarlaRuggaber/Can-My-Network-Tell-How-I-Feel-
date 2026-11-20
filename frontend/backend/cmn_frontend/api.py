@@ -22,7 +22,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import assistant, auth, care as care_mod, fasl, observability, observed, setup_assist, speech as speech_mod
+from . import assistant, auth, care as care_mod, fasl, llm, observability, observed, setup_assist, speech as speech_mod
 from .notes import NoteStore
 from .groundtruth import blocks_on_day, day_summary, load_devices, load_plan, phase_by_day
 from .personas import PHASE_LABEL, persona_meta
@@ -291,6 +291,13 @@ class AssistantSettingsBody(BaseModel):
     enabled: bool
     model: str
     api_key: str | None = None      # None: keep the stored key; "": remove it
+    provider: str | None = None     # "anthropic" | "local"; None: keep the current one
+    base_url: str | None = None     # local: OpenAI-compatible endpoint; None: keep
+
+
+class AssistantCheckBody(BaseModel):
+    base_url: str
+    model: str
 
 
 class LoginBody(BaseModel):
@@ -455,7 +462,7 @@ def create_app(settings: Settings | None = None, llm_client: Any = None,
         st = assistant_cfg.load()
         if not st["enabled"]:
             raise HTTPException(503, "The assistant is turned off (Settings → Assistant).")
-        clients = {"anthropic_client": llm_client}
+        clients = {"client": llm_client}
         try:
             if body.kind == "routine":
                 if not body.text.strip():
@@ -570,10 +577,21 @@ def create_app(settings: Settings | None = None, llm_client: Any = None,
     @app.put("/api/assistant")
     def assistant_settings(body: AssistantSettingsBody, user: auth.User = Depends(multi_user)) -> dict[str, Any]:
         try:
-            assistant_cfg.save(body.enabled, body.model, body.api_key)
+            assistant_cfg.save(body.enabled, body.model, body.api_key, body.provider, body.base_url)
         except ValueError as e:
             raise HTTPException(422, str(e))
         return assistant_cfg.public()
+
+    @app.post("/api/assistant/check")
+    def assistant_check(body: AssistantCheckBody, user: auth.User = Depends(multi_user)) -> dict[str, Any]:
+        """Local provider: is the endpoint reachable from this server and does it serve the model?"""
+        try:
+            url = llm.check_base_url(body.base_url)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        c = assistant_cfg.load()
+        key = c["api_key"] if c["provider"] == "local" else ""
+        return llm.check_local(url, body.model.strip(), key, client=llm_client)
 
     @app.post("/api/profiles/{pid}/assistant")
     def ask(pid: str, body: AssistantBody, user: auth.User = Depends(current_user)) -> StreamingResponse:
@@ -596,7 +614,7 @@ def create_app(settings: Settings | None = None, llm_client: Any = None,
         labels, _ = _metric_labels(str(settings.app_dir))
         ctx = assistant.build_context(tl, config(), person, labels)
         chunks = assistant.stream_answer(st, assistant.system_blocks(ctx, person), msgs,
-                                         anthropic_client=llm_client)
+                                         client=llm_client)
         return StreamingResponse(chunks, media_type="text/plain; charset=utf-8",
                                  headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 

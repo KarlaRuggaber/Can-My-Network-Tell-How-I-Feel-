@@ -214,12 +214,19 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 const get = <T,>(path: string) => call<T>("GET", path);
 const enc = encodeURIComponent;
 
+export type AssistantProviderId = "anthropic" | "local";
+export interface AssistantProvider { id: AssistantProviderId; label: string; default_model: string; default_base_url?: string }
 export interface AssistantStatus {
   enabled: boolean; notice: string;
   // multi-profile users only:
   model?: string; default_model?: string; has_key?: boolean;
+  provider?: AssistantProviderId; base_url?: string; providers?: AssistantProvider[]; has_claude_key?: boolean;
 }
-export interface AssistantSettingsBody { enabled: boolean; model: string; api_key?: string | null }
+export interface AssistantSettingsBody {
+  enabled: boolean; model: string; api_key?: string | null;
+  provider?: AssistantProviderId; base_url?: string | null;
+}
+export interface AssistantCheck { ok: boolean; message: string; models: string[] }
 export interface ChatTurn { role: "user" | "assistant"; content: string }
 
 /** Ask the explanation assistant; calls onText for every streamed chunk. */
@@ -266,6 +273,7 @@ export const api = {
   transcribe,
   assistant: () => get<AssistantStatus>("/api/assistant"),
   saveAssistant: (b: AssistantSettingsBody) => call<AssistantStatus>("PUT", "/api/assistant", b),
+  checkAssistant: (b: { base_url: string; model: string }) => call<AssistantCheck>("POST", "/api/assistant/check", b),
   ask,
   login: (username: string, password: string) => call<Me>("POST", "/api/login", { username, password }),
   logout: () => call<{ ok: boolean }>("POST", "/api/logout"),
