@@ -71,9 +71,12 @@
 /* ---- app bar: wordmark, section links, person picker, account; sticky under the drawer (z 20) ---- */
 .appbar { position: sticky; top: 0; z-index: 15; display: flex; align-items: stretch; gap: 20px; height: 56px;
   margin: -28px 0 0; padding: 0; }
-/* full-bleed background and rule although .page is centred and max 1320px wide (body clips the overflow) */
-.appbar::before { content: ""; position: absolute; z-index: -1; top: 0; bottom: 0; left: -100vmax; right: -100vmax;
-  background: rgba(255,255,255,0.92); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid var(--ink); }
+/* Full-bleed background and rule although .page is centred and max 1320px wide. Drawn with a spread
+   box-shadow clipped to the bar's height: shadows add no scrollable width, so phones do not zoom out. */
+.appbar::before, .appbar::after { content: ""; position: absolute; z-index: -1; left: 0; right: 0; clip-path: inset(0 -100vmax); }
+.appbar::before { top: 0; bottom: 0; background: rgba(255,255,255,0.92); box-shadow: 0 0 0 100vmax rgba(255,255,255,0.92);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.appbar::after { bottom: 0; height: 1px; background: var(--ink); box-shadow: 0 0 0 100vmax var(--ink); }
 .appbar-brand { align-self: center; font: inherit; font-family: var(--serif); font-size: 22px; line-height: 1; letter-spacing: -0.005em;
   color: var(--ink); background: none; border: 0; padding: 4px 2px; margin: 0; cursor: pointer; border-radius: 6px; flex: none; }
 .appbar-nav { flex: 1; min-width: 0; display: flex; align-items: stretch; }
@@ -103,10 +106,12 @@
 .appbar-note { margin: -8px 0 0; font-size: 12px; color: var(--text2); }
 .appbar-tab, .appbar-account { transition: color 120ms ease, background-color 120ms ease; }
 @media (prefers-reduced-motion: reduce) { .appbar-tab, .appbar-account { transition: none; } }
-@media (max-width: 860px) {
+/* Two rows when the page itself is narrow: also when the assistant drawer takes part of a wide window. */
+.page { container: page / inline-size; }
+@container page (max-width: 1020px) {
   .appbar { flex-wrap: wrap; height: auto; gap: 0 10px; row-gap: 0; }
   .appbar-brand { order: 1; min-height: 52px; align-self: center; }
-  .appbar-picker { order: 2; flex: 1; min-width: 0; padding: 0; }
+  .appbar-picker { order: 2; flex: 1 1 0; max-width: 320px; min-width: 0; padding: 0; }
   .appbar-picker .person-picker { display: block; }
   .appbar .pp-trigger { min-width: 0; width: 100%; }
   .appbar-account { order: 3; margin-left: auto; }
