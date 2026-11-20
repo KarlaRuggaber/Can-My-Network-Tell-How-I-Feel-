@@ -23,13 +23,14 @@
 /* --- week table (A4) --- */
 .wt { width: 100%; max-width: 720px; margin-top: 10px; font-variant-numeric: tabular-nums; }
 .wt th, .wt td { font-size: 14px; text-align: left; }
-.wt td, .wt tbody th { padding: 7px 10px; }
+.wt td, .wt tbody th { padding: 7px 10px; vertical-align: middle; }
 .wt thead th { vertical-align: bottom; }
 .wt-th { display: inline-flex; align-items: center; gap: 5px; color: var(--text); }
 .wt-sub { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
 .wt tbody th { font-weight: 400; position: static; background: transparent; border-bottom: 1px solid var(--line); text-align: left; }
 .wt tbody th .muted { display: block; font-size: 11px; }
 .wt-day { font: inherit; font-family: var(--serif); font-size: 15px; background: none; border: none; padding: 0; cursor: pointer; color: var(--text); }
+span.wt-day { cursor: default; }
 .wt-usual th, .wt-usual td { color: var(--text2); border-bottom: none; border-top: 1px solid var(--ink); font-weight: 400; position: static; background: transparent; }
 
 .chart-options { margin-top: 12px; display: inline-block; }

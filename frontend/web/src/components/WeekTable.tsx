@@ -10,15 +10,17 @@ type Props = {
   selectedDay: string | null;
   onSelectDay: (d: string) => void;
   n?: number;
+  /** Rows can be picked (and show the pick) only when something uses the selected day, e.g. open charts. */
+  selectable?: boolean;
 };
 
 /** Layer 1 for the person (A4): the last week as a table, three facts per day, no judgement. */
-export function WeekTable({ tl, person, selectedDay, onSelectDay, n = 7 }: Props) {
+export function WeekTable({ tl, person, selectedDay, onSelectDay, n = 7, selectable = true }: Props) {
   const days = lastDays(tl.days, n);
   const usual = tl.observed?.usual ?? {};
   const whose = person ? "Your" : `${tl.persona.name}'s`;
   return (
-    <section className="card week-table" aria-labelledby="week-title">
+    <section className="card week-summary" aria-labelledby="week-title">
       <div className="t1-head">
         <h2 id="week-title">{person ? "Your last 7 days" : "Last 7 days"}</h2>
         <p className="sub">Per day, from the home network: how long devices were in use, when they went quiet the night before,
@@ -34,7 +36,7 @@ export function WeekTable({ tl, person, selectedDay, onSelectDay, n = 7 }: Props
           </tr>
         </thead>
         <tbody>
-          {days.map((d) => <Row key={d.date} d={d} selected={d.date === selectedDay} onSelect={() => onSelectDay(d.date)} />)}
+          {days.map((d) => <Row key={d.date} d={d} selected={d.date === selectedDay} onSelect={() => onSelectDay(d.date)} selectable={selectable} />)}
         </tbody>
         {(usual.online_hours || usual.quiet_start || usual.quiet_end) && (
           <tfoot>
@@ -52,13 +54,15 @@ export function WeekTable({ tl, person, selectedDay, onSelectDay, n = 7 }: Props
   );
 }
 
-function Row({ d, selected, onSelect }: { d: Day; selected: boolean; onSelect: () => void }) {
+function Row({ d, selected, onSelect, selectable }: { d: Day; selected: boolean; onSelect: () => void; selectable: boolean }) {
   const o = d.observed;
   const has = !!o?.has_data;
   return (
-    <tr className={`clickable ${selected ? "selected" : ""}`} onClick={onSelect}>
+    <tr className={selectable ? `clickable ${selected ? "selected" : ""}` : undefined} onClick={selectable ? onSelect : undefined}>
       <th scope="row">
-        <button className="wt-day" onClick={(e) => { e.stopPropagation(); onSelect(); }}>{d.weekday} {fmtDay(d.date)}</button>
+        {selectable
+          ? <button className="wt-day" onClick={(e) => { e.stopPropagation(); onSelect(); }}>{d.weekday} {fmtDay(d.date)}</button>
+          : <span className="wt-day">{d.weekday} {fmtDay(d.date)}</span>}
         {!d.complete && <span className="muted small">still being recorded</span>}
       </th>
       {has ? (
