@@ -22,11 +22,11 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import assistant, auth, care as care_mod, fasl, llm, observability, observed, setup_assist, speech as speech_mod
+from . import assistant, auth, care as care_mod, fasl, llm, norms, observability, observed, setup_assist, speech as speech_mod
 from .notes import NoteStore
 from .groundtruth import blocks_on_day, day_summary, load_devices, load_plan, phase_by_day
 from .personas import PHASE_LABEL, persona_meta
-from .profiles import Device, Profile, ProfileStore
+from .profiles import Device, Profile, ProfileStore, attention_summary
 from .settings import PRODUCT_NAME, Settings, load_settings
 from .store import DayStore
 
@@ -109,7 +109,8 @@ def profile_meta(p: Profile) -> dict[str, Any]:
             "scripted": bool(p.persona)}
 
 
-def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig) -> dict[str, Any]:
+def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig,
+                   reference_source: str | None = None, age_band: str | None = None) -> dict[str, Any]:
     care = care_mod.CareStore(settings.home_dir).get(profile.id)
     clinical = care.get("clinical") or {}
     store = DayStore(settings.cache_dir)
@@ -157,8 +158,12 @@ def build_timeline(profile: Profile, settings: Settings, cfg: fasl.FaslConfig) -
     day_types = {d["date"]: care_mod.day_type(care.get("routine"), care.get("away_periods") or [], d["date"])
                  for d in days}
     obs = observed.build(days, [rec.get("activity") for _, rec in records], baseline_stats,
-                         lambda k: labels.get(k, k), reference=healthy_reference(settings, profile),
-                         day_types=day_types, focus=clinical.get("focus"), normals=clinical.get("normals"))
+                         lambda k: labels.get(k, k),
+                         reference=typical_reference(settings, profile, reference_source, age_band),
+                         day_types=day_types, focus=clinical.get("focus"), normals=clinical.get("normals"),
+                         changes=care_mod.change_flags_on(care.get("clinical")))   # one rule: the care plan's (K5)
+    if obs.get("reference") is not None:
+        obs["reference"]["available"] = list(REFERENCE_SOURCES)
     return {
         "profile": {**profile.to_json(), "has_plan": has_plan,
                     "phase_labels": {"baseline": "Baseline", "current": "Clinical" if has_plan else "Recent"}},
@@ -200,8 +205,8 @@ def _reference_values(p: Profile, settings: Settings) -> dict[str, list[float]]:
     return vals
 
 
-def healthy_reference(settings: Settings, viewed: Profile) -> dict[str, Any] | None:
-    """Pooled days of the other people that count as healthy (never the viewed person's own source).
+def healthy_reference(settings: Settings, viewed: Profile, with_values: bool = False) -> dict[str, Any] | None:
+    """Pooled days of the other people in the reference group (never the viewed person's own source).
 
     By default the scripted personas' baseline days: they live a healthy everyday profile
     (profiles/tier0-healthy) before their clinical phase. Healthy volunteers can be added by
@@ -220,7 +225,67 @@ def healthy_reference(settings: Settings, viewed: Profile) -> dict[str, Any] | N
         for k, v in vals.items():
             pooled.setdefault(k, []).extend(v)
     stats = observed.reference_stats(pooled)
-    return {"stats": stats, "n_days": n_days, "people": people} if stats else None
+    if not stats:
+        return None
+    return {"stats": stats, "n_days": n_days, "people": people, **({"values": pooled} if with_values else {})}
+
+
+REFERENCE_SOURCES = ("pooled", "external")
+
+
+def reference_source_default() -> str:
+    src = os.environ.get("CMN_REFERENCE_SOURCE", "pooled")
+    return src if src in REFERENCE_SOURCES else "pooled"
+
+
+def typical_reference(settings: Settings, viewed: Profile, source: str | None = None,
+                      age_band: str | None = None) -> dict[str, Any] | None:
+    """The typical (reference-group) range for the viewed person, from the chosen source.
+
+    "pooled" (default): other people's usual days, empirical percentiles. "external": published
+    norms for the behaviours our metrics stand in for (norms.json), by age band, normal assumption.
+    """
+    source = source if source in REFERENCE_SOURCES else reference_source_default()
+    if source == "external":
+        return norms.external_reference(age_band)
+    pooled = healthy_reference(settings, viewed, with_values=True)
+    if not pooled:
+        return None
+    return observed.pooled_reference(pooled["values"], pooled["n_days"], pooled["people"])
+
+
+_ATTENTION_CACHE: dict[str, tuple[tuple, dict[str, Any]]] = {}
+
+
+def _mtime(path: Any) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def profile_attention(p: Profile, settings: Settings, cfg_fn: Any, seen: dict[str, Any]) -> dict[str, Any]:
+    """{flags, alert} for the person list: open risk flags and whether a crisis/self-harm flag is on.
+
+    Cached until the person's day records, the care plan, the notes, the profiles or the FASL config
+    change, so a list of many people does not rebuild every timeline on each request.
+    """
+    folder = settings.cache_dir / p.cache_name
+    files = sorted(folder.glob("*.json")) if folder.is_dir() else []
+    home = settings.home_dir
+    key = (repr(p.to_json()), len(files), max((_mtime(f) for f in files), default=0.0),
+           _mtime(home / "care.json"), _mtime(home / "notes.json"), _mtime(home / "profiles.json"),
+           _mtime(settings.fasl_config), observed.active_packets(), reference_source_default(), norms.age_band())
+    hit = _ATTENTION_CACHE.get(p.id)
+    if hit and hit[0] == key:
+        return hit[1]
+    if not files:
+        out = {"flags": 0, "alert": False}
+    else:
+        tl = build_timeline(p, settings, cfg_fn())
+        out = attention_summary(tl["observed"]["flags"], seen)
+    _ATTENTION_CACHE[p.id] = (key, out)
+    return out
 
 
 def for_person(tl: dict[str, Any]) -> dict[str, Any]:
@@ -411,12 +476,24 @@ def create_app(settings: Settings | None = None, llm_client: Any = None,
             out.append({"id": p.id, "name": p.name, "condition": "" if person else meta["condition"],
                         "source": "" if person else p.source, "scripted": False if person else meta["scripted"], "n_days": len(days), "config": cfg_json,
                         "first_day": days[0].isoformat() if days else None,
-                        "last_day": days[-1].isoformat() if days else None})
+                        "last_day": days[-1].isoformat() if days else None,
+                        **({} if person else {"attention": _attention(p)})})
         return out
 
+    def _attention(p: Profile) -> dict[str, Any]:
+        try:
+            return profile_attention(p, settings, config, notes.seen(p.id))
+        except Exception:     # a broken day record must not break the person list
+            return {"flags": 0, "alert": False}
+
     @app.get("/api/profiles/{pid}")
-    def timeline(pid: str, user: auth.User = Depends(current_user)) -> dict[str, Any]:
-        tl = build_timeline(profile_for(user, pid), settings, config())
+    def timeline(pid: str, reference: str | None = None, age_band: str | None = None,
+                 user: auth.User = Depends(current_user)) -> dict[str, Any]:
+        if reference is not None and reference not in REFERENCE_SOURCES:
+            raise HTTPException(400, f"reference must be one of {', '.join(REFERENCE_SOURCES)}")
+        if age_band is not None and age_band not in norms.AGE_BANDS:
+            raise HTTPException(400, f"age_band must be one of {', '.join(norms.AGE_BANDS)}")
+        tl = build_timeline(profile_for(user, pid), settings, config(), reference, age_band)
         if user.role == "single":
             return for_person(tl)
         return {**tl, "notes": notes.notes(pid), "seen": notes.seen(pid)}
@@ -425,7 +502,12 @@ def create_app(settings: Settings | None = None, llm_client: Any = None,
 
     def _care_out(user: auth.User, pid: str) -> dict[str, Any]:
         c = carestore.get(pid)
-        return c if user.role == "multi" else {**c, "clinical": None}
+        if user.role == "multi":
+            return c
+        out = {**c, "clinical": None}       # the purpose is part of the clinical setup
+        for k in ("purpose", "change_flags"):
+            out.pop(k, None)
+        return out
 
     @app.put("/api/profiles/{pid}/care/routine")
     def put_routine(pid: str, body: RoutineBody, user: auth.User = Depends(current_user)) -> dict[str, Any]:

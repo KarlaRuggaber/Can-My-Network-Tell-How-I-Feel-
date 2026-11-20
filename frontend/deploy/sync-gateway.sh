@@ -3,7 +3,7 @@
 #   1. pull new Parquet partitions and the runner's plans/logs from the mini-PC,
 #   2. take the people configured in the portal (profiles.json) from the mini-PC,
 #   3. run the export on the laptop (evaluation tables where present, else the metric code),
-#   4. push the small day records to /var/lib/cmn-portal/cache on the mini-PC (read by v1 and v2).
+#   4. push the small day records to /var/lib/cmn-portal/cache on the mini-PC (read by v1, v2 and v3).
 #   frontend/deploy/sync-gateway.sh            # once
 #   frontend/deploy/sync-gateway.sh --watch 900 # every 15 minutes
 set -euo pipefail

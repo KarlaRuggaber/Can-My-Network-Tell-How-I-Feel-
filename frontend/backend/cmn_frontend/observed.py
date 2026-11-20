@@ -3,7 +3,13 @@
 Layer 1 shows what the network saw, in real units, before any model: when the devices went quiet at
 night and came back, how long they were in use, night-time use, chat sessions, different sites, and
 (clinicians and parents only) visits to crisis or self-harm sites. A *flag* names a risk over the
-recent days, e.g. "Later nights: on 4 of the last 7 nights", not a single unusual day.
+recent days, e.g. "Later nights: on 4 of the last 7 nights", not a single unusual day. A flag has a
+*kind*: "risk" (in the direction the care plan watches) or "change" (a notable change in the improving
+direction, shown neutrally as something to discuss), and an *icon* (names as in the frontend's Icon).
+
+Besides the person's own usual range there is a *typical* range from a reference group: P16-P84 per
+track, either empirical percentiles of other people's pooled usual days ("pooled") or published norms
+for the behaviour a metric stands in for ("external", see norms.py; normal assumption, proxies only).
 
 "In use" means at least ACTIVE_PACKETS packets in a 5-minute bin. Scripted devices are silent
 between their blocks, so any cutoff works for them; real phones send background traffic (push,
@@ -19,6 +25,7 @@ import os
 import statistics
 from dataclasses import dataclass
 from datetime import date, timedelta
+from statistics import NormalDist
 from typing import Any, Callable
 
 BIN_MIN = 5
@@ -32,7 +39,10 @@ DEVIATION_Z = 1.5             # a day counts as different from usual beyond 1.5 
 FLAG_DAYS = 3                 # a risk is flagged when at least 3 ...
 FLAG_WINDOW = 7               # ... of the last 7 days with data deviate in its direction
 SENSITIVE_WINDOW = 14         # sensitive sites: any signal in the last 14 days
-MIN_REFERENCE_DAYS = 7        # a healthy reference needs at least 7 days of other people
+MIN_REFERENCE_DAYS = 7        # a typical (reference-group) range needs at least 7 days of other people
+IRREGULAR_WINDOW = 7          # irregular nights: SD of the went-quiet time over the last 7 nights ...
+IRREGULAR_MIN_NIGHTS = 4      # ... with at least 4 of them known
+P_LOW, P_MID, P_HIGH = 16.0, 50.0, 84.0   # typical range = P16-P84 (the central 68 %)
 MIN_TYPE_DAYS = 5             # usual range per day type (away / home / free) from 5 baseline days of it
 OUTSIDE_NORMAL = 3.0          # a value outside the clinician's normal range counts as clearly different
 
@@ -51,17 +61,20 @@ class Track:
     unit: str
     sd_floor: float       # smallest SD used for the deviation (avoids flags from tiny baselines)
     sensitive: bool = False
+    icon: str = ""        # Icon name in the frontend
 
 
 TRACKS: list[Track] = [
-    Track("quiet_start", "Went quiet", "time", 30.0),
-    Track("quiet_end", "Back online", "time", 30.0),
-    Track("quiet_hours", "Quiet window", "h", 0.5),
-    Track("online_hours", "Time in use", "h", 0.5),
-    Track("night_minutes", "Use at night (00–06)", "min", 15.0),
-    Track("chat_sessions", "Chat sessions", "count", 1.0),
-    Track("sites", "Different sites", "count", 5.0),
-    Track("sensitive_days", "Crisis or self-harm sites", "flag", 0.0, sensitive=True),
+    Track("quiet_start", "Went quiet", "time", 30.0, icon="moon"),
+    Track("quiet_end", "Back online", "time", 30.0, icon="sunrise"),
+    Track("quiet_hours", "Quiet window", "h", 0.5, icon="moon"),
+    Track("online_hours", "Time in use", "h", 0.5, icon="clock"),
+    Track("night_minutes", "Use at night (00–06)", "min", 15.0, icon="night-use"),
+    Track("chat_sessions", "Chat sessions", "count", 1.0, icon="chat"),
+    Track("sites", "Different sites", "count", 5.0, icon="globe"),
+    # SD of the went-quiet time over the last 7 nights (D5); compared with the baseline's rolling SD
+    Track("quiet_start_sd7", "Irregular nights (spread of went quiet, 7 nights)", "min", 10.0, icon="irregular"),
+    Track("sensitive_days", "Crisis or self-harm sites", "flag", 0.0, sensitive=True, icon="alert"),
 ]
 TRACK_BY_KEY = {t.key: t for t in TRACKS}
 
@@ -73,18 +86,30 @@ class Risk:
     track: str
     direction: int        # +1: higher than usual is the risk, -1: lower
     text: str             # "{n} of the last {w} nights"
+    change_title: str = ""   # the improving direction (E1); empty when both directions are risks
+    change_text: str = ""
 
 
 RISKS: list[Risk] = [
-    Risk("later_nights", "Later nights", "quiet_start", +1, "went quiet later than usual"),
-    Risk("later_mornings", "Later mornings", "quiet_end", +1, "came back online later than usual"),
-    Risk("shorter_quiet", "Shorter quiet window at night", "quiet_hours", -1, "had a shorter quiet window than usual"),
-    Risk("night_use", "More use at night", "night_minutes", +1, "had more use between 00:00 and 06:00 than usual"),
+    Risk("later_nights", "Later nights", "quiet_start", +1, "went quiet later than usual",
+         "Earlier nights", "went quiet earlier than usual"),
+    Risk("later_mornings", "Later mornings", "quiet_end", +1, "came back online later than usual",
+         "Earlier mornings", "came back online earlier than usual"),
+    Risk("shorter_quiet", "Shorter quiet window at night", "quiet_hours", -1, "had a shorter quiet window than usual",
+         "Longer quiet window at night", "had a longer quiet window than usual"),
+    Risk("night_use", "More use at night", "night_minutes", +1, "had more use between 00:00 and 06:00 than usual",
+         "Less use at night", "had less use between 00:00 and 06:00 than usual"),
     Risk("more_use", "More time in use", "online_hours", +1, "devices were in use longer than usual"),
     Risk("less_use", "Less time in use", "online_hours", -1, "devices were in use less than usual"),
-    Risk("fewer_chats", "Fewer chat sessions", "chat_sessions", -1, "had fewer chat sessions than usual"),
-    Risk("fewer_sites", "Fewer different sites", "sites", -1, "used fewer different sites than usual"),
+    Risk("fewer_chats", "Fewer chat sessions", "chat_sessions", -1, "had fewer chat sessions than usual",
+         "More chat sessions", "had more chat sessions than usual"),
+    Risk("fewer_sites", "Fewer different sites", "sites", -1, "used fewer different sites than usual",
+         "More different sites", "used more different sites than usual"),
+    Risk("irregular_nights", "Irregular nights", "quiet_start_sd7", +1,
+         "went quiet at more irregular times than usual",
+         "More regular nights", "went quiet at more regular times than usual"),
 ]
+CHANGE_ICON = "change"
 
 # Not a crisis/self-harm signal: without URLs in the gateway data this counts all reddit.com packets.
 NOT_SENSITIVE = {"C9_F4_SelfHarmForumVisits"}
@@ -175,7 +200,7 @@ def _stats(vals: list[float]) -> dict[str, float] | None:
 
 
 def reference_stats(values: dict[str, list[float]]) -> dict[str, dict[str, float]]:
-    """Healthy reference per track from pooled days of other people (mean, SD, n)."""
+    """Mean, SD and n per track of the reference group's pooled days (at least MIN_REFERENCE_DAYS)."""
     out = {}
     for t in TRACKS:
         if t.sensitive:
@@ -184,6 +209,77 @@ def reference_stats(values: dict[str, list[float]]) -> dict[str, dict[str, float
         if s and s["n"] >= MIN_REFERENCE_DAYS:
             out[t.key] = s
     return out
+
+
+def empirical_range(vals: list[float]) -> dict[str, float]:
+    """P16, P50, P84 of the values (linear interpolation between order statistics) and n."""
+    if len(vals) < 2:
+        v = vals[0] if vals else 0.0
+        return {"p16": v, "p50": v, "p84": v, "n": len(vals)}
+    q = statistics.quantiles(vals, n=100, method="inclusive")
+    return {"p16": q[int(P_LOW) - 1], "p50": q[int(P_MID) - 1], "p84": q[int(P_HIGH) - 1], "n": len(vals)}
+
+
+def empirical_percentile(sorted_vals: list[float], x: float) -> float:
+    """Share of reference values below x (ties count half), 0-100."""
+    below = sum(1 for v in sorted_vals if v < x)
+    equal = sum(1 for v in sorted_vals if v == x)
+    return 100.0 * (below + 0.5 * equal) / len(sorted_vals)
+
+
+def pooled_reference(values: dict[str, list[float]], n_days: int = 0,
+                     people: list[str] | None = None) -> dict[str, Any] | None:
+    """The `pooled` typical reference: empirical P16/P50/P84 of other people's usual days per track."""
+    tracks: dict[str, dict[str, Any]] = {}
+    pct: dict[str, Callable[[float], float]] = {}
+    for t in TRACKS:
+        vals = sorted(values.get(t.key, []))
+        if t.sensitive or len(vals) < MIN_REFERENCE_DAYS:
+            continue
+        tracks[t.key] = {k: (round(v, 3) if k != "n" else v) for k, v in empirical_range(vals).items()}
+        pct[t.key] = (lambda vs: lambda x: empirical_percentile(vs, x))(vals)
+    if not tracks:
+        return None
+    people = list(people or [])
+    return {"source": "pooled",
+            "label": "typical (other people's usual weeks)" if people else "typical (reference group)",
+            "normal_assumption": False, "tracks": tracks, "stats": reference_stats(values),
+            "n_days": n_days, "people": people, "_pct": pct}
+
+
+def _normal_reference(stats: dict[str, dict[str, float]], **extra: Any) -> dict[str, Any] | None:
+    """A reference from mean/SD per track only (normal assumption)."""
+    tracks, pct = {}, {}
+    for k, s in stats.items():
+        if k not in TRACK_BY_KEY or TRACK_BY_KEY[k].sensitive or s.get("sd") is None:
+            continue
+        nd = NormalDist(s["mean"], max(s["sd"], 1e-9))
+        tracks[k] = {"p16": round(nd.inv_cdf(P_LOW / 100), 3), "p50": round(s["mean"], 3),
+                     "p84": round(nd.inv_cdf(P_HIGH / 100), 3), "n": s.get("n")}
+        pct[k] = (lambda d: lambda x: 100.0 * d.cdf(x))(nd)
+    if not tracks:
+        return None
+    return {"source": "pooled", "label": "typical (reference group)", "normal_assumption": True,
+            "tracks": tracks, "stats": stats, "n_days": 0, "people": [], **extra, "_pct": pct}
+
+
+def prepare_reference(reference: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Normalise what build() gets: a ready reference (with `_pct`), pooled values, or mean/SD stats."""
+    if not reference:
+        return None
+    if "_pct" in reference:
+        return reference if reference.get("tracks") or reference.get("points") else None
+    if reference.get("values") is not None:
+        return pooled_reference(reference["values"], reference.get("n_days", 0), reference.get("people"))
+    if reference.get("stats"):
+        return _normal_reference(reference["stats"], n_days=reference.get("n_days", 0),
+                                 people=list(reference.get("people") or []))
+    return None
+
+
+def percentile_z(p: float) -> float:
+    """The z of a percentile under a standard normal (clipped to P0.1-P99.9)."""
+    return NormalDist().inv_cdf(min(max(p / 100.0, 0.001), 0.999))
 
 
 def track_values(days: list[dict[str, Any]], select: Callable[[dict[str, Any]], bool]) -> dict[str, list[float]]:
@@ -210,8 +306,12 @@ def risk_setting(focus: dict[str, Any] | None, risk_id: str) -> tuple[bool, floa
     return bool(f.get("enabled", True)), z, need, sens
 
 
+REFERENCE_PHRASE = "than is typical for the reference group"
+
+
 def _risk_flags(days: list[dict[str, Any]], dev_key: str, basis: str,
-                focus: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                focus: dict[str, Any] | None = None, changes: bool = False) -> list[dict[str, Any]]:
+    """Risk flags (and, with `changes`, change flags in the improving direction) over the last days."""
     flags = []
     days = [d for d in days if d["observed"].get("day_type") != "away_period"]
     for r in RISKS:
@@ -219,32 +319,68 @@ def _risk_flags(days: list[dict[str, Any]], dev_key: str, basis: str,
         if not enabled:
             continue
         window = [d for d in days if d["observed"].get(r.track) is not None][-FLAG_WINDOW:]
-        hit = [d["date"] for d in window if (zz := (d["observed"].get(dev_key) or {}).get(r.track)) is not None
-               and zz * r.direction >= z_need]
+        unit = "nights" if r.track.startswith("quiet") or r.track == "night_minutes" else "days"
+        devs = [(d["date"], (d["observed"].get(dev_key) or {}).get(r.track)) for d in window]
+        hit = [day for day, zz in devs if zz is not None and zz * r.direction >= z_need]
         if len(window) >= need and len(hit) >= need:
-            unit = "nights" if r.track.startswith("quiet") or r.track == "night_minutes" else "days"
-            phrase = r.text if basis == "own" else r.text.replace("than usual", "than healthy people usually do")
+            phrase = r.text if basis == "own" else r.text.replace("than usual", REFERENCE_PHRASE)
             flags.append({"id": r.id if basis == "own" else f"ref_{r.id}", "basis": basis,
-                          "title": r.title if basis == "own" else f"{r.title} than healthy people",
+                          "kind": "risk", "icon": TRACK_BY_KEY[r.track].icon,
+                          "title": r.title if basis == "own" else f"{r.title} than typical",
                           "track": r.track, "direction": r.direction,
                           "days": hit, "count": len(hit), "window": len(window), "unit": unit, "phrase": phrase,
                           "text": f"On {len(hit)} of the last {len(window)} {unit} the person {phrase}.",
                           "sensitive": False, "sensitivity": sens})
+        if not (changes and r.change_title):
+            continue
+        better = [day for day, zz in devs if zz is not None and -zz * r.direction >= z_need]
+        if len(window) >= need and len(better) >= need:
+            flags.append({"id": f"change_{r.id}", "basis": basis, "kind": "change", "icon": CHANGE_ICON,
+                          "title": r.change_title, "track": r.track, "direction": -r.direction,
+                          "days": better, "count": len(better), "window": len(window), "unit": unit,
+                          "phrase": r.change_text,
+                          "text": f"On {len(better)} of the last {len(window)} {unit} the person {r.change_text}. "
+                                  f"A notable change to discuss, not a risk.",
+                          "sensitive": False, "sensitivity": sens})
     return flags
+
+
+def _rolling_sd(days: list[dict[str, Any]]) -> None:
+    """quiet_start_sd7: SD of the went-quiet time over the last IRREGULAR_WINDOW calendar nights.
+
+    Only on a day with a went-quiet time of its own, from at least IRREGULAR_MIN_NIGHTS known nights;
+    nights in an away period do not count.
+    """
+    known = {d["date"]: d["observed"]["quiet_start"] for d in days
+             if d["observed"].get("quiet_start") is not None and d["observed"].get("day_type") != "away_period"}
+    for d in days:
+        o = d["observed"]
+        if d["date"] not in known:
+            o["quiet_start_sd7"] = None
+            continue
+        day = date.fromisoformat(d["date"])
+        vals = [v for k in range(IRREGULAR_WINDOW)
+                if (v := known.get((day - timedelta(days=k)).isoformat())) is not None]
+        o["quiet_start_sd7"] = statistics.stdev(vals) if len(vals) >= IRREGULAR_MIN_NIGHTS else None
 
 
 def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
           metric_baseline: dict[str, dict[str, float]], labels: Callable[[str], str] | None = None,
           reference: dict[str, Any] | None = None, day_types: dict[str, str | None] | None = None,
           focus: dict[str, Any] | None = None, normals: dict[str, dict[str, float | None]] | None = None,
-          ) -> dict[str, Any]:
+          changes: bool = True) -> dict[str, Any]:
     """Observed tracks per day, usual range from the complete baseline days, and risk flags.
 
     `days` are the timeline days (date, phase, complete, metrics) in date order; `activity` the
     matching day records' 5-minute activity. Adds `observed` to each day and returns the summary.
-    `reference` ({"stats": per-track mean/SD of healthy people's days, ...}) adds a second
-    comparison: every day against the healthy reference, and flags over the last days with data
-    (these work from the first week, without waiting for the person's own baseline).
+    `reference` adds a second comparison, with a *typical* range of a reference group: a ready
+    reference from pooled_reference() / norms.external_reference(), {"values": pooled per-track
+    values of other people's usual days, "n_days", "people"} (empirical percentiles), or {"stats":
+    mean/SD per track} (normal assumption). Every day gets `percentile_ref` (0-100 per track) and
+    `deviation_ref` (the percentile as a z, never more than |value - P50| / the track's SD floor, so a
+    tiny difference from a narrow reference is no clear difference), and flags over the last days
+    with data (these work from the first week, without waiting for the person's own baseline).
+    `changes` adds "change" flags for notable changes in the improving direction (own basis only).
 
     From the care plan: `day_types` (date -> "away" | "home" | "free" | "away_period") gives usual
     ranges per day type once there are MIN_TYPE_DAYS baseline days of a type, and leaves away periods
@@ -281,6 +417,7 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
     normals = {k: v for k, v in (normals or {}).items() if k in TRACK_BY_KEY and v}
     for d in days:
         d["observed"]["day_type"] = day_types.get(d["date"])
+    _rolling_sd(days)
     base = [d for d in days if d["phase"] == "baseline" and d["complete"]
             and d["observed"]["day_type"] != "away_period"]
     usual: dict[str, dict[str, float]] = {}
@@ -320,24 +457,33 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
             for t in TRACKS if not t.sensitive
         }
 
-    ref_stats = (reference or {}).get("stats") or {}
+    ref = prepare_reference(reference)
+    ref_pct: dict[str, Callable[[float], float]] = (ref or {}).get("_pct") or {}
 
-    def zref(track: str, v: float | None) -> float | None:
-        s = ref_stats.get(track)
-        if s is None or v is None:
+    def pref(track: str, v: float | None) -> float | None:
+        f = ref_pct.get(track)
+        return None if f is None or v is None else f(v)
+
+    def zref(track: str, v: float | None, p: float | None) -> float | None:
+        if p is None or v is None:
             return None
-        return (v - s["mean"]) / max(s["sd"], TRACK_BY_KEY[track].sd_floor)
+        z_p = percentile_z(p)
+        floor = TRACK_BY_KEY[track].sd_floor
+        cap = abs(v - ref["tracks"][track]["p50"]) / floor if floor > 0 else abs(z_p)
+        return math.copysign(min(abs(z_p), cap), z_p)
 
-    for d in days:
-        if ref_stats:
-            d["observed"]["deviation_ref"] = {
-                t.key: (round(zz, 2) if (zz := zref(t.key, d["observed"].get(t.key))) is not None else None)
-                for t in TRACKS if not t.sensitive
+    if ref_pct:
+        for d in days:
+            o = d["observed"]
+            pcts = {t.key: pref(t.key, o.get(t.key)) for t in TRACKS if not t.sensitive}
+            o["percentile_ref"] = {k: (round(p, 1) if p is not None else None) for k, p in pcts.items()}
+            o["deviation_ref"] = {
+                k: (round(zz, 2) if (zz := zref(k, o.get(k), p)) is not None else None) for k, p in pcts.items()
             }
 
     current = [d for d in days if d["phase"] == "current" and d["complete"]]
-    flags = _risk_flags(current, "deviation", "own", focus)
-    if ref_stats:
+    flags = _risk_flags(current, "deviation", "own", focus, changes=changes)
+    if ref_pct:
         recent = [d for d in days if d["complete"] and d["observed"]["has_data"]]
         flags += _risk_flags(recent, "deviation_ref", "reference", focus)
     recent = [d for d in current if d["observed"]["has_data"]
@@ -345,7 +491,8 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
     sens_days = [d for d in recent if d["observed"]["sensitive"]]
     if sens_days and risk_setting(focus, "sensitive_sites")[0]:
         names = sorted({s["label"] for d in sens_days for s in d["observed"]["sensitive"]})
-        flags.append({"id": "sensitive_sites", "basis": "own", "title": "Crisis or self-harm sites", "track": "sensitive_days",
+        flags.append({"id": "sensitive_sites", "basis": "own", "kind": "risk", "icon": "alert",
+                      "title": "Crisis or self-harm sites", "track": "sensitive_days",
                       "direction": 1, "days": [d["date"] for d in sens_days], "count": len(sens_days),
                       "window": len(recent), "unit": "days", "phrase": "", "names": names,
                       "text": f"Visits above the person's usual level on {len(sens_days)} of the last "
@@ -353,7 +500,7 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
                       "sensitive": True})
 
     return {
-        "tracks": [{"key": t.key, "label": t.label, "unit": t.unit, "sensitive": t.sensitive,
+        "tracks": [{"key": t.key, "label": t.label, "unit": t.unit, "sensitive": t.sensitive, "icon": t.icon,
                     "risk": sorted({r.direction for r in RISKS if r.track == t.key}) or ([1] if t.sensitive else [])}
                    for t in TRACKS],
         "usual": usual,
@@ -361,19 +508,19 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
         "normals": normals,
         "focus": {r: {"enabled": e, "sensitivity": sv} for r in [x.id for x in RISKS] + ["sensitive_sites"]
                   for e, _, _, sv in [risk_setting(focus, r)]},
-        "reference": ({"stats": ref_stats, "n_days": (reference or {}).get("n_days", 0),
-                       "people": (reference or {}).get("people", [])} if ref_stats else None),
+        "reference": ({k: v for k, v in ref.items() if not k.startswith("_")} if ref else None),
         "flags": flags,
         "params": {"active_packets": cutoff, "deviation_z": DEVIATION_Z, "flag_days": FLAG_DAYS,
                    "flag_window": FLAG_WINDOW, "sensitive_window": SENSITIVE_WINDOW,
-                   "night_from_hour": NIGHT_FROM_HOUR, "night_to_hour": NIGHT_TO_HOUR},
+                   "night_from_hour": NIGHT_FROM_HOUR, "night_to_hour": NIGHT_TO_HOUR,
+                   "irregular_window": IRREGULAR_WINDOW, "typical_range": [P_LOW, P_HIGH], "changes": changes},
     }
 
 
 def for_person(observed: dict[str, Any], days: list[dict[str, Any]]) -> None:
-    """Remove sensitive-site tracks and flags, and the healthy-reference comparison.
+    """Remove sensitive-site tracks and flags, and the comparison with the typical (reference) range.
 
-    The person never sees crisis or self-harm sites. The comparison with healthy people is for
+    The person never sees crisis or self-harm sites. The comparison with a reference group is for
     clinicians and parents: told to the person it could frame them (expectation effect).
     """
     observed["tracks"] = [t for t in observed["tracks"] if not t["sensitive"]]
@@ -384,3 +531,4 @@ def for_person(observed: dict[str, Any], days: list[dict[str, Any]]) -> None:
             d["observed"].pop("sensitive", None)
             d["observed"].pop("sensitive_days", None)
             d["observed"].pop("deviation_ref", None)
+            d["observed"].pop("percentile_ref", None)

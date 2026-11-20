@@ -16,7 +16,7 @@ export interface Config {
   // clinicians and parents only:
   observability?: Record<CritKey, Observability>;
   risk_criteria?: Record<string, CritKey[]>;
-  risks?: { id: string; title: string; track: string }[];
+  risks?: { id: string; title: string; track: string; icon?: string }[];
 }
 
 export type Role = "single" | "multi";
@@ -31,6 +31,8 @@ export interface ProfileListItem {
 
 /** What needs a clinician's look per person: new flags, and whether crisis/self-harm sites appeared. */
 export interface ProfileAttention { flags: number; alert: boolean }
+/** Same as ProfileAttention (K1 name). */
+export type Attention = ProfileAttention;
 
 export interface DeviceRef { ip: string; label: string }
 
@@ -100,7 +102,8 @@ export interface DayObserved {
   active_hourly: number[] | null;     // minutes in use per hour
   has_data: boolean;
   deviation: Record<string, number | null>;   // z against the person's usual range
-  deviation_ref?: Record<string, number | null>;   // z against the healthy reference (clinicians and parents)
+  deviation_ref?: Record<string, number | null>;   // z against the typical range (from percentile_ref; clinicians and parents)
+  quiet_start_sd7?: number | null;   // SD of the went-quiet time over the last 7 nights (min)
   sensitive?: { metric: string; label: string; value: number | null }[];   // clinicians and parents only
   sensitive_days?: number;
   percentile_ref?: Record<string, number | null>;   // v3 (K1): position in the typical range, 0–100, per track
@@ -109,13 +112,44 @@ export interface DayObserved {
 export interface ObservedTrack {
   key: string; label: string; unit: string; sensitive: boolean;
   risk: number[];          // direction(s) that count as a risk: 1 higher than usual, -1 lower
+  icon?: string;           // Icon name
 }
 export interface RiskFlag {
   id: string; title: string; track: string; direction: number; days: string[]; count: number;
   window: number; unit: string; phrase: string; text: string; sensitive: boolean; names?: string[];
-  basis: "own" | "reference";     // compared with the person's usual weeks, or with healthy people
+  basis: "own" | "reference";     // compared with the person's usual weeks, or with the typical range
   kind?: "risk" | "change";       // v3 (K1): change = notable change in the other direction, "to discuss"
   icon?: string;                  // v3 (K1): one of the Icon names
+  sensitivity?: string;
+}
+export type FlagKind = "risk" | "change";
+export type ReferenceSource = "pooled" | "external";
+export type AgeBand = "15-18" | "19-24";
+
+/** Typical range of one track: P16-P84 (central 68 %), with the source for external norms. */
+export interface TypicalTrack {
+  p16: number; p50: number; p84: number; n?: number;
+  citation?: string; proxy_note?: string; label?: string; location?: string; population?: string; url?: string;
+  normal_assumption?: boolean; day?: string; age?: number[] | null;
+}
+/** A published centre without a spread (median, mean, pooled mean): shown, never used for percentiles. */
+export interface NormPoint {
+  stat: string; unit: string; values: Record<string, number>; ci95?: Record<string, number[]> | null;
+  citation: string; proxy_note: string; label: string; location: string; population: string; url: string;
+  age?: number[] | null; age_note?: string | null;
+}
+/** The typical (reference-group) range: other people's usual weeks (pooled) or published norms (external). */
+export interface TypicalReference {
+  source: ReferenceSource;
+  label: string;                  // "typical (other people's usual weeks)" / "typical 15–18 y (published norms, proxies)"
+  tracks: Record<string, TypicalTrack>;
+  normal_assumption?: boolean;    // percentiles from mean ± SD under a normal assumption
+  available?: ReferenceSource[];
+  age_band?: AgeBand;             // external only
+  points?: Record<string, NormPoint[]>;   // external only
+  context?: (Omit<NormPoint, "values"> & { values: Record<string, number> | null; iqr?: number[] | null })[];
+  // v2 fields, kept
+  stats: Record<string, { mean: number; sd: number; n: number }>; n_days: number; people: string[];
 }
 /** v3 (K1): typical range per track as percentiles (P16–P84 = central 68 %). */
 export interface ReferenceTrack { p16: number; p50: number; p84: number; n?: number; citation?: string; proxy_note?: string }
@@ -125,11 +159,15 @@ export interface Observed {
   // v2: stats (mean ± SD of the pooled reference); v3 (K1): source, label, tracks (percentiles)
   reference: {
     stats?: Record<string, { mean: number; sd: number; n: number }>; n_days?: number; people?: string[];
-    source?: "pooled" | "external"; label?: string; tracks?: Record<string, ReferenceTrack>;
+    source?: "pooled" | "external"; label?: string; tracks?: Record<string, ReferenceTrack & Partial<TypicalTrack>>;
+    // v3 (K1) extras, see TypicalReference
+    normal_assumption?: boolean; available?: ReferenceSource[]; age_band?: AgeBand;
+    points?: Record<string, NormPoint[]>; context?: TypicalReference["context"];
   } | null;
   flags: RiskFlag[];
   params: { active_packets: number; deviation_z: number; flag_days: number; flag_window: number;
-    sensitive_window: number; night_from_hour: number; night_to_hour: number };
+    sensitive_window: number; night_from_hour: number; night_to_hour: number;
+    irregular_window?: number; typical_range?: [number, number]; changes?: boolean };
 }
 
 export interface Note { id: string; date: string; text: string; author: string; created: string }
@@ -155,11 +193,17 @@ export interface Clinical {
   history: string; concerns: string; treatment: string; criteria: CritKey[];
   focus: Record<string, { enabled: boolean; sensitivity: Sensitivity }>;
   normals: Record<string, { min: number | null; max: number | null }>;
+  purpose?: CarePurpose;
+  change_flags?: boolean | null;    // null: default (on)
 }
+/** Why a person is monitored: assessment (status vs. the typical range first) or treatment
+ *  monitoring (change over time first, "notable change" flags on by default). */
+export type CarePurpose = "assessment" | "treatment";
 export interface Care {
-  purpose?: "assessment" | "treatment";   // v3 (K5): which comparison the overview shows first
   routine: Routine | null; away_periods: AwayPeriod[]; clinical: Clinical | null;
   updated: Record<string, { by: string; at: string }>;
+  purpose?: CarePurpose;            // clinicians and parents only; "assessment" without a setup
+  change_flags?: boolean;           // effective: whether "notable change" flags are shown
 }
 export interface FocusSuggestion {
   criteria: { criterion: CritKey; priority: "high" | "medium" | "low"; reason: string }[];
@@ -294,7 +338,8 @@ export const api = {
   me: () => get<Me>("/api/me"),
   config: () => get<Config>("/api/config"),
   profiles: () => get<ProfileListItem[]>("/api/profiles"),
-  timeline: (id: string) => get<Timeline>(`/api/profiles/${enc(id)}`),
+  timeline: (id: string, ref?: { reference?: ReferenceSource; age_band?: AgeBand }) =>
+    get<Timeline>(`/api/profiles/${enc(id)}${ref ? "?" + new URLSearchParams(ref as Record<string, string>).toString() : ""}`),
   day: (id: string, day: string) => get<DayDetail>(`/api/profiles/${enc(id)}/days/${day}`),
   sources: () => get<Source[]>("/api/sources"),
   sourceDevices: (source: string) => get<SourceDevice[]>(`/api/sources/${enc(source)}/devices`),

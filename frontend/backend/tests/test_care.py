@@ -25,6 +25,37 @@ def test_routine_is_cleaned_and_validated():
         care.clean_away([{"from": "2026-11-10", "to": "2026-11-01"}])
 
 
+def test_purpose_is_validated_and_sets_the_change_flag_default():
+    risk_ids, tracks = ["later_nights", "sensitive_sites"], ["quiet_start"]
+    c = care.clean_clinical({}, risk_ids, tracks)
+    assert c["purpose"] == "assessment" and c["change_flags"] is None
+    assert care.purpose_of(None) == "assessment" and care.change_flags_on(None) is True
+    t = care.clean_clinical({"purpose": "treatment"}, risk_ids, tracks)
+    assert care.purpose_of(t) == "treatment" and care.change_flags_on(t) is True
+    # the clinician's explicit choice wins over the purpose's default, in both directions
+    assert care.change_flags_on(care.clean_clinical({"purpose": "treatment", "change_flags": False}, risk_ids, tracks)) is False
+    assert care.change_flags_on(care.clean_clinical({"purpose": "assessment", "change_flags": True}, risk_ids, tracks)) is True
+    for bad in ({"purpose": "screening"}, {"change_flags": "yes"}):
+        with pytest.raises(ValueError):
+            care.clean_clinical(bad, risk_ids, tracks)
+    # crisis or self-harm sites are a safety signal: never switched off
+    c = care.clean_clinical({"focus": {"sensitive_sites": {"enabled": False}, "later_nights": {"enabled": False}}},
+                            risk_ids, tracks)
+    assert c["focus"]["sensitive_sites"]["enabled"] is True and c["focus"]["later_nights"]["enabled"] is False
+
+
+def test_change_flags_are_on_unless_switched_off():
+    flags = [{"id": "later_nights", "kind": "risk"}, {"id": "earlier_nights", "kind": "change"},
+             {"id": "sensitive_sites"}]                       # flags without a kind are risk flags (v2)
+    ids = lambda clinical: [f["id"] for f in care.apply_purpose(flags, clinical)]
+    assert ids(None) == ["later_nights", "earlier_nights", "sensitive_sites"]          # on by default
+    assert ids({"purpose": "assessment"}) == ["later_nights", "earlier_nights", "sensitive_sites"]
+    assert ids({"purpose": "assessment", "change_flags": False}) == ["later_nights", "sensitive_sites"]
+    assert ids({"purpose": "treatment"}) == ["later_nights", "earlier_nights", "sensitive_sites"]
+    assert ids({"purpose": "treatment", "change_flags": False}) == ["later_nights", "sensitive_sites"]
+    assert ids({"purpose": "assessment", "change_flags": True}) == ["later_nights", "earlier_nights", "sensitive_sites"]
+
+
 def test_day_type_from_routine_and_away_periods():
     r = care.clean_routine({"week": {"wed": "home"}})
     away = care.clean_away([{"from": "2026-11-20", "to": "2026-11-22", "reason": "holidays"}])
@@ -134,9 +165,17 @@ def test_onboarding_and_care_plan_permissions(portal):
                 "normals": {"quiet_start": {"min": -60, "max": 30}}}
     assert pat.put("/api/profiles/pat/care/clinical", json={"clinical": clinical}).status_code == 403
     assert doc.put("/api/profiles/pat/care/clinical", json={"clinical": {"criteria": ["C10"]}}).status_code == 422
-    assert doc.put("/api/profiles/pat/care/clinical", json={"clinical": clinical}).json()["clinical"]["criteria"] == ["C4", "C9"]
+    assert doc.get("/api/profiles/pat").json()["care"]["purpose"] == "assessment"     # default before any setup
+    assert doc.put("/api/profiles/pat/care/clinical", json={"clinical": {"purpose": "screening"}}).status_code == 422
+    clinical["purpose"] = "treatment"
+    saved = doc.put("/api/profiles/pat/care/clinical", json={"clinical": clinical}).json()
+    assert saved["clinical"]["criteria"] == ["C4", "C9"]
+    assert saved["purpose"] == "treatment" and saved["change_flags"] is True and saved["clinical"]["purpose"] == "treatment"
     tl_pat = pat.get("/api/profiles/pat").json()
     assert tl_pat["care"]["clinical"] is None and "Depressive" not in json.dumps(tl_pat)
+    assert "purpose" not in tl_pat["care"] and "treatment" not in json.dumps(tl_pat["care"])
+    tl_doc = doc.get("/api/profiles/pat").json()
+    assert tl_doc["care"]["purpose"] == "treatment" and tl_doc["care"]["change_flags"] is True
     assert tl_pat["observed"]["focus"] == {}
     tl_doc = doc.get("/api/profiles/pat").json()
     assert tl_doc["observed"]["focus"]["later_nights"]["sensitivity"] == "strict"
@@ -144,7 +183,7 @@ def test_onboarding_and_care_plan_permissions(portal):
     assert "observability" in doc.get("/api/config").json() and "observability" not in pat.get("/api/config").json()
     # away periods by the patient
     r = pat.put("/api/profiles/pat/care/away", json={"away_periods": [{"from": "2026-11-09", "to": "2026-11-09", "reason": "trip"}]})
-    assert r.status_code == 200
+    assert r.status_code == 200 and "purpose" not in r.json() and r.json()["clinical"] is None
     days = doc.get("/api/profiles/pat").json()["days"]
     assert [d["observed"]["day_type"] for d in days if d["date"] == "2026-11-09"] == ["away_period"]
 

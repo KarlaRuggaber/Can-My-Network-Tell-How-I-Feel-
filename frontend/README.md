@@ -138,10 +138,61 @@ functions come from `app_pcap_to_dsm5/app/fasl_config.json` (re-read on every re
 
 The Streamlit app in `app_pcap_to_dsm5/app/` is not changed and stays the reference.
 
-Look: as the midterm presentation: Book Antiqua for titles (falls back to Palatino), Arial for text,
-red #DC3A4F (subtitle, clinical phase, likelihood ramp) and beige #EBD6C1 (baseline phase, gate bar,
-highlights), thin black outlines. Colours live in `web/src/theme.ts` and `web/src/styles.css`; the
-device colours (phone blue, laptop tan) were checked for colour-vision separation and contrast.
+Look: Book Antiqua for titles (falls back to Palatino), Arial for text, thin black outlines, beige
+surfaces. Since v3, red means an alert and nothing else, and intensity uses a neutral scale (see
+[VISUAL.md](VISUAL.md) and "v3" below). Colours live in `web/src/theme.ts` and `web/src/styles.css`;
+the device colours (phone blue, laptop tan) were checked for colour-vision separation and contrast.
+
+## v3: second round of expert feedback (tag `frontend-v2` is the version shown to the experts)
+
+v3 builds on v2 and follows the second calls with the UZH child and adolescent psychiatry team (LiFE)
+and with a UX / data-science reviewer. The tasks, the norm research and how the work was split are in
+[`process/Feedback-v3-Plan.md`](../process/Feedback-v3-Plan.md). Main changes:
+
+- **Name and look.** The portal is called **Rhythm** ("Home network overview"; placeholder, one
+  constant in `web/src/theme.ts` and `backend/cmn_frontend/settings.py`); the thesis title is only an
+  "About" line. Visual rules in [VISUAL.md](VISUAL.md), applied to every screen: every element answers
+  a question; red only for alerts (crisis or self-harm sites, "present", the C9 signal); one neutral
+  intensity scale; only the baseline period is shaded, in a neutral colour (the clinical / recent
+  period is not); every axis is named with its unit; fixed icons with one meaning each
+  (`web/src/components/Icon.tsx`); buttons and the assistant tab in ink.
+- **Person view.** A "What this page is based on" label at the top (collected / not collected, like
+  an App Store privacy label, plus what the care team also sees). Layer 1 is a table of the last 7
+  days (time in use, went quiet, back online, and the usual weeks); the charts are behind "Show
+  charts". "What stands out" is gone for the person. "Devices quiet at night" instead of "Quiet
+  window". The timeline has one line per day with a labelled 0–24 h strip.
+- **Typical range instead of "healthy people"** (`observed.py`, `norms.py`, `norms.json`). The
+  reference is a percentile range P16–P84 (the central 68 %), with the position as a percentile
+  ("later than 85 % of reference nights"). Two sources: `pooled` (default: other people's usual days)
+  and `external` (published norms by age band, 15–18 and 19–24 y, with citation, population and a proxy
+  note; only sources that publish a spread between people give a range). There are no published norms
+  for network metrics, so every external entry is a proxy (sleep duration, screen time). Switch with
+  `?reference=external&age_band=15-18` or `CMN_REFERENCE_SOURCE` / `CMN_NORM_AGE_BAND`.
+- **New flags.** "Irregular nights" (SD of the went-quiet time over 7 nights against the baseline's).
+  "Notable change" flags in the improving direction (earlier nights, more chats, …), neutral, "to
+  discuss"; on by default, a clinician can switch them off in the care plan. Every flag carries
+  `kind` and `icon`.
+- **Clinician view.** A searchable person picker that works for hundreds of people, with an
+  attention marker per person (new flags, crisis sites). Flag tiles with icons. The care plan has a
+  **purpose**: *assessment* shows the comparison with the typical range first, *treatment monitoring*
+  the change against the own usual weeks first. Details: a plain-language "What contributed" sentence
+  per criterion; z, w and μ behind "Show model details". A separate tab **About the data**: what the
+  network can and cannot see (no search terms, no page content, no messages) and how well each
+  criterion can be observed.
+- **Onboarding** asks for what the description of the week left open (times, free days, devices),
+  one question at a time, typed or dictated (`setup_assist.missing_fields`, rule-based).
+- **Assistant.** Answers first, short (from a week overview in the context); "− Shorter" and "+ More
+  detail" under the latest answer, plus follow-ups from the current view. The person only gets
+  observations: no reasons, meanings, symptoms or diagnoses, also on repeated asking, and is pointed to
+  the care team. Eval: `backend/eval/assistant_eval.py` (40 questions on the three personas; results in
+  `backend/eval/results/`).
+- **Local model.** The assistant can run on a model on our own machines instead of Anthropic
+  (`backend/cmn_frontend/llm.py`, any OpenAI-compatible endpoint). Settings → Assistant → Local model.
+  Setup, model choice, context length and the gateway over Tailscale: [deploy/local-llm.md](deploy/local-llm.md).
+  Measured on a 48 GB MacBook with a 4-week profile (≈ 24k tokens of context): `qwen3.8:27b-mlx`
+  ≈ 5 min for the first answer and correct; `qwen3.5:35b-mlx` with thinking off
+  (`CMN_LOCAL_EXTRA_BODY='{"reasoning_effort": "none"}'`) ≈ 35 s, but it mixed up days with full
+  confidence. A clinical deployment needs an in-house model either way.
 
 ## How it works
 
@@ -285,10 +336,10 @@ The mini-PC serves the portal; the laptop keeps computing (the export needs 1–
 
 | File | Purpose |
 |---|---|
-| `Dockerfile`, `docker-compose.yml` | Container `cmn-portal-v2` on top of the app's `app-app` image, host network, `127.0.0.1:8610` only, 512 MB limit, data mounted read-only, own home `/var/lib/cmn-portal-v2/home` |
-| `../whisper/Dockerfile` | Container `cmn-whisper` (dictation), same base image, `127.0.0.1:8601` only, 1.5 GB and 2 CPU limit, model kept in `/var/lib/cmn-whisper/models` and unloaded after 10 idle minutes |
-| `deploy-gateway.sh` | Builds the UI, copies the code to `/opt/cmn-portal-v2/frontend`, copies v1's logins, people and assistant settings on the first deploy, (re)builds and starts both containers |
-| `switch-gateway.sh v1\|v2 [--keep]` | Points the tailnet URL to v1 (`8600`) or v2 (`8610`) and stops the other one (with `--keep` it keeps running); `status` shows what runs |
+| `Dockerfile`, `docker-compose.yml` | Container `cmn-portal-v3` on top of the app's `app-app` image, host network, `127.0.0.1:8620` only, 512 MB limit, data mounted read-only, own home `/var/lib/cmn-portal-v3/home` |
+| `../whisper/Dockerfile` | Container `cmn-whisper` (dictation), same base image, `127.0.0.1:8601` only, 1.5 GB and 2 CPU limit, model kept in `/var/lib/cmn-whisper/models` and unloaded after 10 idle minutes. Started by v2's compose project and shared by v2 and v3 |
+| `deploy-gateway.sh` | Builds the UI, copies the code to `/opt/cmn-portal-v3/frontend`, copies v2's home (logins, people, care plans, notes, assistant settings) on the first deploy, (re)builds and starts the container |
+| `switch-gateway.sh v1\|v2\|v3 [--keep]` | Points the tailnet URL to v1 (`8600`), v2 (`8610`) or v3 (`8620`) and stops the others (with `--keep` they keep running); `status` shows what runs |
 | `sync-gateway.sh [--watch 900]` | Pulls new partitions and plans and v2's `profiles.json`, runs the export on the laptop, pushes the day records to `/var/lib/cmn-portal/cache` (read by v1 and v2) |
 | `gateway.env.example` | Host, user, key and sources; copy to `gateway.env` to change them |
 
@@ -296,21 +347,26 @@ One-time steps:
 
 1. Tailscale admin console → DNS → enable **HTTPS Certificates** (needed by `tailscale serve`).
 2. `frontend/deploy/deploy-gateway.sh`, then `frontend/deploy/sync-gateway.sh`.
-3. Logins on the mini-PC: `sudo docker exec -it cmn-portal-v2 python -m cmn_frontend.users add …`
-   (or copy `users.json` from the laptop to `/var/lib/cmn-portal-v2/home/`). The assistant is set up
+3. Logins on the mini-PC: `sudo docker exec -it cmn-portal-v3 python -m cmn_frontend.users add …`
+   (or copy `users.json` from the laptop to `/var/lib/cmn-portal-v3/home/`). The assistant is set up
    in the portal under Settings → Assistant.
-4. Publish in the tailnet: `switch-gateway.sh v2` (runs `sudo tailscale serve --bg 8610`) and allow HTTPS on `tailscale0` in
+4. Publish in the tailnet: `switch-gateway.sh v3` (runs `sudo tailscale serve --bg 8620`) and allow HTTPS on `tailscale0` in
    `/etc/nftables.conf` (`iifname "tailscale0" tcp dport 443 accept`, after a backup and
    `sudo nft -c -f`). The portal is then at `https://minipc.<tailnet>.ts.net`.
 
-**v1 and v2 side by side.** v1 (tag `frontend-v1`) stays installed in `/opt/cmn-portal` (container
-`cmn-portal`, port 8600, home `/var/lib/cmn-portal/home`); v2 runs from `/opt/cmn-portal-v2`. Only
-one is shown at the tailnet URL, and the other is stopped to free memory for the live run. A stopped
-container keeps its image and data and stays stopped after a reboot. For the report's screenshots
-of v1, run `switch-gateway.sh v1`, and `switch-gateway.sh v2` afterwards.
+**v1, v2 and v3 side by side.** v1 (tag `frontend-v1`) stays installed in `/opt/cmn-portal`
+(container `cmn-portal`, port 8600, home `/var/lib/cmn-portal/home`), v2 (tag `frontend-v2`) in
+`/opt/cmn-portal-v2` (container `cmn-portal-v2`, port 8610, home `/var/lib/cmn-portal-v2/home`, plus
+the dictation container), and v3 runs from `/opt/cmn-portal-v3`. v2's files were deployed from the
+`frontend-v2` branch; `deploy-gateway.sh` on this branch only deploys v3. Only one version is shown at
+the tailnet URL, and the others are stopped to free memory. A stopped container keeps its image and
+data and stays stopped after a reboot. For before/after screenshots, run `switch-gateway.sh v2` (or
+`v1`), and `switch-gateway.sh v3` afterwards. v3 has its own home, so care plans, notes and logins
+added in v3 after the first deploy do not appear in v2, and `sync-gateway.sh` takes the people from
+v3's home.
 
-Rollback: `sudo tailscale serve reset`, restore the nftables backup, `sudo docker compose -f
-/opt/cmn-portal-v2/frontend/deploy/docker-compose.yml down` (v2) or `sudo docker stop cmn-portal` (v1).
+Rollback: `switch-gateway.sh v2` shows v2 again; `sudo docker compose -f
+/opt/cmn-portal-v3/frontend/deploy/docker-compose.yml down` removes v3's container (its home stays).
 
 Do not put it on the public internet: the data is personal (health-related inferences), and the
 login has no rate limiting or second factor.
