@@ -47,7 +47,8 @@ export function Markdown({ text }: { text: string }) {
       flushPara();
       const ordered = !!num;
       if (!list || list.ordered !== ordered) { flushList(); list = { ordered, items: [] }; }
-      list.items.push((bullet ?? num)![1]);
+      // a bullet character the model wrote after the list marker ("- • text", "- - text") is not a second bullet
+      list.items.push((bullet ?? num)![1].replace(/^(?:[-*•]\s+)+/, ""));
     } else if (!line.trim()) {
       flushPara(); flushList();
     } else if (list && /^\s{2,}/.test(raw)) {
