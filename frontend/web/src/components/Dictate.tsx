@@ -26,14 +26,17 @@ export function useSpeech(): number | null {
 /** Add dictated words to what is already in a field. */
 export const appendText = (old: string, t: string) => (old.trim() ? `${old.trimEnd()} ${t}` : t);
 
-type Props = { onText: (text: string) => void; disabled?: boolean; inField?: boolean };
+type Props = {
+  onText: (text: string) => void; disabled?: boolean; inField?: boolean;
+  label?: string;          // what is dictated, for the button's name, e.g. "your answer" (several mics on one page)
+};
 
 /**
  * A microphone button: records in the browser and adds the spoken words to a text field. Speech is
  * turned into text by Whisper on the study's own computer; the recording is not stored and not sent
  * to any other service. Hidden when the browser cannot record or the service is not running.
  */
-export function Dictate({ onText, disabled, inField }: Props) {
+export function Dictate({ onText, disabled, inField, label }: Props) {
   const max = useSpeech();
   const [state, setState] = useState<"idle" | "recording" | "working">("idle");
   const [secs, setSecs] = useState(0);
@@ -105,13 +108,13 @@ export function Dictate({ onText, disabled, inField }: Props) {
       {error && <span className="dictate-msg" role="alert">{error}</span>}
       {state === "idle" && (
         <button type="button" className="dictate-btn" onClick={start} disabled={disabled}
-          aria-label="Dictate: speak instead of typing"
+          aria-label={label ? `Dictate ${label}: speak instead of typing` : "Dictate: speak instead of typing"}
           title="Speak instead of typing. The recording is turned into text on the study's own computer and is not stored.">
           <MicIcon />
         </button>
       )}
       {state === "recording" && (
-        <button type="button" className="dictate-btn recording" onClick={stop} aria-label="Stop recording">
+        <button type="button" className="dictate-btn recording" onClick={stop} aria-label={label ? `Stop recording ${label}` : "Stop recording"}>
           <span className="rec-dot" aria-hidden /> {clock} <b>Stop</b>
         </button>
       )}

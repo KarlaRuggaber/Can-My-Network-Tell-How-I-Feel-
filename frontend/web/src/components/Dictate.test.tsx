@@ -51,6 +51,14 @@ describe("Dictate", () => {
     expect(await screen.findByRole("button", { name: /dictate/i })).toBeTruthy();
   });
 
+  it("names what is dictated when there are several microphones on a page", async () => {
+    render(<><Dictate label="your week" onText={() => undefined} /><Dictate label="your answer" onText={() => undefined} /></>);
+    expect(await screen.findByRole("button", { name: "Dictate your answer: speak instead of typing" })).toBeTruthy();
+    const mic = screen.getByRole("button", { name: /^Dictate your week/ });
+    await act(async () => { fireEvent.click(mic); });
+    expect(await screen.findByRole("button", { name: "Stop recording your week" })).toBeTruthy();
+  });
+
   it("appends to what is already typed", () => {
     expect(appendText("", "hello")).toBe("hello");
     expect(appendText("I go to school. ", "On Fridays")).toBe("I go to school. On Fridays");

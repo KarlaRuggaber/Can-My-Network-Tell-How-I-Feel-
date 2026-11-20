@@ -69,6 +69,8 @@ away/home days and on free days (HH:MM, 24 h; null when not mentioned); and the 
 and whether others share the device. Keep a short "note" for anything relevant that does not fit
 (e.g. "every second weekend with my father"). Do not invent: leave times null and devices out when
 the description does not say. Days or halves not mentioned: Monday-Friday "away", weekend "free".
+The text may also be the answer to one follow-up question ("Question: ... Answer: ..."); then fill
+in what the answer says (read with the question) and leave everything else null or at the default.
 """
 
 FOCUS_SYSTEM = """\
@@ -97,8 +99,64 @@ def complete_json(cfg: dict[str, Any], system: str, user: str, schema: dict[str,
 
 
 def suggest_routine(cfg: dict[str, Any], text: str, **clients: Any) -> dict[str, Any]:
+    """The routine form filled in from a description, plus `missing`: the follow-up questions for what
+    the description left open (see `missing_fields`). The form ignores `missing` when it is saved."""
     raw = complete_json(cfg, ROUTINE_SYSTEM, f"<description>\n{text}\n</description>", ROUTINE_SCHEMA, **clients)
-    return care_mod.clean_routine(raw)        # validated like a routine typed in by hand
+    routine = care_mod.clean_routine(raw)     # validated like a routine typed in by hand
+    return {**routine, "missing": missing_fields(routine)}
+
+
+# ---- follow-up questions: what a description of the week left open --------------------------------
+# Decided by rules, not by the model: the model only fills the form from the answers.
+
+_WORKDAYS = ("away", "home")
+DEFAULT_WEEK = {d: {h: ("free" if d in ("sat", "sun") else "away") for h in care_mod.HALVES} for d in care_mod.WEEKDAYS}
+
+
+def _pair(routine: dict[str, Any], qid: str, a: str, b: str, both: str, only_a: str, only_b: str) -> list[dict[str, Any]]:
+    """One question for two times (e.g. bedtime and waking): both missing, or just the one that is."""
+    miss = [k for k in (a, b) if not routine.get(k)]
+    if not miss:
+        return []
+    text = both if len(miss) == 2 else (only_a if miss == [a] else only_b)
+    return [{"id": qid, "fields": miss, "question": text}]
+
+
+def missing_fields(routine: dict[str, Any]) -> list[dict[str, Any]]:
+    """What the routine still lacks, as plain-language questions in the order they are asked.
+
+    Each item is {"id", "fields", "question"}: `fields` are the routine keys the answer fills in.
+    Missing: the week still exactly at the default (Mon-Fri away, weekend free: maybe never said),
+    the times away when a day is away, bedtime and waking for school/work days and for free days
+    (each only if such days exist), and no devices.
+    """
+    week = care_mod.clean_routine({"week": routine.get("week") or {}})["week"]
+    kinds = {t for d in week.values() for t in d.values()}
+    out: list[dict[str, Any]] = []
+    if week == DEFAULT_WEEK:
+        out.append({"id": "week", "fields": ["week"], "question":
+                    "Which days are you away for school or work, which do you spend at home, and which are free? "
+                    "For example: school Monday to Friday, Wednesday afternoons at home, weekends free."})
+    if "away" in kinds:
+        out += _pair(routine, "away_times", "away_from", "away_to",
+                     "On school or work days, when do you usually leave home, and when are you back?",
+                     "On school or work days, when do you usually leave home?",
+                     "On school or work days, when are you usually back home?")
+    if kinds & set(_WORKDAYS):
+        out += _pair(routine, "sleep_workdays", "bedtime", "wake",
+                     "On school or work days, when do you usually go to bed, and when do you get up?",
+                     "When do you usually go to bed on school or work days?",
+                     "When do you usually get up on school or work days?")
+    if "free" in kinds:
+        out += _pair(routine, "sleep_free", "bedtime_free", "wake_free",
+                     "On weekends and other free days, when do you usually go to bed, and when do you get up?",
+                     "When do you usually go to bed on weekends and other free days?",
+                     "When do you usually get up on weekends and other free days?")
+    if not routine.get("devices"):
+        out.append({"id": "devices", "fields": ["devices"], "question":
+                    "Which devices do you use at home, for example a phone, a laptop or a tablet? "
+                    "Do you share any of them with others?"})
+    return out
 
 
 def suggest_focus(cfg: dict[str, Any], clinical_text: dict[str, str], routine: dict[str, Any] | None,
