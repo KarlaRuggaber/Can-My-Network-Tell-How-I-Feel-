@@ -258,6 +258,7 @@ function Charts({ tl, person, selectedDay, onSelectDay }: {
       </p>
 
       <h3 className="chart-title">Day by day</h3>
+      <p className="chart-drag-hint phone-only">Showing the last 7 days. Drag a chart sideways for earlier days; all rows move together.</p>
       <p className="sub band-key">
         {rangeKeys(purpose === "assessment")}
         {baselineKey}
@@ -367,6 +368,7 @@ function DayNight({ days, nightShade, midnight, selectedDay, onSelectDay }: {
       xAxis: {
         type: "time", min: days.length ? tsOf(days[0].date, 0) : undefined,
         max: days.length ? tsOf(days[days.length - 1].date, 0) + 864e5 : undefined,
+        minInterval: 864e5,   // one date label per day (no repeated dates when few days are shown)
         axisLabel: { ...AXIS_LABEL, formatter: "{dd}/{MM}" }, splitLine: { show: false },
         axisLine: { lineStyle: { color: C.grid } },
       },
@@ -387,6 +389,7 @@ function DayNight({ days, nightShade, midnight, selectedDay, onSelectDay }: {
     };
   }, [days, nightShade, midnight, selectedDay]);
   return <Chart option={option} height={180} ariaLabel="Minutes in use per hour over the selected days"
+    scroll={{ visible: 3, total: days.length, hint: true }}
     onClick={(p) => { const v = (p.data as [number, number])?.[0]; if (v) { const d = new Date(v - 18e5); onSelectDay(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`); } }} />;
 }
 
@@ -462,6 +465,7 @@ function QuietWindows({ tl, days, person, flagged, selectedDay, onSelectDay }: {
     };
   }, [tl, days, person, flagged, selectedDay]);
   return <Chart option={option} height={240} ariaLabel="Devices quiet at night, per night"
+    scroll={{ visible: 7, total: days.length, hint: true }}
     onClick={(p) => { const i = (p.data as number[])?.[0]; if (days[i]) onSelectDay(days[i].date); }} />;
 }
 
@@ -537,5 +541,6 @@ function TrackChart({ tl, days, track, person, group, selectedDay, onSelectDay }
     };
   }, [tl, days, track, person, selectedDay]);
   return <Chart option={option} height={track === "sensitive_days" ? 80 : 120} group={group} ariaLabel={`Daily values: ${track}`}
+    scroll={{ visible: 7, total: days.length }}
     onClick={(p) => days[p.dataIndex] && onSelectDay(days[p.dataIndex].date)} />;
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AutoTextarea } from "./AutoTextarea";
 import { api, WEEKDAYS, type DayType, type Half, type HalfDays, type NamedDevice, type Routine, type SourceDevice } from "../api";
 import { fmtNum } from "../lib/format";
 import { appendText, Dictate } from "./Dictate";
@@ -134,7 +135,7 @@ export function RoutineForm({ profileId, value, onChange, person, assistant, sec
         <div className="describe">
           <label className="field">{person ? "Describe your usual week in your own words" : "Describe the usual week (or paste what the patient said)"}
             <span className="dictate-wrap">
-              <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)}
+              <AutoTextarea rows={3} value={text} onChange={(e) => setText(e.target.value)}
                 placeholder="e.g. School Monday to Friday from 8 to 4, Wednesdays online from home. Usually in bed around 11, up at 7; on weekends I sleep longer. I use my iPhone and a school laptop; the iPad belongs to the family." />
               <Dictate inField disabled={busy} label="your week" onText={(t) => {   // spoken: fill in the form straight away
                 const description = appendText(text, t);
@@ -281,7 +282,7 @@ export function RoutineForm({ profileId, value, onChange, person, assistant, sec
       {show("note") && (
         <label className="field">{person ? "Anything else that matters for your week? (optional)" : "Note (optional)"}
           <span className="dictate-wrap">
-            <textarea rows={2} value={value.note} maxLength={1000} onChange={(e) => set({ note: e.target.value })}
+            <AutoTextarea rows={2} value={value.note} maxLength={1000} onChange={(e) => set({ note: e.target.value })}
               placeholder="e.g. every second weekend at my father's" />
             <Dictate inField label="the note" onText={(t) => set({ note: appendText(value.note, t).slice(0, 1000) })} />
           </span>
@@ -302,7 +303,7 @@ function FollowUp({ q, n, total, busy, onAnswer, onSkip, onSkipAll }: {
       <legend>Question {n} of {total}</legend>
       <label className="field">{q.question}
         <span className="dictate-wrap">
-          <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder="Your answer, in your own words" />
+          <AutoTextarea rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder="Your answer, in your own words" />
           <Dictate inField disabled={busy} label="your answer" onText={(t) => { const a = appendText(text, t); setText(a); onAnswer(a); }} />
         </span>
       </label>

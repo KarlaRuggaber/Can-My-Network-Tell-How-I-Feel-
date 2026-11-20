@@ -13,6 +13,7 @@ validated before it reaches the browser.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from . import care as care_mod, llm
@@ -65,12 +66,26 @@ about noon) and the afternoon ("pm"), whether it is spent "away" (school, work, 
 home), at "home" (home office, online school, working or studying at home) or "free" (weekend, day
 off, nothing scheduled). Example: school on Monday morning and nothing in the afternoon is
 {"am": "away", "pm": "free"}. Also the usual times away (on away days), bedtime and waking on
-away/home days and on free days (HH:MM, 24 h; null when not mentioned); and the devices they use in plain words with a kind
-and whether others share the device. Keep a short "note" for anything relevant that does not fit
-(e.g. "every second weekend with my father"). Do not invent: leave times null and devices out when
-the description does not say. Days or halves not mentioned: Monday-Friday "away", weekend "free".
-The text may also be the answer to one follow-up question ("Question: ... Answer: ..."); then fill
-in what the answer says (read with the question) and leave everything else null or at the default.
+away/home days and on free days (HH:MM, 24 h); and the devices they use in plain words with a kind
+and whether others share the device. Days or halves not mentioned: Monday-Friday "away", weekend "free".
+
+Times: fill in every clock time the person gives, read in context, and convert it to HH:MM, 24 h.
+Leaving home is in the morning unless they say otherwise ("9:30" = 09:30). "Back" or "home again" is
+usually afternoon or evening ("back at 6" = 18:00, "6 p.m." = 18:00). Bedtime is evening or night
+("11" = 23:00, "half past 12" = 00:30). Waking is in the morning ("7" = 07:00). Approximate times
+("around 7") are fine. Leave a time null only when the person gives no time for it; do not invent
+times or devices the person does not mention.
+
+"note" is only for facts about the person's week that do not fit the form, written as a short plain
+statement in the person's own terms, for example "Every second weekend with my father." At most
+two sentences. The note must never describe the form, the question, what was or was not mentioned,
+defaults, assumptions, interpretations or transcription errors, and never repeats what is already in
+the week, the times or the devices. Use an empty string when there is nothing extra.
+
+The text may be dictated and contain transcription slips ("phone in the laptop" means "phone and
+laptop"); read it as meant, silently. The text may also be the answer to one follow-up question
+("Question: ... Answer: ..."); then fill in what the answer says (read with the question) and leave
+everything else null or at the default.
 """
 
 FOCUS_SYSTEM = """\
@@ -102,8 +117,37 @@ def suggest_routine(cfg: dict[str, Any], text: str, **clients: Any) -> dict[str,
     """The routine form filled in from a description, plus `missing`: the follow-up questions for what
     the description left open (see `missing_fields`). The form ignores `missing` when it is saved."""
     raw = complete_json(cfg, ROUTINE_SYSTEM, f"<description>\n{text}\n</description>", ROUTINE_SCHEMA, **clients)
+    raw = {**raw, "note": clean_note(raw.get("note"))}
+    for field, value in times_from_answer(text, raw).items():   # a clear time the model left out
+        if not raw.get(field):
+            raw[field] = value
     routine = care_mod.clean_routine(raw)     # validated like a routine typed in by hand
     return {**routine, "missing": missing_fields(routine)}
+
+
+# ---- the note: facts about the week only ------------------------------------------------------------
+
+_META = re.compile(
+    r"\b(users?|the person|this person|person's|provided|mention(?:s|ed|ing)?|not specified|unspecified|"
+    r"not (?:given|stated|said|clear)|defaults?|defaulting|instructions?|interpret\w*|transcription|"
+    r"questions?|likely|assum\w*|the text|the description|form|null)\b", re.I)
+NOTE_MAX = 300
+
+
+def clean_note(note: Any) -> str:
+    """Keep only the sentences of a note that state a fact about the week: the model sometimes writes its
+    reasoning there ("User mentions ...", "defaulting to ..."), which is dropped."""
+    if not isinstance(note, str):
+        return ""
+    kept = [s.strip() for s in re.split(r"(?<=[.!?])\s+|\n+", note.strip()) if s.strip() and not _META.search(s)]
+    out = ""
+    for s in kept:
+        if out and len(out) + 1 + len(s) > NOTE_MAX:
+            break
+        out = f"{out} {s}".strip()
+    if len(out) > NOTE_MAX:
+        out = out[:NOTE_MAX].rsplit(" ", 1)[0].rstrip(",;:") + "."
+    return out
 
 
 # ---- follow-up questions: what a description of the week left open --------------------------------
@@ -113,11 +157,39 @@ _WORKDAYS = ("away", "home")
 DEFAULT_WEEK = {d: {h: ("free" if d in ("sat", "sun") else "away") for h in care_mod.HALVES} for d in care_mod.WEEKDAYS}
 
 
-def _pair(routine: dict[str, Any], qid: str, a: str, b: str, both: str, only_a: str, only_b: str) -> list[dict[str, Any]]:
+# question texts per id: (both missing, only the first, only the second)
+QUESTIONS: dict[str, tuple[str, str, str]] = {
+    "away_times": ("On school or work days, when do you usually leave home, and when are you back?",
+                   "On school or work days, when do you usually leave home?",
+                   "On school or work days, when are you usually back home?"),
+    "sleep_workdays": ("On school or work days, when do you usually go to bed, and when do you get up?",
+                       "When do you usually go to bed on school or work days?",
+                       "When do you usually get up on school or work days?"),
+    "sleep_free": ("On weekends and other free days, when do you usually go to bed, and when do you get up?",
+                   "When do you usually go to bed on weekends and other free days?",
+                   "When do you usually get up on weekends and other free days?"),
+}
+_PAIRS = {"away_times": ("away_from", "away_to"), "sleep_workdays": ("bedtime", "wake"),
+          "sleep_free": ("bedtime_free", "wake_free")}
+WEEK_QUESTION = ("Which days are you away for school or work, which do you spend at home, and which are free? "
+                 "For example: school Monday to Friday, Wednesday afternoons at home, weekends free.")
+DEVICES_QUESTION = ("Which devices do you use at home, for example a phone, a laptop or a tablet? "
+                    "Do you share any of them with others?")
+
+# the time questions by their exact text -> the fields they ask for
+TIME_QUESTIONS: dict[str, list[str]] = {}
+for _qid, (_both, _first, _second) in QUESTIONS.items():
+    _a, _b = _PAIRS[_qid]
+    TIME_QUESTIONS.update({_both: [_a, _b], _first: [_a], _second: [_b]})
+
+
+def _pair(routine: dict[str, Any], qid: str) -> list[dict[str, Any]]:
     """One question for two times (e.g. bedtime and waking): both missing, or just the one that is."""
+    a, b = _PAIRS[qid]
     miss = [k for k in (a, b) if not routine.get(k)]
     if not miss:
         return []
+    both, only_a, only_b = QUESTIONS[qid]
     text = both if len(miss) == 2 else (only_a if miss == [a] else only_b)
     return [{"id": qid, "fields": miss, "question": text}]
 
@@ -134,29 +206,123 @@ def missing_fields(routine: dict[str, Any]) -> list[dict[str, Any]]:
     kinds = {t for d in week.values() for t in d.values()}
     out: list[dict[str, Any]] = []
     if week == DEFAULT_WEEK:
-        out.append({"id": "week", "fields": ["week"], "question":
-                    "Which days are you away for school or work, which do you spend at home, and which are free? "
-                    "For example: school Monday to Friday, Wednesday afternoons at home, weekends free."})
+        out.append({"id": "week", "fields": ["week"], "question": WEEK_QUESTION})
     if "away" in kinds:
-        out += _pair(routine, "away_times", "away_from", "away_to",
-                     "On school or work days, when do you usually leave home, and when are you back?",
-                     "On school or work days, when do you usually leave home?",
-                     "On school or work days, when are you usually back home?")
+        out += _pair(routine, "away_times")
     if kinds & set(_WORKDAYS):
-        out += _pair(routine, "sleep_workdays", "bedtime", "wake",
-                     "On school or work days, when do you usually go to bed, and when do you get up?",
-                     "When do you usually go to bed on school or work days?",
-                     "When do you usually get up on school or work days?")
+        out += _pair(routine, "sleep_workdays")
     if "free" in kinds:
-        out += _pair(routine, "sleep_free", "bedtime_free", "wake_free",
-                     "On weekends and other free days, when do you usually go to bed, and when do you get up?",
-                     "When do you usually go to bed on weekends and other free days?",
-                     "When do you usually get up on weekends and other free days?")
+        out += _pair(routine, "sleep_free")
     if not routine.get("devices"):
-        out.append({"id": "devices", "fields": ["devices"], "question":
-                    "Which devices do you use at home, for example a phone, a laptop or a tablet? "
-                    "Do you share any of them with others?"})
+        out.append({"id": "devices", "fields": ["devices"], "question": DEVICES_QUESTION})
     return out
+
+
+# ---- times from a follow-up answer: a conservative fallback when the model left them out ----------------
+
+_FOLLOW_UP = re.compile(r"^\s*Question:\s*(.*?)\s*\n\s*Answer:\s*(.*)$", re.S)
+def _ampm(name: str) -> str:
+    return r"(?P<" + name + r">[ap]\.?\s?m\b\.?)"
+
+
+_CUE = r"(?:at|around|about|by|until|till|til|from|to|before|after|approx\.?|~)"
+_TIME_RE = re.compile(
+    r"(?P<word>\bnoon\b|\bmidnight\b)"
+    r"|\b(?P<rel>half past|quarter past|quarter to)\s+(?P<rh>\d{1,2})\b\s*" + _ampm("rap") + r"?"
+    r"|\b(?P<h>\d{1,2})\s*(?:[:.]|h\s?)(?P<m>[0-5]\d)\b\s*" + _ampm("ap") + r"?"
+    r"|\b(?P<h2>\d{1,2})\s*(?:" + _ampm("ap2") + r"|o'?\s?clock\b|h\b)"
+    r"|\b" + _CUE + r"\s+(?P<h3>\d{1,2})\b(?!\s*(?:[:.]\d|[ap]\.?\s?m\b|o'?\s?clock|h\b|days?|hours?|hrs?|minutes?|mins?|weeks?|times?|nights?|x\b|years?|people|%))",
+    re.I)
+_BACK_CUE = re.compile(r"(back|home again|return\w*|get home|until|till|til|up|wake\w*|get up|got up)\W*(?:\w+\W+){0,2}$", re.I)
+
+
+def _marker(m: re.Match[str], *names: str) -> str | None:
+    for n in names:
+        if m.group(n):
+            return "a" if m.group(n)[0].lower() == "a" else "p"
+    return None
+
+
+def _raw_times(answer: str) -> list[tuple[int, int, str | None, int]]:
+    """(hour, minute, 'a'/'p'/None, position) for each clear clock time in the answer, in order."""
+    found: list[tuple[int, int, str | None, int]] = []
+    for m in _TIME_RE.finditer(answer):
+        if m.group("word"):
+            found.append((12 if m.group("word").lower() == "noon" else 0, 0, "x", m.start()))
+        elif m.group("rel"):
+            h, rel = int(m.group("rh")), m.group("rel").lower()
+            if not 0 <= h <= 24:
+                continue
+            mark = _marker(m, "rap")
+            if rel == "half past":
+                found.append((h % 24, 30, mark, m.start()))
+            elif rel == "quarter past":
+                found.append((h % 24, 15, mark, m.start()))
+            else:
+                found.append(((h - 1) % 24, 45, mark, m.start()))
+        elif m.group("h") is not None:
+            found.append((int(m.group("h")), int(m.group("m")), _marker(m, "ap"), m.start()))
+        elif m.group("h2") is not None:
+            found.append((int(m.group("h2")), 0, _marker(m, "ap2"), m.start()))
+        elif m.group("h3") is not None:
+            found.append((int(m.group("h3")), 0, None, m.start()))
+    return [t for t in found if 0 <= t[0] <= 23]
+
+
+def _resolve(field: str, h: int, m: int, mark: str | None, leave: int | None) -> str | None:
+    if mark == "x":                                   # noon / midnight
+        pass
+    elif h > 12:
+        pass                                          # already 24 h
+    elif mark == "a":
+        h = 0 if h == 12 else h
+    elif mark == "p":
+        h = h if h == 12 else h + 12
+    elif field in ("away_from", "wake", "wake_free"):
+        pass                                          # morning
+    elif field == "away_to":
+        if h < 12 and (h <= 7 or (leave is not None and h * 60 + m <= leave)):
+            h += 12
+    elif field in ("bedtime", "bedtime_free"):
+        if 6 <= h <= 11:
+            h += 12
+        elif h == 12:
+            h = 0
+    return f"{h:02d}:{m:02d}" if 0 <= h <= 23 else None
+
+
+def parse_times(answer: str, fields: list[str], leave: str | None = None) -> dict[str, str]:
+    """Clock times in `answer` for the asked `fields`: the first time for the first field, the second for
+    the second. Only clear times count ("9:30", "6 p.m.", "half past 12", "around 7"), not bare numbers."""
+    times = _raw_times(answer)
+    if not times or not fields:
+        return {}
+    chosen = times[:len(fields)]
+    targets = list(fields)
+    if len(fields) == 2 and len(chosen) == 1 and _BACK_CUE.search(answer[:chosen[0][3]]):
+        targets = fields[1:]                          # one time, said as "back at ..." / "up at ..."
+    leave_min = None
+    if leave and re.fullmatch(r"\d\d:\d\d", leave):
+        leave_min = int(leave[:2]) * 60 + int(leave[3:])
+    out: dict[str, str] = {}
+    for field, (h, m, mark, _pos) in zip(targets, chosen):
+        value = _resolve(field, h, m, mark, leave_min)
+        if value:
+            out[field] = value
+            if field == "away_from":
+                leave_min = int(value[:2]) * 60 + int(value[3:])
+    return out
+
+
+def times_from_answer(text: str, raw: dict[str, Any]) -> dict[str, str]:
+    """For a follow-up ("Question: ...\nAnswer: ...") to one of the time questions: the times the answer
+    gives for the fields the model left empty."""
+    m = _FOLLOW_UP.match(text or "")
+    fields = TIME_QUESTIONS.get(m.group(1).strip()) if m else None
+    if not m or not fields:
+        return {}
+    found = parse_times(m.group(2), fields, raw.get("away_from"))
+    return {f: v for f, v in found.items() if not raw.get(f)}
 
 
 def suggest_focus(cfg: dict[str, Any], clinical_text: dict[str, str], routine: dict[str, Any] | None,
