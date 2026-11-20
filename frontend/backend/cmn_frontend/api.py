@@ -698,6 +698,8 @@ def create_app(settings: Settings | None = None, llm_client: Any = None,
         ctx = assistant.build_context(tl, config(), person, labels)
         chunks = assistant.stream_answer(st, assistant.system_blocks(ctx, person), msgs,
                                          client=llm_client)
+        if person:      # safety net: no clinical terms reach the person, whatever the model writes
+            chunks = assistant.guard_person(chunks)
         return StreamingResponse(chunks, media_type="text/plain; charset=utf-8",
                                  headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 

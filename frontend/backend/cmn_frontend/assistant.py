@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable, Iterator
@@ -230,6 +231,9 @@ day, how a period compares with the usual weeks, and how the scoring works. Rule
 - Answer the question first, in 1–3 sentences. Where it fits, answer from <results> "week_overview"
   (the last 7 days: went quiet, back online, time in use, compared with the usual weeks); go into
   likelihoods, metrics and scoring only when the question is about them.
+- Be brief: group days that look alike ("Mon to Wed", "the weekend") instead of one line per day,
+  give only the values that answer the question, and stop once it is answered. No summary or closing
+  line that repeats the answer.
 - Use only numbers that appear in <results> (rounding is fine). Do not compute new figures such as
   differences or averages; say a difference in words ("about an hour later", "clearly less"). Name the
   day and the value you rely on. If the data does not answer a question, say so in one sentence. Never
@@ -251,7 +255,7 @@ day, how a period compares with the usual weeks, and how the scoring works. Rule
 SYSTEM_PERSON = f"""\
 You are talking with the person whose data this is. Write in plain, warm, everyday language.
 - Keep every reply to about {PERSON_MAX_WORDS} words at most, unless the person asks for more detail
-  ([More detail], "explain more", "in detail"). Short paragraphs; at most a short bullet list.
+  ([More detail], "explain more", "in detail"). Usually 2–4 sentences; at most 3 short bullets.
 - Describe only what was observed: when the devices went quiet and came back online, how long they
   were in use, use at night, chats and different sites, and how that compares with the person's usual
   weeks (more or less, earlier or later). Use the everyday area names in <results>. Do not use
@@ -275,8 +279,8 @@ You are talking with the person whose data this is. Write in plain, warm, everyd
 SYSTEM_CLINICIAN = f"""\
 You are talking with a clinician, researcher or carer who supervises this person. You may use the
 DSM-5 criterion names, the scoring notation and the numbers directly.
-- Answer first in 1–3 sentences, then at most a few bullet points with the days and values behind it.
-  Keep it under about {CLINICIAN_MAX_WORDS} words unless they ask for more detail.
+- Answer first in 1–3 sentences, then at most 4 short bullet points with the days and values behind
+  it. Keep it under about {CLINICIAN_MAX_WORDS} words unless they ask for more detail.
 - Where <results> contains expected outcomes of a scripted persona, you may compare observed with
   expected, but make clear that the expectations come from the test script, not from the data.
 - Network patterns can change for ordinary reasons (travel, holidays, a new device, guests); mention
@@ -561,6 +565,63 @@ def system_blocks(ctx: dict[str, Any], person_view: bool) -> list[dict[str, Any]
         {"type": "text", "text": SYSTEM_COMMON + (SYSTEM_PERSON if person_view else SYSTEM_CLINICIAN)},
         {"type": "text", "text": f"<results>\n{data}\n</results>", "cache_control": {"type": "ephemeral"}},
     ]
+
+
+# ---- person safety net (B3) ----
+# The prompt keeps clinical words out of person answers; the eval shows the model still slips now and
+# then (repeating "social anxiety" from the question). Every person answer therefore passes through
+# guard_person(): a sentence with one of these terms is replaced by PERSON_REPLACEMENT (once per
+# answer; further ones are dropped). Sentences that give emergency help stay, even with such a word.
+PERSON_CLINICAL_TERMS = [
+    r"depress\w*", r"insomni\w*", r"anxiety", r"anxious", r"suicid\w*", r"self[- ]?harm\w*", r"DSM(-?5)?",
+    r"criteri(on|a)", r"diagnos\w*", r"disorders?", r"symptoms?", r"MDD", r"anhedoni\w*", r"psychomotor",
+    r"mania", r"manic", r"bipolar", r"fatigue", r"worthless\w*", r"mental (illness|disorder|health condition)",
+    r"psychiatr\w*", r"clinical(ly)?", r"patholog\w*", r"C[1-9]",
+]
+PERSON_TERMS_RE = re.compile(r"(?<![\w-])(" + "|".join(PERSON_CLINICAL_TERMS) + r")(?![\w])", re.IGNORECASE)
+_EMERGENCY_RE = re.compile(r"\b(14[34]|emergency|Dargebotene Hand)\b", re.IGNORECASE)
+PERSON_REPLACEMENT = "Your data shows when your devices were in use, not why; your care team can talk it through with you."
+_SENTENCE_END = re.compile(r"(?<=[.!?])[\"')\]*]*[ \t]+|\n+")
+_LIST_MARK = re.compile(r"^(\s*(?:[-*•]|\d+\.)\s+)")
+
+
+def _guard_sentence(sentence: str, sep: str, state: dict[str, int]) -> str:
+    line_start = state.get("line_start", 1)
+    state["line_start"] = int("\n" in sep)
+    if not PERSON_TERMS_RE.search(sentence) or _EMERGENCY_RE.search(sentence):
+        return sentence + sep
+    state["replaced"] += 1
+    if state["replaced"] == 1:
+        mark = _LIST_MARK.match(sentence)
+        return (mark.group(1) if mark else "") + PERSON_REPLACEMENT + sep
+    if "\n" not in sep:
+        return ""
+    return "" if line_start else sep      # a whole dropped line goes; a dropped line end keeps the break
+
+
+def guard_person(chunks: Iterable[str], state: dict[str, int] | None = None) -> Iterator[str]:
+    """The answer stream for the person, sentence by sentence, without clinical terms."""
+    state = state if state is not None else {}
+    state.setdefault("replaced", 0)
+    buf = ""
+    for chunk in chunks:
+        buf += chunk
+        last = 0
+        for m in _SENTENCE_END.finditer(buf):
+            if m.end() == len(buf):          # the separator may continue in the next chunk
+                break
+            yield _guard_sentence(buf[last:m.start()], buf[m.start():m.end()], state)
+            last = m.end()
+        buf = buf[last:]
+    if buf:
+        tail = len(buf) - len(buf.rstrip())
+        yield _guard_sentence(buf[:len(buf) - tail], buf[len(buf) - tail:], state)
+
+
+def guard_person_text(text: str) -> tuple[str, int]:
+    """guard_person() on a whole answer: (guarded text, number of sentences replaced or dropped)."""
+    state: dict[str, int] = {}
+    return "".join(guard_person([text], state)), state["replaced"]
 
 
 def control_message(text: str) -> str | None:

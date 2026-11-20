@@ -39,6 +39,8 @@ def test_answer_first_short_and_from_the_week_overview():
     assert assistant.PERSON_MAX_WORDS == 80
     assert "unless the person asks for more detail" in prompt(True)
     assert f"under about {assistant.CLINICIAN_MAX_WORDS} words" in prompt(False)
+    assert "group days that look alike" in prompt(False) and "instead of one line per day" in prompt(False)
+    assert "at most 3 short bullets" in prompt(True) and "at most 4 short bullet points" in prompt(False)
 
 
 def test_person_guardrail_observations_only_even_when_asked_again():
@@ -200,6 +202,7 @@ GROUND = ev.Grounding.from_texts([json.dumps({
     ("Criterion C4 and F8 have no free numbers.", []),
     ("About 11,700 packets, not 9,500.", ["9,500"]),        # thousands separators
     ("About 12k packets, not 40k.", ["40k"]),               # abbreviated figures
+    ("Between 11.7–12k packets, not 30–40k.", ["30k", "40k"]),  # the unit of a range applies to both ends
     ("Usually about 01:35 or 01:37, not 01:45.", ["01:45"]),  # clock times within 2 minutes
 ])
 def test_numbers_must_exist_in_what_was_sent(answer, bad):
@@ -304,3 +307,90 @@ def test_run_case_with_a_fake_model():
     assert recs[1]["checks"]["control"] is True and recs[0]["checks"]["numbers"] is True
     assert fake.calls[1]["messages"][-1]["content"].startswith("[Shorter]")
     assert fake.calls[1]["messages"][1] == {"role": "assistant", "content": recs[0]["answer"]}
+
+
+# ---- person safety net (B3) ----
+
+def test_safety_net_replaces_clinical_sentences_once():
+    text = ("I can't say that. The data can't point to anything like social anxiety. Talk to your care team.\n\n"
+            "What it does show: later nights on **Mon** and Tue.")
+    out, n = assistant.guard_person_text(text)
+    assert n == 1 and "anxiety" not in out and assistant.PERSON_REPLACEMENT in out
+    assert out.startswith("I can't say that. ") and out.endswith("later nights on **Mon** and Tue.")
+    out, n = assistant.guard_person_text("- Later nights.\n- Maybe insomnia.\n- Or depression.\n- Fine.")
+    assert n == 2 and out == f"- Later nights.\n- {assistant.PERSON_REPLACEMENT}\n- Fine."
+    assert assistant.guard_person_text("Your devices went quiet later than usual.") == (
+        "Your devices went quiet later than usual.", 0)
+
+
+def test_safety_net_keeps_emergency_help():
+    text = "If you are thinking about self-harm, please call 143 or 144 now."
+    assert assistant.guard_person_text(text) == (text, 0)
+
+
+@pytest.mark.parametrize("cut", [1, 5, 17, 30, 44])
+def test_safety_net_works_on_any_stream_split(cut):
+    text = "Your nights were later. Not depressed, just later.\nAnd 7.5 hours in use. Ok."
+    want, _ = assistant.guard_person_text(text)
+    assert "".join(assistant.guard_person([text[:cut], text[cut:]])) == want
+    assert "".join(assistant.guard_person(list(text))) == want        # one character per chunk
+    assert "depressed" not in want and "7.5 hours in use. Ok." in want
+
+
+def test_portal_applies_the_safety_net_for_the_person_only(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from cmn_frontend import auth
+    from cmn_frontend.api import create_app
+    from cmn_frontend.export import export_dataset
+    from cmn_frontend.profiles import Profile, ProfileStore
+    from fixtures import DS, make_run
+    s = make_run(tmp_path)
+    export_dataset(DS, s)
+    ProfileStore(s).upsert(Profile("ben2", "Ben", DS, all_devices=True, persona="gw_insomnia_a"))
+    users = auth.UserStore(s.home_dir)
+    users.add("ben", "pw-ben", "single", ["ben2"])
+    users.add("doc", "pw-doc", "multi", ["*"])
+    monkeypatch.setenv("CMN_ASSISTANT", "1")
+    raw = "Your nights were later. That looks like insomnia. Talk to your care team."
+    fake = FakeClaude([raw, raw])
+    app = create_app(s, llm_client=fake)
+    for user, guarded in (("ben", True), ("doc", False)):
+        c = TestClient(app)
+        c.post("/api/login", json={"username": user, "password": f"pw-{user}"})
+        r = c.post("/api/profiles/ben2/assistant", json={"messages": [{"role": "user", "content": "Sleep?"}]})
+        assert r.status_code == 200
+        assert ("insomnia" in r.text) is not guarded
+        assert (assistant.PERSON_REPLACEMENT in r.text) is guarded
+
+
+# ---- eval: info checks, saved contexts, provider override ----
+
+def test_length_is_reported_not_failed():
+    case = ev.Case("x", "person", ev.BEN, ("How was my week?",))
+    r = ev.check_answer(case, 0, "Usual week. " * 60, None, GROUND)
+    assert r["checks"]["length"] is False and ev.failed_checks(r) == []
+    assert r["guard"] == {"replaced": 0, "terms_left": []}
+    md = ev.markdown([r], {"model": "m", "date": "d", "product": "Rhythm", "n_cases": 1, "last_days": "-"})
+    assert "Length (info)" in md and "long (info)" in md and "changed 0 of 1 person answers" in md
+
+
+def test_saved_contexts_round_trip(tmp_path):
+    ctx = {(ev.BEN, "person"): {"system": [{"type": "text", "text": "x"}], "last_day": "2026-11-20", "chars": 1},
+           (ev.CARL, "clinician"): {"system": [], "last_day": "2026-11-20", "chars": 0}}
+    path = tmp_path / "ctx.json"
+    ev.save_contexts(ctx, path)
+    assert ev.read_contexts(path, list(ev.PERSONAS), ["person", "clinician"]) == ctx
+    assert list(ev.read_contexts(path, [ev.BEN], ["person"])) == [(ev.BEN, "person")]
+
+
+def test_command_line_provider_wins_over_saved_settings(tmp_path, monkeypatch):
+    from fixtures import make_run
+    s = make_run(tmp_path)
+    assistant.AssistantConfig(s.home_dir).save(True, "claude-sonnet-5-5", "sk-ant-test")
+    monkeypatch.delenv("CMN_LOCAL_URL", raising=False)
+    monkeypatch.delenv("CMN_LOCAL_API_KEY", raising=False)
+    cfg = ev.model_config(s, "local", "qwen3.8:27b-mlx", None)
+    assert cfg["provider"] == "local" and cfg["model"] == "qwen3.8:27b-mlx"
+    assert cfg["base_url"] == "http://127.0.0.1:11434/v1" and cfg["api_key"] == ""    # never the Claude key
+    assert ev.model_config(s, "local", None, "http://10.0.0.5:1234/v1")["base_url"] == "http://10.0.0.5:1234/v1"
+    assert ev.model_config(s, None, None, None)["provider"] == "anthropic"
