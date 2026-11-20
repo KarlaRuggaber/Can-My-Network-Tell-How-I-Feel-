@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { Timeline } from "../api";
 import { fmtDay, fmtNum } from "../lib/format";
+import { axisName } from "../lib/chart";
 import { C } from "../theme";
 import { Chart } from "./Chart";
 
@@ -18,12 +19,12 @@ export function HourlyHeatmap({ tl, selectedDay, onSelectDay, step }: Props) {
     const q = (p: number) => logs.length ? logs[Math.min(logs.length - 1, Math.floor(p * (logs.length - 1)))] : 0;
     const lo = q(0.10), hi = Math.max(q(0.98), lo + 1e-6);
     const level = (v: number) => Math.min(1, Math.max(0, (Math.log1p(v) - lo) / (hi - lo)));
-    const color = (v: number) => (v <= 0 ? "#f6f3ef" : C.seq[Math.round(level(v) * (C.seq.length - 1))]);
+    const color = (v: number) => (v <= 0 ? "#f6f3ef" : C.intensity[Math.round(level(v) * (C.intensity.length - 1))]);
     const sel = days.findIndex((d) => d.date === selectedDay);
     const data = days.flatMap((d, y) => (d.hourly as number[]).map((v, h) => [h, y, v]));
     return {
       animation: false,
-      grid: { left: 96, right: 12, top: 8, bottom: 28 },
+      grid: { left: 96, right: 12, top: 8, bottom: 44 },
       tooltip: {
         formatter: (p: { data: number[] }) => {
           const [h, y, v] = p.data;
@@ -34,12 +35,18 @@ export function HourlyHeatmap({ tl, selectedDay, onSelectDay, step }: Props) {
       },
       xAxis: {
         type: "category", data: Array.from({ length: 24 }, (_, h) => String(h).padStart(2, "0")),
+        ...axisName("clock time", "hour of day"), nameRotate: 0, nameGap: 26,
         axisLabel: { color: C.text2, fontSize: 10 }, axisTick: { show: false }, axisLine: { show: false },
       },
       yAxis: {
         type: "category", inverse: true,
-        data: days.map((d) => `${d.phase === "current" ? "● " : ""}${d.weekday.slice(0, 2)} ${fmtDay(d.date)}`),
-        axisLabel: { color: C.text2, fontSize: 10 }, axisTick: { show: false }, axisLine: { show: false },
+        data: days.map((d) => `${d.weekday.slice(0, 2)} ${fmtDay(d.date)}`),
+        // baseline days get the neutral baseline shade behind their label; the current period stays plain
+        axisLabel: {
+          color: C.text2, fontSize: 10,
+          formatter: (v: string, i: number) => (days[i]?.phase === "baseline" ? `{base|${v}}` : v),
+          rich: { base: { backgroundColor: C.baselineShade, color: C.ink, padding: [2, 4], borderRadius: 3, fontSize: 10 } },
+        }, axisTick: { show: false }, axisLine: { show: false },
       },
       series: [{
         type: "custom", data, encode: { x: 0, y: 1, tooltip: [2] },
@@ -62,8 +69,15 @@ export function HourlyHeatmap({ tl, selectedDay, onSelectDay, step }: Props) {
     <section className="card">
       <div className="card-head">
         <h2><span className="step">{step}</span>When the devices were online</h2>
-        <p className="sub">Packets per hour and day (darker = more, log scale, relative to this person's own hours; ● = {labels.current.toLowerCase()} period).
-          Late nights, early waking and quiet days show up as patterns. Click a day to open it below.</p>
+        <p className="sub">Packets per hour and day (log scale, relative to this person's own hours). Late nights, early waking and
+          quiet days show up as patterns. Click a day to open it below.</p>
+        <div className="small muted" style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", marginTop: 6 }}>
+          <span className="key" title="Neutral scale, lightness only">
+            fewer packets {C.intensity.map((c) => <i key={c} style={{ display: "inline-block", width: 10, height: 10, background: c }} />)} more
+          </span>
+          <span className="key"><i style={{ display: "inline-block", width: 14, height: 10, background: "#f6f3ef", border: "1px solid var(--border)", marginRight: 4 }} /> no packets</span>
+          <span className="key"><i style={{ display: "inline-block", width: 14, height: 10, background: C.baselineShade, marginRight: 4 }} /> {labels.baseline} (usual weeks)</span>
+        </div>
       </div>
       <Chart option={option} height={46 + days.length * 20} ariaLabel="Packets per hour of each day"
         onClick={(p) => { const y = (p.data as number[])[1]; if (days[y]) onSelectDay(days[y].date); }} />
