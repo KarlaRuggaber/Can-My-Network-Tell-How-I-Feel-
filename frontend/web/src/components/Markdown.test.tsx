@@ -28,4 +28,13 @@ describe("Markdown", () => {
     expect(container.querySelector("p")?.textContent).toBe("Quiet later on most nights.");
     expect(container.textContent).not.toContain("**");
   });
+
+  it("shows one bullet when the model writes a bullet character after the list marker", () => {
+    const { container } = render(<Markdown text={"- • **Mon 16/11:** quiet for **5.5 h**\n- - **Tue 17/11:** usual"} />);
+    const items = container.querySelectorAll("li");
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toBe("Mon 16/11: quiet for 5.5 h");
+    expect(items[0].querySelectorAll("strong")).toHaveLength(2);
+    expect(items[1].textContent).toBe("Tue 17/11: usual");
+  });
 });

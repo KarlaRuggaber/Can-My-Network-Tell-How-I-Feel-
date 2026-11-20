@@ -422,5 +422,11 @@ def test_context_has_named_scores_as_whole_percentages_and_rounded_values():
 def test_prompt_asks_for_names_rounded_numbers_and_paired_bold_markers():
     s = assistant.SYSTEM_COMMON
     assert "never write variable names" in s and '"probability"' in s and "whole" in s
-    assert "never \"Mon 16/11:**\"" in s
+    assert "\"Mon 16/11:**\"" in s and "never" in s
     assert "scoring notation" not in assistant.SYSTEM_CLINICIAN
+
+
+def test_prompt_bolds_key_values_inside_bullets_and_one_bullet_marker():
+    s = assistant.SYSTEM_COMMON
+    assert "also put the one or two key values or changes in bold" in s
+    assert "**5.5 h**" in s and 'starts with "- " and nothing else' in s
