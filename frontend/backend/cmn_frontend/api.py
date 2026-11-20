@@ -27,7 +27,7 @@ from .notes import NoteStore
 from .groundtruth import blocks_on_day, day_summary, load_devices, load_plan, phase_by_day
 from .personas import PHASE_LABEL, persona_meta
 from .profiles import Device, Profile, ProfileStore
-from .settings import Settings, load_settings
+from .settings import PRODUCT_NAME, Settings, load_settings
 from .store import DayStore
 
 DEFAULT_BASELINE_DAYS = 14
@@ -326,7 +326,7 @@ def create_app(settings: Settings | None = None, llm_client: Any = None,
                speech_transport: Any = None) -> FastAPI:
     settings = settings or load_settings()
     assistant_cfg = assistant.AssistantConfig(settings.home_dir)
-    app = FastAPI(title="Can My Network Tell How I Feel? – results API")
+    app = FastAPI(title=f"{PRODUCT_NAME} – results API")
     app.add_middleware(GZipMiddleware, minimum_size=2048)
     users = auth.UserStore(settings.home_dir)
     profiles = ProfileStore(settings)
