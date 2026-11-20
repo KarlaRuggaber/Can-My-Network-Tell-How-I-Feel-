@@ -1,6 +1,11 @@
-// Look of the midterm presentation: Book Antiqua titles, Arial text, red #DC3A4F and beige #EBD6C1,
-// thin black outlines. Data colors checked with the dataviz palette validator (light mode).
+// Look of the midterm presentation: Book Antiqua titles, Arial text, thin black outlines. v3 rules
+// (frontend/VISUAL.md): red only for alerts, one neutral intensity scale, only the baseline period
+// shaded. Data colours checked with the dataviz palette validator (light mode, white surface).
 export const BRAND = { red: "#DC3A4F", beige: "#EBD6C1", ink: "#262626" };
+
+/** Placeholder product name (decision §8); the thesis title stays only in an "About" line. */
+export const PRODUCT_NAME = "Rhythm";
+export const PRODUCT_SUBTITLE = "Home network overview";
 
 export const FONT = {
   serif: '"Book Antiqua", "Palatino Linotype", Palatino, "URW Palladio L", Georgia, serif',
@@ -14,19 +19,39 @@ export const C = {
   grid: "#e9e2da",
   surface: "#ffffff",
   ink: BRAND.ink,
-  // devices (categorical): blue and a tan from the beige family; brand red stays free for
-  // "clinical" and "present". Validated: CVD ΔE 25 (protan), contrast >= 3:1.
+  // devices (categorical, unchanged from v2): blue and a tan from the beige family.
+  // Validated: CVD ΔE 25 (protan), contrast >= 3:1.
   phone: "#2f6fb8",
   laptop: "#a8702c",
-  clinical: BRAND.red,              // clinical phase (strip, shading, Gantt)
-  baseline: BRAND.beige,            // baseline phase (strip)
-  baselineBand: "rgba(168,112,44,0.12)",
-  clinicalTint: "rgba(220,58,79,0.07)",
-  critical: "#b3243a",              // status: present / episode (text 6.5:1 on white)
+
+  // Neutral sequential scale for "more / less use" (heatmaps, 24-hour strip, μ dots, likelihood
+  // grid): light warm grey -> dark brown-grey, one hue (OKLCH h 62°), lightness only, L 0.775 ->
+  // 0.27 in even steps. Validator (--ordinal): monotone, every gap ΔL >= 0.06, light end 2.04:1;
+  // steps 2+ clear 3:1 as marks.
+  intensity: ["#bcb4ae", "#a69d96", "#92877e", "#7e7268", "#6a5d51", "#57483c", "#443528", "#322315"],
+  intensityWhiteFrom: 3,            // white cell text from this step on (>= 4.67:1); ink before it (>= 4.96:1)
+
+  // The only reds: a flag that needs attention, crisis/self-harm sites, "present", the C9 signal,
+  // recording. alert is 6.5:1 on white (text and marks); alertSoft is a background tint.
+  alert: "#b3243a",
+  alertSoft: "#fdeef0",
+  // Neutral accent for a notable change (improvement), always with the "change" icon and a label.
+  // Validator vs alert: CVD ΔE 10.8 (deutan), normal ΔE 21.3; 5.7:1 on white.
+  change: "#4e6a7a",
+
+  // Bands. Only the baseline period is shaded (vertical band, labelled "Baseline (usual weeks)");
+  // the person's own usual range is a filled horizontal band; the typical range (other people) is
+  // a dashed outline, never filled.
+  baselineShade: "rgba(126,114,104,0.10)",
+  usualBand: "rgba(106,93,81,0.18)",
+  typicalLine: "#6a5d51",           // intensity[4], 6.4:1 on white, drawn dashed
+
+  baseline: BRAND.beige,            // baseline phase swatch (phase strip)
+  /** @deprecated use baselineShade */
+  baselineBand: "rgba(126,114,104,0.10)",
+  /** @deprecated use alert */
+  critical: "#b3243a",
   good: "#2e7d32",
-  // sequential, light beige -> beige -> brand red -> dark red (OKLab, lightness monotonic)
-  seq: ["#faf6f2", "#f3e7db", "#ecd8c3", "#ecab9d", "#e77976", "#dd3d50", "#ad283b", "#7e1527"],
-  seqWhiteFrom: 5,                  // white cell text from this step on (contrast >= 4.3)
 };
 
 // Fixed device order (validated: CVD ΔE >= 8, normal >= 16, contrast >= 3:1); the legend names
