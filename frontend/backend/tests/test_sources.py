@@ -16,12 +16,12 @@ def ctx(person: bool = False) -> dict:
     label = "number of chat sessions" if person else "Chat sessions"
     days = [
         {"date": d, "weekday": wd, "period": "Recent", "complete": True, "packets": 1000,
-         "L": {crit: L}, "parts": {crit: {label: {"value": v, "mu": 0.8, "w": 0.3}}}}
-        for d, wd, L, v in (("2025-10-30", "Thu", 0.31, 3.0), ("2025-10-31", "Fri", 0.62, 7.0))
+         "probability_percent": {crit: L}, "parts": {crit: {label: {"value": v, "risk_degree_percent": 80, "weight_percent": 30}}}}
+        for d, wd, L, v in (("2025-10-30", "Thu", 31, 3.0), ("2025-10-31", "Fri", 62, 7.0))
     ]
     c = {
         "who": "x", "areas" if person else "criteria": [crit], "days": days,
-        "periods": {"Recent": {"results": {crit: {"present": True, "days_with_L_at_or_above_theta": 3}}}},
+        "periods": {"Recent": {"results": {crit: {"present": True, "days_at_or_above_threshold": 3}}}},
         "baseline_mean_sd_of_metrics": {label: {"mean": 4.0, "sd": 1.5, "n": 20}},
         "observed_behaviour": {
             "usual": {"quiet_hours": {"mean": 7.2, "sd": 0.4}, "quiet_start": {"mean": -50.0, "sd": 30.0}},
@@ -94,7 +94,7 @@ def test_valid_block_is_enriched_from_the_context():
     assert q["name"] == "Quiet window" and q["unit"] == "h" and q["icon"] == "moon"
     assert q["values"] == [{"day": "2025-10-31", "text": "5.2 h"}] and q["usual"] == "6.8 to 7.6 h"
     c = by[("criterion", "C4")]
-    assert c["name"] == "Sleep (C4)" and c["code"] == "C4" and c["values"] == [{"day": "2025-10-31", "text": "L 0.62"}]
+    assert c["name"] == "Sleep (C4)" and c["code"] == "C4" and c["values"] == [{"day": "2025-10-31", "text": "probability 62 %"}]
     assert "Recent: present" in c["detail"]
     d = by[("day", "2025-10-31")]
     assert d["detail"] == "Fri, Recent"
@@ -122,7 +122,7 @@ def test_scored_metrics_flags_and_a_bare_code():
     by = {i["kind"]: i for i in record(block)["items"]}
     m = by["metric"]
     assert m["name"] == "Chat sessions" and m["values"] == [{"day": "2025-10-31", "text": "7"}]
-    assert m["usual"] == "2.5 to 5.5" and m["detail"] == "μ 0.8, w 0.3"
+    assert m["usual"] == "2.5 to 5.5" and m["detail"] == "risk degree 80 %, weight 30 %"
     assert by["criterion"]["id"] == "C4"
     assert by["flag"]["detail"] == "2 of the last 7 days" and by["flag"]["days"] == ["2025-10-30", "2025-10-31"]
 

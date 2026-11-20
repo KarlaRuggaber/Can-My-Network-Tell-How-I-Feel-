@@ -19,4 +19,13 @@ describe("Markdown", () => {
     expect(items[0].textContent).toBe("Mon 16/11: devices quiet for 5.5 h, usual 6.6 to 10 h");
     expect(container.querySelector("p strong")?.textContent).toBe("3 of the last 7 nights");
   });
+
+  it("repairs a day label with a missing opening ** and never shows unpaired markers", () => {
+    const { container } = render(<Markdown text={"Quiet later on **most nights.\n\n- Mon 16/11:** devices quiet for 5.5 h\n- **Tue 17/11:** usual"} />);
+    const items = container.querySelectorAll("li");
+    expect(items[0].querySelector("strong")?.textContent).toBe("Mon 16/11:");
+    expect(items[0].textContent).toBe("Mon 16/11: devices quiet for 5.5 h");
+    expect(container.querySelector("p")?.textContent).toBe("Quiet later on most nights.");
+    expect(container.textContent).not.toContain("**");
+  });
 });

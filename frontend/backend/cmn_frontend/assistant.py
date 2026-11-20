@@ -195,6 +195,24 @@ def _r(x: Any, nd: int = 3) -> Any:
     return x
 
 
+def _n(x: Any) -> Any:
+    """A value rounded for reading: whole from 100, 1 decimal from 10, else 2 decimals; 5.0 -> 5."""
+    if isinstance(x, bool) or not isinstance(x, (int, float)):
+        return x
+    if not math.isfinite(x):
+        return None
+    a = abs(x)
+    r = round(x, 0 if a >= 100 else 1 if a >= 10 else 2)
+    return int(r) if r == int(r) else r
+
+
+def _pct(x: Any) -> int | None:
+    """A 0-1 score (probability, risk degree, weight, threshold) as a whole percentage."""
+    if isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x):
+        return None
+    return int(round(x * 100))
+
+
 PERSON_MAX_WORDS = 80          # person replies, unless they ask for more detail
 CLINICIAN_MAX_WORDS = 150      # clinician replies, unless they ask for more detail
 
@@ -212,10 +230,12 @@ CONTROL_ALIASES = {"-": "shorter", "−": "shorter", "+": "more detail", "more d
 SYSTEM_COMMON = f"""\
 You are the explanation assistant of {PRODUCT_NAME} ({PRODUCT_SUBTITLE}), a research prototype. It derives
 daily metrics from a home router's network traffic metadata (packet timing, volume, DNS lookups; no
-content) and turns them into likelihoods L between 0 and 1 for DSM-5 depression criteria with a fuzzy
-scoring model (FASL): each metric value is mapped to a membership degree μ between 0 and 1 and weighted
-with w; L = Σ w × μ, clipped to [0, 1]. A criterion counts as "present" in a period when L ≥ θ on at
-least N of the period's last M days. The data you get is in <results>.
+content) and turns them into a daily probability (0 to 100 %) for each DSM-5 depression criterion with
+a fuzzy scoring model: each metric value gets a risk degree (0 to 100 %, how far it lies in the risk
+range), and the probability is the weighted sum of these risk degrees (each metric has a weight). A
+criterion counts as "present" in a period when its probability reaches the threshold on at least the
+given number of the period's last days. The data you get is in <results>; all scores there are already
+whole percentages.
 
 Your only job is to explain these results: what a value means, which metrics drove a likelihood on a
 day, how a period compares with the usual weeks, and how the scoring works. Rules:
@@ -235,11 +255,18 @@ day, how a period compares with the usual weeks, and how the scoring works. Rule
 - "typical" refers to the reference group (other people's usual weeks); use that word for it.
 - Say "devices quiet at night" or "went quiet", not "sleep", for the quiet window: the network cannot
   tell asleep from away or switched off.
+- Plain names and rounded numbers: never write variable names, symbols, formulas or keys from
+  <results> (no L, μ, w, θ, Σ, z, SD, "N of M", no names with underscores such as quiet_hours or
+  C4_F1, no "=" or "×"). Use the names instead: "probability", "risk degree", "weight", "threshold",
+  "usual range", and the metric and criterion names as written in <results>. Write scores as whole
+  percentages exactly as given (e.g. 62 %), hours with at most one decimal (5.5 h), minutes and counts
+  as whole numbers, times as clock times (23:40). Never more decimals than in <results>.
 - Formatting (Markdown is rendered): put the key finding of the opening sentence in **bold** (the value,
   day or change that answers the question, e.g. **3 of the last 7 nights**). Give the supporting days
   and values as bullet points, one fact per bullet, each starting with a bold label (e.g.
-  "- **Mon 16/11:** devices quiet for 5.5 h, usual 6.6 to 10 h"). Bold short phrases only (2 to 5 per
-  answer), never whole sentences. No tables or headings unless asked.
+  "- **Mon 16/11:** devices quiet for 5.5 h, usual 6.6 to 10 h"). Every bold phrase needs both markers
+  on the same line: ** before and ** after it (a day label is "**Mon 16/11:**", never "Mon 16/11:**").
+  Bold short phrases only (2 to 5 per answer), never whole sentences. No tables or headings unless asked.
 - Answer controls: a message starting with [Shorter] asks you to rewrite your previous answer shorter
   (at most 2 sentences, same facts); one starting with [More detail] asks you to expand your previous
   answer with the days and values from <results> behind it. In both cases add no new topic and nothing
@@ -276,8 +303,8 @@ You are talking with the person whose data this is. Write in plain, warm, everyd
   about it with their care team.
 - Do not tell the person which changes were expected or planned; you do not know that, and it must not
   influence them.
-- Do not quote the 0–1 area scores, thresholds, weights or rules like "N of M days", and avoid notation
-  (θ, μ, L), unless the person explicitly asks how the scoring works. Say in words how different a day
+- Do not quote the area probabilities, thresholds, weights or counting rules, unless the person
+  explicitly asks how the scoring works (then in words and percentages, never symbols). Say in words how different a day
   was ("a little", "clearly"), and describe what happened in everyday terms ("your devices went quiet
   later than usual", "fewer different websites than usual"), with a value only when it helps.
 - If the person says they feel unwell, are worried, or mentions self-harm, respond with care, encourage
@@ -287,7 +314,8 @@ You are talking with the person whose data this is. Write in plain, warm, everyd
 
 SYSTEM_CLINICIAN = f"""\
 You are talking with a clinician, researcher or carer who supervises this person. You may use the
-DSM-5 criterion names, the scoring notation and the numbers directly.
+DSM-5 criterion names and the numbers directly (probabilities, risk degrees, weights and thresholds as
+whole percentages), but no symbols or formulas.
 - Answer first in 1–3 sentences, then at most 4 short bullet points with the days and values behind
   it. Keep it under about {CLINICIAN_MAX_WORDS} words unless they ask for more detail.
 - Where <results> contains expected outcomes of a scripted persona, you may compare observed with
@@ -467,7 +495,7 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
         periods[labels[ph]] = {
             "planned": [info.get("planned_first"), info.get("planned_last")],
             "days_counted": info["days"],
-            "results": {name_of(c): {"present": v["present"], "days_with_L_at_or_above_theta": v["days_over"]}
+            "results": {name_of(c): {"present": v["present"], "days_at_or_above_threshold": v["days_over"]}
                         for c, v in info["criteria"].items()},
             "episode_likely": info["episode"],
         }
@@ -479,26 +507,28 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
             "period": labels.get(d["phase"], d["phase"]),
             "complete": d["complete"],
             "packets": d.get("packets_kept"),
-            "L": {name_of(c): _r(d["L"].get(c)) for c in configured},
+            "probability_percent": {name_of(c): _pct(d["L"].get(c)) for c in configured},
             "parts": {
-                name_of(c): {metric_labels.get(k, k): {"value": _r(p.get("value")), "mu": _r(p.get("mu")), "w": p.get("w")}
+                name_of(c): {metric_labels.get(k, k): {"value": _n(p.get("value")), "risk_degree_percent": _pct(p.get("mu")),
+                                                       "weight_percent": _pct(p.get("w"))}
                              for k, p in (d["parts"].get(c) or {}).items()}
                 for c in configured
             },
         }
         days.append(row)
-    baseline = {metric_labels.get(k, k): {"mean": _r(v["mean"]), "sd": _r(v["sd"]), "n": v["n"]}
+    baseline = {metric_labels.get(k, k): {"mean": _n(v["mean"]), "sd": _n(v["sd"]), "n": v["n"]}
                 for k, v in tl.get("baseline_stats", {}).items() if k in metrics_used}
     ctx: dict[str, Any] = {
         "who": "the person you are talking with" if person_view else tl["persona"]["name"],
         "source": "scripted test run" if tl["profile"].get("has_plan") else "live home traffic",
         "areas" if person_view else "criteria": [name_of(c) for c in configured],
-        "gate": {"theta": gate["params"]["theta"], "N": gate["params"]["N"], "M": gate["params"]["M"]},
+        "rule_for_present": {"threshold_percent": _pct(gate["params"]["theta"]), "days_needed": gate["params"]["N"],
+                             "out_of_last_days": gate["params"]["M"]},
         "periods": periods,
         "baseline_mean_sd_of_metrics": baseline,
         "days": days,
         "metric_scoring": {
-            name_of(c): {metric_labels.get(k, k): {"w": s.get("w"), **{x: s.get("mf", {}).get(x) for x in ("type", "lo", "mid", "hi", "invert")}}
+            name_of(c): {metric_labels.get(k, k): {"weight_percent": _pct(s.get("w")), **{x: s.get("mf", {}).get(x) for x in ("type", "lo", "mid", "hi", "invert")}}
                          for k, s in (cfg.criteria.get(c) or {}).items()}
             for c in configured
         },
@@ -541,7 +571,7 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
         unscored = [c for c in fasl.CRIT_KEYS if not cfg.configured(c)]
         per_day = {}
         for d in tl["days"]:
-            vals = {metric_labels.get(k, k): _r(v) for k, v in d["metrics"].items()
+            vals = {metric_labels.get(k, k): _n(v) for k, v in d["metrics"].items()
                     if k[:2] in unscored and k[2] == "_" and isinstance(v, (int, float)) and not isinstance(v, bool) and v}
             if vals:
                 per_day[d["date"]] = vals
@@ -552,7 +582,7 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
                      "'Self-harm forum visits': without URLs in the gateway data it counts all reddit.com "
                      "packets, so it says nothing about self-harm sites and is never a C9 signal."),
             "criteria": [f"{c} {fasl.CRIT_NAMES[c]}" for c in unscored],
-            "baseline_mean_sd": {metric_labels.get(k, k): {"mean": _r(v["mean"]), "sd": _r(v["sd"])}
+            "baseline_mean_sd": {metric_labels.get(k, k): {"mean": _n(v["mean"]), "sd": _n(v["sd"])}
                                  for k, v in tl.get("baseline_stats", {}).items() if k[:2] in unscored and k[2] == "_"},
             "days": per_day,
         }

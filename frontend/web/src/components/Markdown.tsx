@@ -1,17 +1,29 @@
 import { Fragment, type ReactNode } from "react";
 
-/** Inline **bold** and `code` as React elements (no HTML injection). */
-function inline(text: string): ReactNode[] {
+/**
+ * A label whose opening ** is missing ("Mon 16/11:** quiet for 5 h") gets it back, so it renders
+ * bold like the others. Only when the line has an odd number of ** markers.
+ */
+export function repairBold(text: string): string {
+  if (((text.match(/\*\*/g) ?? []).length) % 2 === 0) return text;
+  const m = text.match(/^([^*\n]{1,48}?):\*\*/);
+  return m ? `**${m[1]}:**${text.slice(m[0].length)}` : text;
+}
+
+/** Inline **bold** and `code` as React elements (no HTML injection). Unpaired ** are never shown. */
+function inline(raw: string): ReactNode[] {
+  const text = repairBold(raw);
   const out: ReactNode[] = [];
+  const plain = (s: string) => s.replace(/\*\*/g, "");
   const re = /(\*\*[^*]+\*\*|`[^`]+`)/g;
   let last = 0;
   for (const m of text.matchAll(re)) {
-    if (m.index! > last) out.push(text.slice(last, m.index));
+    if (m.index! > last) out.push(plain(text.slice(last, m.index)));
     const t = m[0];
     out.push(t.startsWith("**") ? <strong key={out.length}>{t.slice(2, -2)}</strong> : <code key={out.length}>{t.slice(1, -1)}</code>);
     last = m.index! + t.length;
   }
-  if (last < text.length) out.push(text.slice(last));
+  if (last < text.length) out.push(plain(text.slice(last)));
   return out;
 }
 
