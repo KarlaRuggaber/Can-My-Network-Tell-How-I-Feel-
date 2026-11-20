@@ -141,3 +141,42 @@ describe("Assistant across tabs", () => {
     expect(toggle).not.toHaveBeenCalled();                               // not reopened
   });
 });
+
+describe("Assistant sources", () => {
+  beforeEach(() => { vi.clearAllMocks(); resetConversations(); });
+  const day = { kind: "day" as const, id: "2025-10-31", name: "2025-10-31", icon: null, unit: null, values: [], usual: null, detail: null, code: null, days: ["2025-10-31"] };
+
+  it("shows 'Based on' chips under the finished answer, keeps them in the stored conversation, and jumps on click", async () => {
+    vi.mocked(api.assistant).mockResolvedValue({ enabled: true, notice: "" } as never);
+    vi.mocked(api.ask).mockImplementation(async (_id, _m, _f, onText, onSources) => {
+      onText("Fewer quiet hours on Friday.");
+      onSources?.({ items: [day], fallback: false, no_data: false });
+    });
+    const jump = vi.fn();
+    const first = render(<Assistant open onToggle={() => undefined} profileId="p1" person focus={null} onJump={jump} />);
+    const pill = await screen.findByRole("button", { name: "Which days stood out?" });
+    await act(async () => { fireEvent.click(pill); });
+    const chip = await screen.findByRole("button", { name: /31\/10/ });
+    expect(screen.getByText("Based on:")).toBeTruthy();
+    fireEvent.click(chip);
+    expect(jump).toHaveBeenCalledWith(day);
+    // a reload (new panel, same browser tab) keeps the conversation with its sources
+    first.unmount();
+    expect(JSON.parse(window.sessionStorage.getItem("cmn.conversations")!).p1[1].sources.items[0].id).toBe("2025-10-31");
+    render(<Assistant open onToggle={() => undefined} profileId="p1" person focus={null} onJump={jump} />);
+    expect(await screen.findByRole("button", { name: /31\/10/ })).toBeTruthy();
+  });
+
+  it("shows no sources while the answer is still streaming", async () => {
+    vi.mocked(api.assistant).mockResolvedValue({ enabled: true, notice: "" } as never);
+    vi.mocked(api.ask).mockImplementation((_id, _m, _f, onText, onSources) => new Promise<void>(() => {
+      onText("Fewer quiet");
+      onSources?.({ items: [day], fallback: false, no_data: false });
+    }));
+    render(<Assistant open onToggle={() => undefined} profileId="p1" person focus={null} />);
+    const pill = await screen.findByRole("button", { name: "Which days stood out?" });
+    await act(async () => { fireEvent.click(pill); });
+    await screen.findByText("Fewer quiet");
+    expect(screen.queryByText("Based on:")).toBeNull();
+  });
+});

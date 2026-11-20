@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Care, Config, CritKey, Me, Note, PhaseKey, ProfileListItem, SeenMarks, Timeline } from "./api";
+import type { Care, Config, CritKey, Me, Note, PhaseKey, ProfileListItem, SeenMarks, SourceItem, Timeline } from "./api";
 import { api, CRIT_KEYS, setUnauthorizedHandler } from "./api";
 import { CriteriaSummary, type PhaseView } from "./components/CriteriaSummary";
 import { DayDetail } from "./components/DayDetail";
@@ -18,6 +18,7 @@ import { MetricTrends } from "./components/MetricTrends";
 import { ProfileSettings } from "./components/ProfileSettings";
 import { PersonPicker } from "./components/PersonPicker";
 import { Icon, type IconName } from "./components/Icon";
+import { jumpTarget } from "./lib/jump";
 import { PRODUCT_NAME, PRODUCT_SUBTITLE } from "./theme";
 import "./shell.css";
 import { episodeFlags, gatePresentRolling, phaseGate, type GateParams } from "./lib/gate";
@@ -116,6 +117,17 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
     setAssistantOpen(true);
     setAskReq({ id: Date.now(), question, focus });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // a "Based on" chip under an answer: select the day / criterion, or scroll to the metric's chart
+  const jump = useCallback((item: SourceItem) => {
+    const t = jumpTarget(item, { multi, days: tl?.days.map((d) => d.date) ?? [], cfg });
+    if (t.day) setDay(t.day);
+    if (t.crit) setCrit(t.crit);
+    if (t.tab) setTab(t.tab);
+    if (t.scrollId) {   // the chart exists once the Details tab shows that criterion
+      const id = t.scrollId;
+      window.setTimeout(() => document.getElementById(id)?.scrollIntoView({ block: "center", behavior: "smooth" }), 150);
+    }
+  }, [multi, tl, cfg]);
   // the care plan changes day types, flags and usual ranges: reload the timeline after saving
   const onCareSaved = useCallback((_care: Care) => {
     if (!pid) return;
@@ -349,7 +361,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                   ) : tab === "timeline"
                     ? <TimelineView tl={tl} person notes={[]} onNotes={() => undefined} selectedDay={day} onSelectDay={setDay} onAsk={ask} />
                     : <Overview tl={tl} person selectedDay={day} onSelectDay={setDay} onAsk={ask} />}
-                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} profileId={tl.profile.id} person focus={null}
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} onJump={jump} profileId={tl.profile.id} person focus={null}
                     focusInfo={{ day }} />
                 </>
               )}
@@ -357,7 +369,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
               {tl.status === "ready" && multi && tab === "care" && (
                 <>
                   <CarePlan tl={tl} cfg={cfg} assistant={assistantOn} onSaved={onCareSaved} onAsk={ask} />
-                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} profileId={tl.profile.id} person={false} focus="care plan" />
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} onJump={jump} profileId={tl.profile.id} person={false} focus="care plan" />
                 </>
               )}
 
@@ -374,7 +386,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                     ? <TimelineView tl={tl} person={false} notes={notes} onNotes={setNotes} selectedDay={day} onSelectDay={setDay}
                         onOpenDetails={(d) => { setDay(d); setTab("details"); }} onAsk={ask} />
                     : <Overview tl={tl} person={false} selectedDay={day} onSelectDay={setDay} seen={seen} onSeen={onSeen} onAsk={ask} />}
-                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} profileId={tl.profile.id} person={false}
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} onJump={jump} profileId={tl.profile.id} person={false}
                     focus={`${tab}${day ? `, day ${day}` : ""}`} focusInfo={{ day }} />
                 </>
               )}
@@ -397,7 +409,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                       dayIndex={dayIndex} phaseLabels={labels} onAsk={ask}
                       activePackets={tl.observed?.params.active_packets} />
                   )}
-                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} profileId={tl.profile.id} person={false}
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} onJump={jump} profileId={tl.profile.id} person={false}
                     focus={[day && `day ${day}`, activeCrit && `${activeCrit} ${cfg.criterion_names[activeCrit]}`].filter(Boolean).join(", ") || null}
                     focusInfo={{ day, criterion: activeCrit ? { key: activeCrit, name: cfg.criterion_names[activeCrit] } : null }} />
                 </>
@@ -406,7 +418,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
               {tl.status === "ready" && multi && tab === "about" && (
                 <>
                   <AboutData cfg={cfg} focus={tl.care?.clinical?.criteria ?? []} onAsk={ask} />
-                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} profileId={tl.profile.id} person={false}
+                  <Assistant request={askReq} open={assistantOpen} onToggle={setAssistantOpen} onRequestHandled={clearAsk} onJump={jump} profileId={tl.profile.id} person={false}
                     focus="about the data" focusInfo={{}} />
                 </>
               )}

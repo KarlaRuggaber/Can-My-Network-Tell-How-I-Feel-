@@ -288,13 +288,57 @@ export interface AssistantSettingsBody {
   provider?: AssistantProviderId; base_url?: string | null; fallback?: boolean | null;
 }
 export interface AssistantCheck { ok: boolean; message: string; models: string[] }
-export interface ChatTurn { role: "user" | "assistant"; content: string }
+/** One thing an answer was based on (the backend's sources.py validates and fills it from the data). */
+export interface SourceItem {
+  kind: "day" | "metric" | "criterion" | "flag";
+  id: string;                    // day: ISO date; metric: observed track or metric code; criterion: C1..C9 (clinician) or area name; flag: flag id
+  name: string;                  // display name; the person view has area names, never criterion codes
+  icon: string | null;           // an Icon name, when one has a fixed meaning
+  unit: string | null;
+  values: { day: string; text: string }[];   // the value on a day, as text from the data
+  usual: string | null;          // the usual range, as text
+  detail: string | null;
+  code: string | null;           // clinician only: criterion code, or the metric code of a scored metric
+  days: string[];                // days to jump to
+}
+export interface AnswerSources { items: SourceItem[]; fallback: boolean; no_data: boolean }
+export interface ChatTurn { role: "user" | "assistant"; content: string; sources?: AnswerSources }
 
-/** Ask the explanation assistant; calls onText for every streamed chunk. */
-async function ask(id: string, messages: ChatTurn[], focus: string | null, onText: (t: string) => void): Promise<void> {
+/** ASCII record separator: after the answer text, the stream carries one record, this character and JSON. */
+export const RECORD_SEP = "\x1e";
+
+/**
+ * Splits the answer stream into text and the final sources record. The record is never passed to
+ * onText, however the stream is cut into chunks; it is parsed at the end (a broken record is dropped).
+ */
+export function splitSources(onText: (t: string) => void, onSources?: (s: AnswerSources) => void) {
+  let record: string | null = null;
+  return {
+    push(chunk: string) {
+      if (record !== null) { record += chunk; return; }
+      const i = chunk.indexOf(RECORD_SEP);
+      if (i < 0) { if (chunk) onText(chunk); return; }
+      if (i > 0) onText(chunk.slice(0, i));
+      record = chunk.slice(i + 1);
+    },
+    end() {
+      if (record === null) return;
+      try {
+        const s = JSON.parse(record) as AnswerSources;
+        if (s && Array.isArray(s.items)) onSources?.(s);
+      } catch { /* a cut-off record: no sources shown */ }
+      record = null;
+    },
+  };
+}
+
+/** Ask the explanation assistant; calls onText for every streamed chunk and onSources once at the end. */
+async function ask(id: string, messages: ChatTurn[], focus: string | null, onText: (t: string) => void,
+  onSources?: (s: AnswerSources) => void): Promise<void> {
   const r = await fetch(`/api/profiles/${encodeURIComponent(id)}/assistant`, {
     method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, focus }),
+    // the sources of earlier answers stay in the browser; the model gets the conversation text only
+    body: JSON.stringify({ messages: messages.map(({ role, content }) => ({ role, content })), focus }),
   });
   if (!r.ok || !r.body) {
     let msg = `${r.status} ${r.statusText}`;
@@ -304,11 +348,14 @@ async function ask(id: string, messages: ChatTurn[], focus: string | null, onTex
   }
   const reader = r.body.getReader();
   const dec = new TextDecoder();
+  const split = splitSources(onText, onSources);
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    onText(dec.decode(value, { stream: true }));
+    split.push(dec.decode(value, { stream: true }));
   }
+  split.push(dec.decode());
+  split.end();
 }
 
 export interface SpeechStatus { available: boolean; max_seconds?: number }

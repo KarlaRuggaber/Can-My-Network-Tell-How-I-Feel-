@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, type AssistantStatus, type ChatTurn } from "../api";
+import { api, type AssistantStatus, type ChatTurn, type SourceItem } from "../api";
+import { AnswerSources } from "./AnswerSources";
 import { Markdown } from "./Markdown";
 import { appendText, Dictate } from "./Dictate";
 import { AssistantOrb } from "./AssistantOrb";
@@ -19,6 +20,8 @@ type Props = {
   focusInfo?: FocusInfo;         // the same, structured: drives the follow-up suggestions
   /** Called once a request was taken over, so a tab mounted later does not ask it again. */
   onRequestHandled?: () => void;
+  /** A "Based on" chip was clicked: the page jumps to that day, criterion or metric. */
+  onJump?: (item: SourceItem) => void;
 };
 
 /** The conversation per profile survives switching tabs (each tab mounts its own panel). */
@@ -121,7 +124,7 @@ function Composing() {
 }
 
 /** Explanation layer: natural-language questions about the results shown, answered from the data. */
-export function Assistant({ request, open, onToggle, profileId, person, focus, focusInfo, onRequestHandled }: Props) {
+export function Assistant({ request, open, onToggle, profileId, person, focus, focusInfo, onRequestHandled, onJump }: Props) {
   const [status, setStatus] = useState<AssistantStatus | null>(null);
   const [turns, setTurnsState] = useState<ChatTurn[]>(() => conversations.get(profileId) ?? []);
   // The stored conversation is the source of truth, so an answer that is still streaming when the
@@ -201,6 +204,11 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
           const last = next[next.length - 1];
           next[next.length - 1] = { ...last, content: last.content + t };
           return next;
+        }), (sources) =>
+        setTurns((cur) => {
+          const next = cur.slice();
+          next[next.length - 1] = { ...next[next.length - 1], sources };
+          return next;
         }));
     } catch (e) {
       setError(String((e as Error).message));
@@ -274,10 +282,13 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
             {turns.map((t, i) => (
               t.content || !(busy && i === turns.length - 1)
                 ? (
-                  <div key={i} className={`bubble bubble-${t.role}`}>
-                    {t.role === "assistant" ? <Markdown text={t.content} /> : t.content}
-                    {busy && i === turns.length - 1 && t.role === "assistant" && <AssistantOrb size={20} className="stream-orb" />}
-                  </div>
+                  <Fragment key={i}>
+                    <div className={`bubble bubble-${t.role}`}>
+                      {t.role === "assistant" ? <Markdown text={t.content} /> : t.content}
+                      {busy && i === turns.length - 1 && t.role === "assistant" && <AssistantOrb size={20} className="stream-orb" />}
+                    </div>
+                    {t.role === "assistant" && t.sources && !(busy && i === turns.length - 1) && <AnswerSources sources={t.sources} onJump={onJump} />}
+                  </Fragment>
                 )
                 : <Composing key={i} />
             ))}

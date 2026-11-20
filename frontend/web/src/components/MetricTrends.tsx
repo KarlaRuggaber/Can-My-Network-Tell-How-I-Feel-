@@ -359,7 +359,7 @@ function MetricChart({ tl, cfg, crit, metric, w, lo, mid, hi, invert, model, sel
   }, [tl, metric, crit, w, lo, mid, hi, selectedDay, model, unit]);
 
   return (
-    <div className="metric-card">
+    <div className="metric-card" id={`metric-${metric}`}>
       <div className="metric-head">
         <span className="metric-name">{metricName(metric, cfg)}</span>
         {model && <span className="metric-meta">weight {w}{invert ? ", lower counts" : ""}</span>}
