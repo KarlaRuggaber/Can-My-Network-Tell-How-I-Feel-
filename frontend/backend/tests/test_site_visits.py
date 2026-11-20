@@ -32,3 +32,10 @@ def test_metric_names_are_plain_and_never_codes():
     assert metric_names.plain("C4_F9_SomeNewMetricMin") == "Some new metric (min)"
     for code, name in metric_names.PLAIN.items():
         assert code not in name and "_" not in name
+
+
+def test_flag_detail_is_compact():
+    s = {"label": "Crisis-line sites", "visits": 2, "starts": ["23:40", "23:58"], "minutes": 4}
+    assert observed._visit_short(s, with_name=False) == "2 visits at 23:40 and 23:58, 4 min"
+    assert observed._visit_short({**s, "visits": 1, "starts": ["02:34"], "minutes": 3}, with_name=True) \
+        == "crisis-line sites at 02:34, 3 min"

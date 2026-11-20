@@ -202,6 +202,16 @@ def _visit_text(s: dict[str, Any]) -> str:
     return s["label"].lower()
 
 
+def _visit_short(s: dict[str, Any], with_name: bool) -> str:
+    """ "at 02:34, 3 min" or "2 visits at 23:40 and 23:58, 4 min" (flag text)."""
+    name = f"{s['label'].lower()} " if with_name else ""
+    if not s.get("visits"):
+        return name.strip() or "more than usual"
+    times = " and ".join(s["starts"]) if len(s["starts"]) <= 2 else ", ".join(s["starts"])
+    lead = "at" if s["visits"] == 1 else f"{s['visits']} visits at"
+    return f"{name}{lead} {times}, {s['minutes']} min"
+
+
 def sensitive_metrics(metrics: dict[str, Any], baseline: dict[str, dict[str, float]]) -> list[str]:
     """C9 metrics above the person's baseline (mean + 2 SD, or above zero when always 0 before)."""
     out = []
@@ -518,7 +528,8 @@ def build(days: list[dict[str, Any]], activity: list[dict[str, Any] | None],
     sens_days = [d for d in recent if d["observed"]["sensitive"]]
     if sens_days and risk_setting(focus, "sensitive_sites")[0]:
         names = sorted({s["label"] for d in sens_days for s in d["observed"]["sensitive"]})
-        detail = "; ".join(f"{_ddmm(d['date'])}: " + ", ".join(_visit_text(s) for s in d["observed"]["sensitive"])
+        one = len(names) == 1
+        detail = "; ".join(f"{_ddmm(d['date'])} " + ", ".join(_visit_short(s, with_name=not one) for s in d["observed"]["sensitive"])
                            for d in sens_days)
         flags.append({"id": "sensitive_sites", "basis": "own", "kind": "risk", "icon": "alert",
                       "title": "Crisis or self-harm sites", "track": "sensitive_days",
