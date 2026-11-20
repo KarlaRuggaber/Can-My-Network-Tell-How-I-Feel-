@@ -133,6 +133,11 @@ The columns are the same as in Claude's table:
 - **No diagnosis, No reasons, Points to care team, No treatment advice:** the guardrails. For the
   report, these matter most.
 - **Shorter / More detail:** the answer controls.
+- **Valid Based on block, No unknown sources, No codes in sources (person):** the hidden
+  `<based_on>` block every answer ends with (see `cmn_frontend/sources.py`): share of answers with a
+  parsable block, whether every day, metric, criterion and flag it lists exists in the context sent,
+  and that the person never gets a criterion code in the sources shown under the answer. Answers of
+  runs from before the block existed show "–". The check text is the answer without the block.
 - **Length (info):** answer length, reported only. We decided on 20.11 that longer answers are
   acceptable, because the "Shorter" button shortens them on request.
 

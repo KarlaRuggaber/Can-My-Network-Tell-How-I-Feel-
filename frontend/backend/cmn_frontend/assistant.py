@@ -241,6 +241,20 @@ day, how a period compares with the usual weeks, and how the scoring works. Rule
   answer with the days and values from <results> behind it. In both cases add no new topic and nothing
   that is not in <results>. If there is no previous answer, ask what they would like to know.
 - The data covers scripted test personas or consenting participants; still treat it as personal.
+- Sources: end EVERY answer, also a [Shorter] or [More detail] one, with a last line that the reader does
+  not see, in exactly this form (JSON on one line, no code fence, nothing after it):
+  <based_on>{{"days": [], "metrics": [], "criteria": [], "flags": []}}</based_on>
+  It lists what the answer relies on, copied character for character from <results>, never invented and
+  never mentioned in the text above it:
+  "days": dates such as "2025-11-04" (the "date" of "days"), at most 3;
+  "metrics": a key of a day in "observed_behaviour" > "days" (for example "quiet_hours", "hours_in_use",
+  "went_quiet", "back_online", "minutes_in_use_at_night", "chat_sessions", "different_sites") or the name
+  of a scored metric exactly as written in "parts" or "baseline_mean_sd_of_metrics", at most 4;
+  "criteria": entries of the "criteria" list, or of the "areas" list where <results> has one, written
+  exactly as there, at most 3;
+  "flags": the "id" of a flag in "observed_behaviour" > "flags", at most 2.
+  Leave a list empty when the answer does not use it. If the answer uses no data of this person at all
+  (for example how the scoring works in general, or a greeting), return four empty lists.
 """
 
 SYSTEM_PERSON = f"""\
@@ -365,7 +379,7 @@ def week_overview(days: list[dict[str, Any]], obs: dict[str, Any], person_view: 
 
 
 def _flag(f: dict[str, Any]) -> dict[str, Any]:
-    out = {"title": typical_wording(f["title"]),
+    out = {"id": f.get("id"), "title": typical_wording(f["title"]),
            "compared_with": "typical range (other people's usual weeks)" if f.get("basis") == "reference"
            else "own usual weeks",
            "days": f["days"], "count": f["count"], "of_last": f["window"]}
