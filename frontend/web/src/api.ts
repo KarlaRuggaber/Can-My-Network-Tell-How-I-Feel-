@@ -194,7 +194,7 @@ export interface Clinical {
   focus: Record<string, { enabled: boolean; sensitivity: Sensitivity }>;
   normals: Record<string, { min: number | null; max: number | null }>;
   purpose?: CarePurpose;
-  change_flags?: boolean | null;    // null: follow the purpose (on for treatment monitoring)
+  change_flags?: boolean | null;    // null: default (on)
 }
 /** Why a person is monitored: assessment (status vs. the typical range first) or treatment
  *  monitoring (change over time first, "notable change" flags on by default). */

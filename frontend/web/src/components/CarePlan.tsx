@@ -23,7 +23,7 @@ const emptyClinical = (): Clinical => ({
 /** Why the person is monitored; decides what the overview shows first (Feedback-v3-Plan §5.2, E2). */
 const PURPOSES: { id: CarePurpose; title: string; question: string; effect: string }[] = [
   { id: "assessment", title: "Assessment", question: "Where does this person stand?",
-    effect: "The overview shows the comparison with the typical range first. Notable changes (improvements) are off unless you switch them on." },
+    effect: "The overview shows the comparison with the typical range first. Notable changes (improvements) are flagged, to discuss." },
   { id: "treatment", title: "Treatment monitoring", question: "How is this person changing over time?",
     effect: "The overview shows the change against the person's own usual weeks first. Notable changes (improvements) are flagged, to discuss." },
 ];
@@ -100,7 +100,7 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
     return ALWAYS_ON.has(id) ? { ...e, enabled: true } : e;
   };
   const purpose: CarePurpose = clinical.purpose ?? "assessment";
-  const changeFlags = clinical.change_flags ?? purpose === "treatment";
+  const changeFlags = clinical.change_flags ?? true;
   const iconFor = (r: { id: string; icon?: string }) => (r.icon ?? RISK_ICON[r.id]) as IconName | undefined;
   const linked = routine.devices.filter((d) => d.ip);
   const status = [
@@ -239,10 +239,10 @@ export function CarePlan({ tl, cfg, assistant, onSaved, onAsk }: Props) {
           <RiskIcon name="change" label="Notable change" />
           Flag notable changes (improvements), to discuss
           <span className="muted small">
-            {clinical.change_flags == null ? `default for ${purpose === "treatment" ? "treatment monitoring" : "assessment"}` : "set by you"}
+            {clinical.change_flags == null ? "on by default" : "set by you"}
           </span>
           {clinical.change_flags != null && (
-            <button type="button" className="link small" onClick={() => setClinical({ ...clinical, change_flags: null })}>follow the purpose</button>
+            <button type="button" className="link small" onClick={() => setClinical({ ...clinical, change_flags: null })}>back to default</button>
           )}
         </label>
         <div className="row-actions"><button className="btn btn-primary" onClick={savePurpose}>Save purpose</button></div>
