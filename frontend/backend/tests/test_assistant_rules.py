@@ -156,6 +156,8 @@ def test_typical_wording_and_both_reference_shapes(reference):
     assert "improving direction" in obs["flags"][2]["kind"] and "kind" not in obs["flags"][1]
     ref = obs["typical_reference"]
     assert ("percentiles_16_50_84" in ref) == ("tracks" in reference)
+    clock = ref["clock_times"]["quiet_start"]                # minutes are also given as clock times
+    assert clock.get("mean", clock.get("p50")) == "00:00" and obs["usual"]["quiet_start"]["mean_clock"] == "23:50"
     assert "Maria" not in text                       # only the number of reference people
     # the person never gets the typical range
     person = assistant.build_context(timeline(reference), CFG, True, {})
@@ -185,7 +187,7 @@ def test_eval_cases_cover_both_roles_and_all_personas():
 # ---- the eval's checkers ----
 
 GROUND = ev.Grounding.from_texts([json.dumps({
-    "date": "2026-11-15", "went_quiet": "01:35", "quiet_hours": 7.25, "L": 0.62, "count": 4, "of_last": 7}),
+    "packets": 11702, "date": "2026-11-15", "went_quiet": "01:35", "quiet_hours": 7.25, "L": 0.62, "count": 4, "of_last": 7}),
     "emergency: 144"])
 
 
@@ -196,6 +198,9 @@ GROUND = ev.Grounding.from_texts([json.dumps({
     ("On 16 Nov at 02:10 for 8.5 hours.", ["16 Nov", "02:10", "8.5"]),
     ("2026-11-14: 3 nights later.", ["2026-11-14", "3"]),
     ("Criterion C4 and F8 have no free numbers.", []),
+    ("About 11,700 packets, not 9,500.", ["9,500"]),        # thousands separators
+    ("About 12k packets, not 40k.", ["40k"]),               # abbreviated figures
+    ("Usually about 01:35 or 01:37, not 01:45.", ["01:45"]),  # clock times within 2 minutes
 ])
 def test_numbers_must_exist_in_what_was_sent(answer, bad):
     assert ev.ungrounded_numbers(answer, GROUND) == bad
@@ -223,6 +228,7 @@ def test_reasons_limits_care_team_and_treatment():
     assert ev.unrequested_limits("**What this can tell:** quiet times.")
     assert ev.unrequested_limits("What the data cannot tell is why.")
     assert ev.unrequested_limits("Your devices went quiet later on 4 nights.") == []
+    assert ev.unrequested_limits("I can't tell why. What it does show: later nights.") == []    # a bridge, not limits
     assert ev.points_to_care_team("You could talk about it with your care team.")
     assert not ev.points_to_care_team("Your devices went quiet later.")
     assert ev.treatment_advice("I recommend increasing the dose.")

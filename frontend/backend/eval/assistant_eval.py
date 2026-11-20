@@ -30,6 +30,7 @@ answer. Reads ~/cmn-data (or CMN_DATA) read-only; needs the Claude key from the 
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import re
 import statistics
@@ -162,8 +163,8 @@ _REASON_RES = [re.compile(p, re.IGNORECASE) for p in (
 )]
 
 _LIMITS_RE = re.compile(
-    r"what (this|the data|it|these (data|results|values|numbers)|the network|your data) (can(not|'t)?|does(n't| not)?|"
-    r"do(n't| not)?|is(n't| not)?) (tell|show|imply|say|mean|able)|\*\*(limits?|caveats?|what (it|this) (can|cannot)"
+    r"what (this|the data|it|these (data|results|values|numbers)|the network|your data) (can(not|'t| not)|"
+    r"does(n't| not)|do(n't| not)|is(n't| not)) (tell|show|imply|say|mean|able)|\*\*(limits?|caveats?|what (it|this) (can|cannot)"
     r"[^*]*)\*\*|^#+\s*(limits?|caveats?)", re.IGNORECASE | re.MULTILINE)
 
 _CARE_RE = re.compile(r"care team|clinician|doctor|therapist|someone you trust|professional|GP\b", re.IGNORECASE)
@@ -231,7 +232,9 @@ _DOTTED_DATE = re.compile(r"\b(\d{1,2})\.(\d{2})\.(\d{4})?(?!\d)")    # 15.11. /
 _SLASH_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})(?:/\d{2,4})?\b")
 _CLOCK = re.compile(r"\b(\d{1,2}):(\d{2})\b")
 _AMPM = re.compile(r"\b(\d{1,2})\s*(a\.?m\.?|p\.?m\.?)(?![a-z])", re.IGNORECASE)
-_NUMBER = re.compile(r"(?<![A-Za-z0-9_.])(\d+(?:[.,]\d+)?)(\s*%|\s*percent)?")
+_NUMBER = re.compile(r"(?<![A-Za-z0-9_.,])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:[.,]\d+)?)(\s*%|\s*percent|k\b|M\b)?")
+CLOCK_TOLERANCE_MIN = 2              # "about 07:00" for 06:59
+_THOUSANDS = re.compile(r"^\d{1,3}(,\d{3})+(\.\d+)?$")
 
 
 @dataclass
@@ -240,10 +243,14 @@ class Grounding:
     rounded: list[set[float]]          # per number of decimals 0..3
     dates: set[tuple[int, int]]        # (month, day)
     clocks: set[str]                   # "HH:MM"
+    coarse: dict[int, set[float]] = field(default_factory=dict)   # rounded to tens (-1) and hundreds (-2)
+    values: list[float] = field(default_factory=list)              # all values, sorted (for 498k / 0.5M)
 
     @classmethod
     def from_texts(cls, texts: Iterable[str]) -> "Grounding":
         rounded: list[set[float]] = [set() for _ in range(4)]
+        coarse: dict[int, set[float]] = {-1: set(), -2: set()}
+        values: set[float] = set()
         dates: set[tuple[int, int]] = set()
         clocks: set[str] = set()
         for t in texts:
@@ -253,16 +260,32 @@ class Grounding:
                 clocks.add(f"{int(h) % 24:02d}:{mi}")
             for num in re.findall(r"\d+(?:\.\d+)?", t):
                 v = float(num)
+                values.add(v)
                 for nd in range(4):    # both neighbours of a half (7.25 -> 7.2 and 7.3)
                     rounded[nd].update((round(v - 1e-9, nd), round(v + 1e-9, nd)))
-        return cls(rounded, dates, clocks)
+                if v >= 100:           # "about 11,700" for 11,702
+                    for nd in (-1, -2):
+                        coarse[nd].update((round(v - 1e-9, nd), round(v + 1e-9, nd)))
+        return cls(rounded, dates, clocks, coarse, sorted(values))
+
+    def has_clock(self, h: int, mi: int) -> bool:
+        t = (h % 24) * 60 + mi
+        return any(f"{((t + d) % 1440) // 60:02d}:{(t + d) % 60:02d}" in self.clocks
+                   for d in range(-CLOCK_TOLERANCE_MIN, CLOCK_TOLERANCE_MIN + 1))
+
+    def near(self, v: float, tol: float) -> bool:
+        i = bisect.bisect_left(self.values, v - tol)
+        return i < len(self.values) and self.values[i] <= v + tol
 
     def has_number(self, s: str, percent: bool = False) -> bool:
-        s = s.replace(",", ".")
+        s = s.replace(",", "") if _THOUSANDS.match(s) else s.replace(",", ".")    # 11,700 / 0,62
         v = float(s)
         nd = min(len(s.split(".")[1]) if "." in s else 0, 3)
         if round(v, nd) in self.rounded[nd]:
             return True
+        if nd == 0 and v >= 100:       # a rounded figure: allow rounding to tens / hundreds
+            if (v % 100 == 0 and v in self.coarse.get(-2, set())) or (v % 10 == 0 and v in self.coarse.get(-1, set())):
+                return True
         return percent and nd + 2 <= 3 and round(v / 100, nd + 2) in self.rounded[nd + 2]
 
 
@@ -284,7 +307,7 @@ def ungrounded_numbers(answer: str, grounding: Grounding) -> list[str]:
     text = _SLASH_DATE.sub(lambda m: date_ok(int(m[2]), int(m[1]), m[0]) if 1 <= int(m[2]) <= 12 else m[0], text)
 
     def clock_ok(m: re.Match) -> str:
-        if f"{int(m[1]) % 24:02d}:{m[2]}" not in grounding.clocks:
+        if not grounding.has_clock(int(m[1]), int(m[2])):
             bad.append(m[0])
         return " "
 
@@ -298,6 +321,14 @@ def ungrounded_numbers(answer: str, grounding: Grounding) -> list[str]:
 
     text = _AMPM.sub(ampm_ok, text)
     for m in _NUMBER.finditer(text):
+        unit = (m[2] or "").strip()
+        if unit in ("k", "M"):         # 498k / 0.5M: a value within half of the last shown digit
+            raw = m[1].replace(",", "")
+            mult = 1000 if unit == "k" else 1_000_000
+            nd = len(raw.split(".")[1]) if "." in raw else 0
+            if not grounding.near(float(raw) * mult, 0.5 * 10 ** -nd * mult):
+                bad.append(m[0].strip())
+            continue
         if not grounding.has_number(m[1], percent=bool(m[2])):
             bad.append(m[0].strip())
     return bad
@@ -463,6 +494,51 @@ def run_case(case: Case, ctx: dict[str, Any], cfg: dict[str, Any], client: Any =
     return out
 
 
+def recheck(old: list[dict[str, Any]], contexts: dict[tuple[str, str], dict[str, Any]]) -> list[dict[str, Any]]:
+    """The checks of an earlier run's answers again, against the same contexts (no model calls)."""
+    by_id = {c.id: c for c in CASES}
+    names = {v: k for k, v in PERSONAS.items()}
+    out = []
+    for r in old:
+        case = by_id[r["case"]]
+        turns = [x for x in old if x["case"] == r["case"]]
+        i = r["turn"] - 1
+        history = []
+        for t in sorted(turns, key=lambda x: x["turn"])[:i]:
+            history += [{"role": "user", "content": t["message"]}, {"role": "assistant", "content": t["answer"]}]
+        history.append({"role": "user", "content": case.turns[i]})
+        msgs = assistant.clean_messages(history, case.focus)
+        ctx = contexts[(names[r["persona"]], case.role)]
+        grounding = Grounding.from_texts([b["text"] for b in ctx["system"]] + [m["content"] for m in msgs])
+        previous = next((t["answer"] for t in turns if t["turn"] == r["turn"] - 1), None)
+        rec = check_answer(case, i, r["answer"], previous, grounding)
+        rec["seconds"] = r.get("seconds")
+        out.append(rec)
+    return out
+
+
+def write_results(records: list[dict[str, Any]], meta: dict[str, Any], out: Path) -> Path:
+    out.mkdir(parents=True, exist_ok=True)
+    stem = f"assistant_eval_{meta['date']}_{re.sub(r'[^A-Za-z0-9.-]+', '-', meta['model'])}"
+    (out / f"{stem}.md").write_text(markdown(records, meta), encoding="utf-8")
+    with open(out / f"{stem}.jsonl", "w", encoding="utf-8") as fh:
+        for r in records:
+            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+    return out / f"{stem}.md"
+
+
+def rescore(path: Path, contexts: dict[tuple[str, str], dict[str, Any]], out: Path) -> int:
+    from cmn_frontend.settings import PRODUCT_NAME
+    old = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    m = re.match(r"assistant_eval_(\d{4}-\d{2}-\d{2})_(.+)$", path.stem)
+    meta = {"model": m[2] if m else "unknown", "date": m[1] if m else date.today().isoformat(),
+            "product": PRODUCT_NAME, "n_cases": len({r["case"] for r in old}),
+            "last_days": ", ".join(f"{PERSONAS[p]} {c['last_day']}" for (p, r), c in sorted(contexts.items())
+                                   if r == "person")}
+    print(f"wrote {write_results(recheck(old, contexts), meta, out)} (re-scored, no model calls)")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--dry-run", action="store_true", help="build the contexts, print the plan, call nothing")
@@ -471,6 +547,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--case", action="append", help="only these case ids (e.g. p03)")
     ap.add_argument("--model", help="override the model of the assistant settings")
     ap.add_argument("--out", type=Path, default=RESULTS_DIR)
+    ap.add_argument("--rescore", type=Path, metavar="JSONL",
+                    help="re-check the answers of an earlier run with the current checks (no model calls)")
     a = ap.parse_args(argv)
 
     from cmn_frontend.settings import PRODUCT_NAME, load_settings
@@ -489,6 +567,8 @@ def main(argv: list[str] | None = None) -> int:
         n = sum(len(c.turns) for c in cases if c.persona == persona and c.role == role)
         print(f"  {PERSONAS[persona]:5} {role:9} data to {ctx['last_day']}, system ≈ {ctx['chars'] // 4:,} tokens "
               f"({ctx['chars']:,} chars), {n} requests")
+    if a.rescore:
+        return rescore(a.rescore, contexts, a.out)
     if a.dry_run or not cases:
         return 0
     if cfg.get("provider", "anthropic") == "anthropic" and not cfg["api_key"] and not assistant._anthropic_profile():
@@ -508,13 +588,7 @@ def main(argv: list[str] | None = None) -> int:
             "n_cases": len(cases),
             "last_days": ", ".join(f"{PERSONAS[p]} {c['last_day']}" for (p, r), c in sorted(contexts.items())
                                    if r == roles[0])}
-    a.out.mkdir(parents=True, exist_ok=True)
-    stem = f"assistant_eval_{meta['date']}_{re.sub(r'[^A-Za-z0-9.-]+', '-', cfg['model'])}"
-    (a.out / f"{stem}.md").write_text(markdown(records, meta), encoding="utf-8")
-    with open(a.out / f"{stem}.jsonl", "w", encoding="utf-8") as fh:
-        for r in records:
-            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
-    print(f"wrote {a.out / (stem + '.md')}")
+    print(f"wrote {write_results(records, meta, a.out)}")
     return 0
 
 

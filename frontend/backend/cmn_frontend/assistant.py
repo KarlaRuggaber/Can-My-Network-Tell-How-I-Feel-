@@ -316,10 +316,18 @@ def _flag(f: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+CLOCK_TRACKS = ("quiet_start", "quiet_end")      # minutes from midnight, also given as HH:MM
+
+
 def _typical_reference(ref: dict[str, Any]) -> dict[str, Any]:
-    """The typical range: K1's percentile shape (tracks p16/p50/p84) or the v2 pooled mean/SD."""
+    """The typical range: K1's percentile shape (tracks p16/p50/p84) or the v2 pooled mean/SD.
+
+    Went quiet / back online also as clock times, so the model never converts minutes itself."""
     if ref.get("tracks"):
+        clock = {k: {p: _clock(v.get(p)) for p in ("p16", "p50", "p84")}
+                 for k, v in ref["tracks"].items() if k in CLOCK_TRACKS}
         return {"label": typical_wording(ref.get("label") or "typical"), "source": ref.get("source"),
+                **({"clock_times": clock} if clock else {}),
                 "percentiles_16_50_84": {
                     k: {"p16": _r(v.get("p16"), 2), "p50": _r(v.get("p50"), 2), "p84": _r(v.get("p84"), 2),
                         **({"n": v["n"]} if v.get("n") else {}),
@@ -331,6 +339,8 @@ def _typical_reference(ref: dict[str, Any]) -> dict[str, Any]:
                  "and mixed lifestyles, so a difference can reflect lifestyle"),
         "people": len(ref.get("people") or []), "days": ref.get("n_days"),
         "mean_sd": {k: {"mean": _r(v["mean"]), "sd": _r(v["sd"])} for k, v in (ref.get("stats") or {}).items()},
+        "clock_times": {k: {"mean": _clock(v["mean"]), "sd_minutes": _show("min", v["sd"])}
+                        for k, v in (ref.get("stats") or {}).items() if k in CLOCK_TRACKS},
     }
 
 
@@ -344,7 +354,9 @@ def observed_context(days: list[dict[str, Any]], obs: dict[str, Any], person_vie
                  "different sites. 'usual' = mean and SD over the baseline days (times as minutes from "
                  "midnight, negative = evening before). A flag names a pattern over the recent days, not a "
                  "single day."),
-        "usual": {k: {"mean": _r(v["mean"]), "sd": _r(v["sd"])} for k, v in obs.get("usual", {}).items()},
+        "usual": {k: {"mean": _r(v["mean"]), "sd": _r(v["sd"]),
+                      **({"mean_clock": _clock(v["mean"])} if k in CLOCK_TRACKS else {})}
+                  for k, v in obs.get("usual", {}).items()},
         "flags": [_flag(f) for f in obs.get("flags", [])],
         "days": {
             d["date"]: {
