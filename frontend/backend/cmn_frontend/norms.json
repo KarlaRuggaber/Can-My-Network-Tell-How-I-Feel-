@@ -1,0 +1,193 @@
+{
+  "schema": 1,
+  "about": "External reference values for the clinician view (D2). There are no published norms for network-level metrics, so every entry is a norm for the behaviour a network metric stands in for (sleep timing and duration, screen time, night-time phone use, sleep regularity) and carries a proxy_note. Every value was checked in the full text of its source on 2026-11-20 (location gives table/page). Units are those of the portal tracks: clock times as minutes from midnight (negative = evening before), durations in hours (quiet_hours, online_hours) or minutes (night_minutes, quiet_start_sd7). stat says what a value is: mean_sd (mean and SD of individuals), mean_sd_by_age (one mean/SD row per year of age), median, mean, pooled_mean (meta-analytic pooled mean of study means: centre only, no spread of individuals).",
+  "sources": {
+    "maslowsky2014": {
+      "citation": "Maslowsky J, Ozer EJ. Developmental trends in sleep duration in adolescence and young adulthood: evidence from a national United States sample. J Adolesc Health. 2014;54(6):691-697. doi:10.1016/j.jadohealth.2013.10.201",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4401462/",
+      "population": "US National Longitudinal Study of Adolescent Health (Add Health), waves 1-4 (1994-2008), N = 15,701 people, 52,080 observations, ages 13-32",
+      "method": "self-report: waves 1-2 'How many hours of sleep do you usually get?' (whole hours); waves 3-4 usual bed and wake times on work/school days and free days, weighted 5/7 and 2/7"
+    },
+    "galland2018": {
+      "citation": "Galland BC, Short MA, Terrill P, et al. Establishing normal values for pediatric nighttime sleep measured by actigraphy: a systematic review and meta-analysis. Sleep. 2018;41(4):zsy017. doi:10.1093/sleep/zsy017",
+      "url": "https://academic.oup.com/sleep/article/41/4/zsy017/4810776",
+      "population": "meta-analysis of actigraphy studies, ages 3-18; 15-18 y band: 3-9 datasets per variable",
+      "method": "actigraphy; pooled mean estimates (95% CI) of study means. Sleep duration = sleep onset to offset (excludes latency); weekend/nonschool = weekend days in all but one dataset"
+    },
+    "james2024": {
+      "citation": "Külling-Knecht C, Waller G, Willemse I, et al. JAMES - Jugend, Aktivitäten, Medien - Erhebung Schweiz. Zürich: ZHAW; 2024",
+      "url": "https://www.zhaw.ch/storage/hochschule/medien/news/2024/241128_MM_JAMES-Studie/JAMES_Studie_2024.pdf",
+      "population": "Swiss 12-19-year-olds, all three language regions, net sample N = 1,183 (§2.2, p. 5)",
+      "method": "self-report questionnaire in school classes: internet use on a typical weekday and a weekend day"
+    },
+    "alexander2024": {
+      "citation": "Alexander JD, Linkersdörfer J, Toda-Thorne K, et al. Passively sensing smartphone use in teens with rates of use by sex and across operating systems. Sci Rep. 2024;14:17982. doi:10.1038/s41598-024-68467-8",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11297944/",
+      "population": "US ABCD study, youth with passively sensed app use (about 475; t-test df = 474), age about 14 (Android users: M 14.0, SD 0.70, range 12.6-15.8, Table 2)",
+      "method": "EARS app, three weeks of passively logged smartphone app use; no significant weekday/weekend difference"
+    },
+    "jonasdottir2021": {
+      "citation": "Jonasdottir SS, Minor K, Lehmann S. Gender differences in nighttime sleep patterns and variability across the adult lifespan: a global-scale wearables study. Sleep. 2021;44(2):zsaa169. doi:10.1093/sleep/zsaa169",
+      "url": "https://academic.oup.com/sleep/article/44/2/zsaa169/5901589",
+      "population": "69,650 adult non-shift workers aged 19-67 from 47 countries, 11.14 million nights (abstract)",
+      "method": "consumer wristband; intra-individual variability = SD of a person's sleep onset times, computed separately for weekdays and weekends (Methods, p. 3)"
+    },
+    "mathew2026": {
+      "citation": "Mathew G, Rodriguez I, Reichenberger D, Christakis D, Hale L. Pre-bedtime smartphone use predicts higher within-person likelihood of late-night smartphone use among adolescents: the SBU MEDiA study. Sleep. 2026;49(Suppl 1):A106-A107, abstract 0242. doi:10.1093/sleep/zsag091.0242",
+      "url": "https://academic.oup.com/sleep/article/49/Supplement_1/A106/8674427",
+      "population": "US adolescents owning a smartphone, n = 229 (age not reported in the abstract); conference abstract, not a full paper",
+      "method": "RealityMeter, passively measured smartphone use over 16.8 ± 13.7 days"
+    },
+    "windred2024": {
+      "citation": "Windred DP, Burns AC, Lane JM, et al. Sleep regularity is a stronger predictor of mortality risk than sleep duration: a prospective cohort study. Sleep. 2024;47(1):zsad253. doi:10.1093/sleep/zsad253",
+      "url": "https://academic.oup.com/sleep/article/47/1/zsad253/7280269",
+      "population": "UK Biobank, 60,977 adults, age 62.8 ± 7.8 years, 55.0% female (abstract)",
+      "method": "wrist accelerometer for 7 days; Sleep Regularity Index (SRI, 0-100)"
+    }
+  },
+  "entries": [
+    {
+      "id": "maslowsky2014_duration_by_age",
+      "source": "maslowsky2014",
+      "track": "quiet_hours",
+      "stat": "mean_sd_by_age",
+      "unit": "h",
+      "day": "all",
+      "age": [13, 32],
+      "rows": [
+        {"age": 13, "n": 1129, "mean": 8.5, "sd": 1.3},
+        {"age": 14, "n": 2870, "mean": 8.3, "sd": 1.3},
+        {"age": 15, "n": 3888, "mean": 8.0, "sd": 1.3},
+        {"age": 16, "n": 4858, "mean": 7.7, "sd": 1.4},
+        {"age": 17, "n": 5288, "mean": 7.5, "sd": 1.4},
+        {"age": 18, "n": 5101, "mean": 7.3, "sd": 1.5},
+        {"age": 19, "n": 2691, "mean": 7.5, "sd": 1.7},
+        {"age": 20, "n": 1828, "mean": 8.2, "sd": 2.2},
+        {"age": 21, "n": 1778, "mean": 8.4, "sd": 2.4},
+        {"age": 22, "n": 2178, "mean": 8.5, "sd": 2.6},
+        {"age": 23, "n": 2277, "mean": 8.6, "sd": 2.3},
+        {"age": 24, "n": 2211, "mean": 8.5, "sd": 2.2},
+        {"age": 25, "n": 1482, "mean": 8.5, "sd": 2.5},
+        {"age": 26, "n": 1476, "mean": 8.3, "sd": 2.1},
+        {"age": 27, "n": 1845, "mean": 8.0, "sd": 1.9},
+        {"age": 28, "n": 2314, "mean": 8.0, "sd": 2.1},
+        {"age": 29, "n": 2815, "mean": 8.0, "sd": 2.0},
+        {"age": 30, "n": 2746, "mean": 7.9, "sd": 2.1},
+        {"age": 31, "n": 2489, "mean": 7.8, "sd": 2.0},
+        {"age": 32, "n": 816, "mean": 7.7, "sd": 1.9}
+      ],
+      "location": "Table 1 (mean sleep duration M (SD) by age)",
+      "label": "self-reported sleep, Add Health",
+      "proxy_note": "Self-reported usual sleep (US, 1994-2008, mostly before smartphones), weighted over the week. The quiet window is only an upper bound for the time asleep: asleep, away and devices switched off look the same, and a phone used in bed shortens it."
+    },
+    {
+      "id": "galland2018_duration",
+      "source": "galland2018",
+      "track": "quiet_hours",
+      "stat": "pooled_mean",
+      "unit": "h",
+      "age": [15, 18],
+      "values": {"all": 7.40, "school": 7.88, "free": 8.69},
+      "ci95": {"all": [6.90, 7.90], "school": [7.59, 8.16], "free": [8.21, 9.18]},
+      "n": {"all": "7 datasets (703)", "school": "4 datasets (234)", "free": "4 datasets (234)"},
+      "location": "Table 4, p. 9 (all days); Table 5, p. 10 (weekday vs weekend/nonschool)",
+      "label": "sleep duration 15-18 y, actigraphy",
+      "proxy_note": "Actigraphy sleep duration (sleep onset to offset). The quiet window starts when the last device goes quiet, not at sleep onset, and also covers away and switched-off nights. Pooled mean of study means: the centre only, not the spread between people."
+    },
+    {
+      "id": "galland2018_onset",
+      "source": "galland2018",
+      "track": "quiet_start",
+      "stat": "pooled_mean",
+      "unit": "time",
+      "age": [15, 18],
+      "values": {"all": -33, "school": -60, "free": -3},
+      "ci95": {"all": [-62, -4], "school": [-85, -35], "free": [-43, 36]},
+      "n": {"all": "4 datasets (284)", "school": "3 datasets (234)", "free": "3 datasets (234)"},
+      "location": "Table 4, p. 9 (23:27); Table 5, p. 10 (weekday 23:00, weekend 23:57)",
+      "label": "sleep onset 15-18 y, actigraphy",
+      "proxy_note": "Actigraphy sleep onset. 'Went quiet' is when the devices stop being in use: phone use in bed makes it later than lights-out, and a device left on (or a quiet phone in bed) separates it from falling asleep. Pooled mean of study means, no spread between people."
+    },
+    {
+      "id": "galland2018_offset",
+      "source": "galland2018",
+      "track": "quiet_end",
+      "stat": "pooled_mean",
+      "unit": "time",
+      "age": [15, 18],
+      "values": {"all": 441, "school": 415, "free": 527},
+      "ci95": {"all": [418, 465], "school": [376, 454], "free": [472, 581]},
+      "n": {"all": "5 datasets (320)", "school": "3 datasets (234)", "free": "3 datasets (234)"},
+      "location": "Table 4, p. 9 (7:21); Table 5, p. 10 (weekday 6:55, weekend 8:47)",
+      "label": "sleep offset 15-18 y, actigraphy",
+      "proxy_note": "Actigraphy sleep offset (waking up). 'Back online' is the first use of a device after the night: someone can be awake for a while before touching a device. Pooled mean of study means, no spread between people."
+    },
+    {
+      "id": "james2024_online",
+      "source": "james2024",
+      "track": "online_hours",
+      "stat": "median",
+      "unit": "h",
+      "age": [12, 19],
+      "values": {"school": 3.117, "free": 4.5},
+      "means": {"school": 3.683, "free": 5.2},
+      "location": "§7.1, Table 3, p. 37 (median 3 h 7 min weekday, 4 h 30 min weekend day; mean 3 h 41 min, 5 h 12 min)",
+      "label": "online time 12-19 y, self-report (CH)",
+      "proxy_note": "Self-reported time online on any network. Time in use counts 5-minute bins with traffic on the home Wi-Fi only: background traffic of a device in use, shared devices and use at home all differ from 'online time', and mobile data is not seen."
+    },
+    {
+      "id": "alexander2024_app_use",
+      "source": "alexander2024",
+      "track": "online_hours",
+      "stat": "mean_sd",
+      "unit": "h",
+      "day": "all",
+      "age": [12.6, 15.8],
+      "mean": 4.967,
+      "sd": 2.9,
+      "n": 475,
+      "location": "Results, 'Descriptives of youth who participated in passive sensing' (298 ± 174 min/day app use; self-report 185 ± 162 min); Table 2 (age)",
+      "label": "smartphone use 12-15 y, passively logged",
+      "proxy_note": "Passively logged smartphone app use (US, about 14 years old). Time in use counts home Wi-Fi traffic of all the person's devices, so it can be higher (laptop, background traffic) or lower (mobile data) than phone screen time. The distribution is right-skewed, so a normal range from mean ± SD is rough."
+    },
+    {
+      "id": "mathew2026_late_night",
+      "source": "mathew2026",
+      "track": "night_minutes",
+      "stat": "mean",
+      "unit": "min",
+      "age": [13, 18],
+      "age_note": "adolescents; age not reported in the abstract",
+      "values": {"all": 46.74},
+      "location": "abstract 0242, Methods: late-night use 0:00-5:00 on school nights, 1:00-6:00 on non-school nights, M = 46.74 min",
+      "label": "late-night phone use, adolescents",
+      "proxy_note": "Passively logged smartphone use in a late-night window (00-05 on school nights, 01-06 otherwise). Use at night counts home Wi-Fi traffic between 00:00 and 06:00 on all devices; mobile data is not seen. Conference abstract: mean only."
+    },
+    {
+      "id": "jonasdottir2021_onset_variability",
+      "source": "jonasdottir2021",
+      "track": "quiet_start_sd7",
+      "stat": "mean",
+      "unit": "min",
+      "age": [19, 67],
+      "values": {"school": 66, "free": 78},
+      "location": "Results, 'Sleep variability over the lifespan', p. 10 and Figure 7 (onset variability nearly fixed across the lifespan at 1.1 h on weekdays and 1.3 h on weekends)",
+      "label": "sleep-onset variability, adults, wearables",
+      "proxy_note": "Average within-person SD of sleep onset over the whole recording, separately for weekdays and weekends (adults 19-67). Ours is the SD of the went-quiet time over the last 7 nights, weekdays and weekends together, so it is not directly comparable; 'went quiet' is not sleep onset."
+    },
+    {
+      "id": "windred2024_sri",
+      "source": "windred2024",
+      "track": null,
+      "stat": "median",
+      "unit": "SRI 0-100",
+      "age": null,
+      "age_note": "adults, 62.8 ± 7.8 years",
+      "values": {"all": 81.0},
+      "iqr": [73.8, 86.3],
+      "location": "abstract and Results (median [IQR] SRI 81.0 [73.8-86.3], range 2.5-98.5)",
+      "label": "Sleep Regularity Index, UK Biobank adults",
+      "proxy_note": "Context only, not used for a range: the SRI compares sleep/wake state 24 h apart in older adults; our irregular-nights measure is the SD of the went-quiet time and has no SRI equivalent."
+    }
+  ]
+}

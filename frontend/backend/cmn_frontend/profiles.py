@@ -47,14 +47,14 @@ class Profile:
     baseline_first: str | None = None    # YYYY-MM-DD; used when the source has no plan
     baseline_last: str | None = None
     persona: str | None = None           # key of the scripted persona (expectations), if any
-    reference: str | None = None         # healthy reference: "none" | "baseline" | "all" (None: default)
+    reference: str | None = None         # reference group: "none" | "baseline" | "all" (None: default)
 
     @property
     def reference_mode(self) -> str:
-        """Which of this person's days count as healthy reference for the others.
+        """Which of this person's days count as typical (reference group) for the others.
 
-        Default: a scripted persona's baseline days (they live a healthy everyday profile from
-        profiles/tier0-healthy before the clinical phase); nobody else's.
+        Default: a scripted persona's baseline days (they live an everyday profile without symptoms
+        from profiles/tier0-healthy before the clinical phase); nobody else's.
         """
         if self.reference in REFERENCE_MODES:
             return self.reference
@@ -89,6 +89,23 @@ class Profile:
                    all_devices=bool(d.get("all_devices", True)), devices=devs,
                    baseline_first=d.get("baseline_first"), baseline_last=d.get("baseline_last"),
                    persona=d.get("persona"), reference=d.get("reference"))
+
+
+def attention_summary(flags: list[dict[str, Any]], seen: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    """{flags, alert} for the person list (clinicians and parents).
+
+    flags: open risk flags (kind "risk"; change flags are not counted), alert: an open crisis or
+    self-harm site flag. A flag marked as seen stays closed until a new day joins it, as in the
+    overview.
+    """
+    seen = seen or {}
+
+    def is_open(f: dict[str, Any]) -> bool:
+        mark = seen.get(f["id"])
+        return not (mark and f.get("days") and mark.get("last_day", "") >= max(f["days"]))
+
+    risks = [f for f in flags if f.get("kind", "risk") == "risk" and is_open(f)]
+    return {"flags": len(risks), "alert": any(f.get("sensitive") for f in risks)}
 
 
 def validate(p: Profile, sources: list[str]) -> None:
