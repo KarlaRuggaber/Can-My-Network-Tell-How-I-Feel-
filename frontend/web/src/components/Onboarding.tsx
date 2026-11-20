@@ -53,6 +53,8 @@ export function Onboarding({ profileId, name, care, assistant, onDone, onSkip }:
       {step === 1 && (
         <div className="ob-body">
           <h2>Your week</h2>
+          {assistant && <p className="muted">Describe your week in your own words, typed or spoken. Afterwards a few short
+            questions ask for what is still open, one at a time; you can skip any of them and change everything by hand.</p>}
           <RoutineForm profileId={profileId} value={routine} onChange={setRoutine} person assistant={assistant}
             sections={["describe", "week", "times"]} />
         </div>
