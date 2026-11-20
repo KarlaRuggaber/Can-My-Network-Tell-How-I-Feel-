@@ -23,6 +23,7 @@ type Props = {
 
 /** The conversation per profile survives switching tabs (each tab mounts its own panel). */
 const conversations = new Map<string, ChatTurn[]>();
+const listeners = new Set<(profileId: string) => void>();
 /** Forget all conversations (tests, logout). */
 export const resetConversations = () => conversations.clear();
 
@@ -80,11 +81,20 @@ function storedWidth(): number {
 export function Assistant({ request, open, onToggle, profileId, person, focus, focusInfo, onRequestHandled }: Props) {
   const [status, setStatus] = useState<AssistantStatus | null>(null);
   const [turns, setTurnsState] = useState<ChatTurn[]>(() => conversations.get(profileId) ?? []);
-  const setTurns = useCallback((v: ChatTurn[] | ((cur: ChatTurn[]) => ChatTurn[])) => setTurnsState((cur) => {
+  // The stored conversation is the source of truth, so an answer that is still streaming when the
+  // user switches tabs keeps arriving and shows up in the next tab's panel.
+  const setTurns = useCallback((v: ChatTurn[] | ((cur: ChatTurn[]) => ChatTurn[])) => {
+    const cur = conversations.get(profileId) ?? [];
     const next = typeof v === "function" ? v(cur) : v;
     conversations.set(profileId, next);
-    return next;
-  }), [profileId]);
+    listeners.forEach((l) => l(profileId));
+  }, [profileId]);
+  useEffect(() => {   // follow the stored conversation (also updates from a panel in another tab)
+    const l = (pid: string) => { if (pid === profileId) setTurnsState(conversations.get(profileId) ?? []); };
+    listeners.add(l);
+    setTurnsState(conversations.get(profileId) ?? []);
+    return () => { listeners.delete(l); };
+  }, [profileId]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -125,12 +135,7 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
   };
 
   useEffect(() => { api.assistant().then(setStatus).catch(() => setStatus(null)); }, []);
-  const shownProfile = useRef(profileId);
-  useEffect(() => {   // another person: their own conversation
-    if (shownProfile.current === profileId) return;
-    shownProfile.current = profileId;
-    setTurnsState(conversations.get(profileId) ?? []); setError(null); setAskedFlag(null);
-  }, [profileId]);
+  useEffect(() => { setError(null); setAskedFlag(null); }, [profileId]);   // another person
   useEffect(() => { endRef.current?.scrollIntoView?.({ block: "nearest" }); }, [turns, open]);
   useEffect(() => {   // Escape closes the panel
     if (!open) return;
@@ -196,7 +201,7 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
           <p className="sub">
             {person
               ? "Ask in your own words where a result comes from. The assistant only explains what is shown; it does not diagnose."
-              : "Explanations of the computed results (metrics, μ, weights, gate) from this profile's data only. No diagnosis."}
+              : "Explains what the results show and how they come about, from this person's data only. No diagnosis."}
           </p>
         </div>
         <button className="drawer-close" onClick={() => onToggle(false)} aria-label="Close the assistant" title="Close">×</button>

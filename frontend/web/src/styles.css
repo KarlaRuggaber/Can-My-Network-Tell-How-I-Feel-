@@ -529,3 +529,12 @@ button.pill-btn:hover { box-shadow: 0 0 0 1px var(--ink); }
   .table-wrap:has(> .week-table) { display: none; }
   .week-list { display: block; }
 }
+
+/* phones: wide tables scroll inside their card instead of widening the page */
+.table-wrap { max-width: 100%; }
+.card, .editor, .fieldset, .form-grid > * { min-width: 0; }
+@media (max-width: 720px) {
+  .times-table td { min-width: 0; }
+  .normals-table input { width: 84px; }
+  :root { --drawer-w: 100%; }
+}

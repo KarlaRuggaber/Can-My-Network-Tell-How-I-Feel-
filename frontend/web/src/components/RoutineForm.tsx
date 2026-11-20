@@ -221,27 +221,29 @@ export function RoutineForm({ profileId, value, onChange, person, assistant, sec
       {show("times") && (
         <fieldset className="fieldset">
           <legend>{person ? "Your usual times" : "Usual times"}</legend>
-          <table className="times-table">
-            <thead><tr><th /><th>School / work days</th><th>Free days</th></tr></thead>
-            <tbody>
-              <tr><th scope="row">Wake up</th>
-                <td><TimeInput label="Wake up on school or work days" value={value.wake} onChange={(v) => set({ wake: v })} /></td>
-                <td><TimeInput label="Wake up on free days" value={value.wake_free} onChange={(v) => set({ wake_free: v })} /></td></tr>
-              {hasAway && (
-                <>
-                  <tr><th scope="row">Leave home</th>
-                    <td><TimeInput label="Leave home on away days" value={value.away_from} onChange={(v) => set({ away_from: v })} /></td>
-                    <td className="muted">–</td></tr>
-                  <tr><th scope="row">Back home</th>
-                    <td><TimeInput label="Back home on away days" value={value.away_to} onChange={(v) => set({ away_to: v })} /></td>
-                    <td className="muted">–</td></tr>
-                </>
-              )}
-              <tr><th scope="row">Bedtime</th>
-                <td><TimeInput label="Bedtime on school or work days" value={value.bedtime} onChange={(v) => set({ bedtime: v })} /></td>
-                <td><TimeInput label="Bedtime on free days" value={value.bedtime_free} onChange={(v) => set({ bedtime_free: v })} /></td></tr>
-            </tbody>
-          </table>
+          <div className="table-wrap">
+            <table className="times-table">
+              <thead><tr><th /><th>School / work days</th><th>Free days</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Wake up</th>
+                  <td><TimeInput label="Wake up on school or work days" value={value.wake} onChange={(v) => set({ wake: v })} /></td>
+                  <td><TimeInput label="Wake up on free days" value={value.wake_free} onChange={(v) => set({ wake_free: v })} /></td></tr>
+                {hasAway && (
+                  <>
+                    <tr><th scope="row">Leave home</th>
+                      <td><TimeInput label="Leave home on away days" value={value.away_from} onChange={(v) => set({ away_from: v })} /></td>
+                      <td className="muted">–</td></tr>
+                    <tr><th scope="row">Back home</th>
+                      <td><TimeInput label="Back home on away days" value={value.away_to} onChange={(v) => set({ away_to: v })} /></td>
+                      <td className="muted">–</td></tr>
+                  </>
+                )}
+                <tr><th scope="row">Bedtime</th>
+                  <td><TimeInput label="Bedtime on school or work days" value={value.bedtime} onChange={(v) => set({ bedtime: v })} /></td>
+                  <td><TimeInput label="Bedtime on free days" value={value.bedtime_free} onChange={(v) => set({ bedtime_free: v })} /></td></tr>
+              </tbody>
+            </table>
+          </div>
           <p className="muted small">Leave fields empty if you are not sure.{!hasAway && " Leave and back home times appear when a day is set to away."}</p>
         </fieldset>
       )}
