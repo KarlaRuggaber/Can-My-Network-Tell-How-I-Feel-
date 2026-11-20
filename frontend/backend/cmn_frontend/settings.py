@@ -8,6 +8,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
+# Neutral product name (placeholder until the final name is chosen; the thesis title stays only in an
+# "About" line). The web app has the same constants in web/src/theme.ts.
+PRODUCT_NAME = "Rhythm"
+PRODUCT_SUBTITLE = "Home network overview"
+
 
 @dataclass(frozen=True)
 class Settings:

@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from . import fasl
+from .settings import PRODUCT_NAME, PRODUCT_SUBTITLE
 
 PROVIDERS = {
     "anthropic": {"label": "Anthropic (Claude)", "default_model": "claude-sonnet-5-5",
@@ -137,49 +138,229 @@ def _r(x: Any, nd: int = 3) -> Any:
     return x
 
 
-SYSTEM_COMMON = """\
-You are the explanation assistant of a research prototype, "Can My Network Tell How I Feel?". The
-prototype derives daily metrics from a home router's network traffic metadata (packet timing, volume,
-DNS lookups; no content) and turns them into likelihoods L between 0 and 1 for DSM-5 depression
-criteria with a fuzzy scoring model (FASL): each metric value is mapped to a membership degree μ
-between 0 and 1 and weighted with w; L = Σ w·μ, clipped to [0, 1]. A criterion counts as "present" in a
-period when L ≥ θ on at least N of the period's last M days. The data you get is in <results>.
+PERSON_MAX_WORDS = 80          # person replies, unless they ask for more detail
+CLINICIAN_MAX_WORDS = 150      # clinician replies, unless they ask for more detail
+
+# The UI's answer controls (B2) send these as the next user message. clean_messages() turns them into
+# an explicit instruction, so the model rewrites its previous answer instead of answering "Shorter".
+CONTROL_MESSAGES = {
+    "shorter": ("[Shorter] Rewrite your previous answer shorter: at most 2 sentences, the same facts, "
+                "nothing new."),
+    "more detail": ("[More detail] Expand your previous answer: add the days, values and comparisons from "
+                    "<results> behind it. Stay on the same question; nothing that is not in <results>."),
+}
+CONTROL_ALIASES = {"-": "shorter", "−": "shorter", "+": "more detail", "more details": "more detail",
+                   "shorter please": "shorter", "more detail please": "more detail"}
+
+SYSTEM_COMMON = f"""\
+You are the explanation assistant of {PRODUCT_NAME} ({PRODUCT_SUBTITLE}), a research prototype. It derives
+daily metrics from a home router's network traffic metadata (packet timing, volume, DNS lookups; no
+content) and turns them into likelihoods L between 0 and 1 for DSM-5 depression criteria with a fuzzy
+scoring model (FASL): each metric value is mapped to a membership degree μ between 0 and 1 and weighted
+with w; L = Σ w·μ, clipped to [0, 1]. A criterion counts as "present" in a period when L ≥ θ on at
+least N of the period's last M days. The data you get is in <results>.
 
 Your only job is to explain these results: what a value means, which metrics drove a likelihood on a
-day, how a period compares with the baseline, and how the scoring works. Rules:
-- Use only the numbers in <results>. Name the metric, the day and the value you rely on. If the data
-  does not answer a question, say so plainly. Never invent values.
-- This is not a diagnosis and not a medical device. Do not diagnose, do not predict a condition, and do
-  not recommend treatment. Network patterns can change for many ordinary reasons (travel, holidays,
-  a new device, guests); say so where it matters.
-- Keep answers short: a few sentences or a short list. No tables or headings unless asked. Basic
-  Markdown (bold, bullet lists) is rendered.
+day, how a period compares with the usual weeks, and how the scoring works. Rules:
+- Answer the question first, in 1–3 sentences. Where it fits, answer from <results> "week_overview"
+  (the last 7 days: went quiet, back online, time in use, compared with the usual weeks); go into
+  likelihoods, metrics and scoring only when the question is about them.
+- Use only numbers that appear in <results> (rounding is fine). Do not compute new figures such as
+  differences or averages; say a difference in words ("about an hour later", "clearly less"). Name the
+  day and the value you rely on. If the data does not answer a question, say so in one sentence. Never
+  invent values.
+- Do not diagnose, do not predict a condition, and do not recommend treatment.
+- Do not add an unrequested part on what the data can or cannot imply, caveats or disclaimers; the
+  portal explains its limits elsewhere. Answer only what was asked.
+- "typical" refers to the reference group (other people's usual weeks); use that word for it.
+- Say "devices quiet at night" or "went quiet", not "sleep", for the quiet window: the network cannot
+  tell asleep from away or switched off.
+- No tables or headings unless asked. Basic Markdown (bold, bullet lists) is rendered.
+- Answer controls: a message starting with [Shorter] asks you to rewrite your previous answer shorter
+  (at most 2 sentences, same facts); one starting with [More detail] asks you to expand your previous
+  answer with the days and values from <results> behind it. In both cases add no new topic and nothing
+  that is not in <results>. If there is no previous answer, ask what they would like to know.
 - The data covers scripted test personas or consenting participants; still treat it as personal.
 """
 
-SYSTEM_PERSON = """\
+SYSTEM_PERSON = f"""\
 You are talking with the person whose data this is. Write in plain, warm, everyday language.
-- Use the everyday area names given in <results> (for example "Sleep", "Daily rhythm"). Do not use
-  DSM-5 criterion names, criterion numbers, diagnoses or clinical terms, and do not speculate about
-  what a pattern could mean medically.
+- Keep every reply to about {PERSON_MAX_WORDS} words at most, unless the person asks for more detail
+  ([More detail], "explain more", "in detail"). Short paragraphs; at most a short bullet list.
+- Describe only what was observed: when the devices went quiet and came back online, how long they
+  were in use, use at night, chats and different sites, and how that compares with the person's usual
+  weeks (more or less, earlier or later). Use the everyday area names in <results>. Do not use
+  DSM-5 criterion names, criterion numbers, diagnoses or clinical terms.
+- Never give reasons, meanings, feelings, symptoms, conditions or diagnoses, and never guess why
+  something changed or what it says about the person's health, also not when they ask again, insist
+  or rephrase. Do not repeat clinical words the person uses (for example "depressed", "insomnia",
+  "anxiety"). Say briefly that the data shows when devices were used, not why, and suggest talking
+  about it with their care team.
 - Do not tell the person which changes were expected or planned; you do not know that, and it must not
   influence them.
 - Do not quote the 0–1 area scores, thresholds, weights or rules like "N of M days", and avoid notation
   (θ, μ, L), unless the person explicitly asks how the scoring works. Say in words how different a day
-  was ("a little", "clearly"), and describe what happened in everyday terms ("you were online later than
-  usual", "fewer different websites than usual"), with a value only when it helps.
-- Formatting: short paragraphs; at most a simple bullet list; **bold** sparingly.
+  was ("a little", "clearly"), and describe what happened in everyday terms ("your devices went quiet
+  later than usual", "fewer different websites than usual"), with a value only when it helps.
 - If the person says they feel unwell, are worried, or mentions self-harm, respond with care, encourage
-  them to talk to someone they trust or a professional, and, for urgent danger, mention emergency help
-  (in Switzerland: 144, or Die Dargebotene Hand at 143).
+  them to talk to their care team, someone they trust or a professional, and, for urgent danger,
+  mention emergency help (in Switzerland: 144, or Die Dargebotene Hand at 143).
 """
 
-SYSTEM_CLINICIAN = """\
+SYSTEM_CLINICIAN = f"""\
 You are talking with a clinician, researcher or carer who supervises this person. You may use the
-DSM-5 criterion names, the scoring notation and the numbers directly. Where <results> contains
-expected outcomes of a scripted persona, you may compare observed with expected, but make clear that
-the expectations come from the test script, not from the data.
+DSM-5 criterion names, the scoring notation and the numbers directly.
+- Answer first in 1–3 sentences, then at most a few bullet points with the days and values behind it.
+  Keep it under about {CLINICIAN_MAX_WORDS} words unless they ask for more detail.
+- Where <results> contains expected outcomes of a scripted persona, you may compare observed with
+  expected, but make clear that the expectations come from the test script, not from the data.
+- Network patterns can change for ordinary reasons (travel, holidays, a new device, guests); mention
+  one only where the routine, away periods or notes in <results> point to it.
+- A criterion being present or an episode flag is a screening signal of this prototype, not a
+  diagnosis; say so only if the question asks for a diagnosis.
 """
+
+
+def _clock(m: Any) -> str | None:
+    """Minutes from midnight (negative = the evening before) as HH:MM."""
+    if not isinstance(m, (int, float)) or isinstance(m, bool) or not math.isfinite(m):
+        return None
+    m = int(round(m))
+    return f"{(m // 60) % 24:02d}:{m % 60:02d}"
+
+
+def typical_wording(text: str) -> str:
+    """D1: "healthy people" -> "typical" in flag texts that still use the old wording."""
+    for old, new in (("than healthy people usually do", "than is typical"), ("than healthy people", "than typical"),
+                     ("healthy people", "typical"), ("healthy reference", "typical range"),
+                     ("Healthy people", "Typical")):
+        text = text.replace(old, new)
+    return text
+
+
+# Week overview (A4/B1): the tracks of the person's week table, in display units.
+WEEK_TRACKS = [("went_quiet", "quiet_start", "clock"), ("back_online", "quiet_end", "clock"),
+               ("quiet_hours", "quiet_hours", "h"), ("hours_in_use", "online_hours", "h"),
+               ("minutes_in_use_at_night", "night_minutes", "min")]
+WEEK_TRACKS_CLINICIAN = [("chat_sessions", "chat_sessions", "count"), ("different_sites", "sites", "count")]
+# Words for the deviation from the usual weeks (z in SD), per track direction.
+DIRECTION_WORDS = {"quiet_start": ("later", "earlier"), "quiet_end": ("later", "earlier"),
+                   "quiet_hours": ("longer", "shorter"), "online_hours": ("more", "less"),
+                   "night_minutes": ("more", "less"), "chat_sessions": ("more", "fewer"), "sites": ("more", "fewer")}
+
+
+def compare_word(track: str, z: Any) -> str | None:
+    """The deviation in words: "as usual", "a little later", "clearly later" (thresholds 1 and 1.5 SD)."""
+    if not isinstance(z, (int, float)) or isinstance(z, bool) or not math.isfinite(z):
+        return None
+    if abs(z) < 1.0:
+        return "as usual"
+    up, down = DIRECTION_WORDS.get(track, ("higher", "lower"))
+    return f"{'clearly' if abs(z) >= 1.5 else 'a little'} {up if z > 0 else down}"
+
+
+def _show(track_unit: str, v: Any) -> Any:
+    if track_unit == "clock":
+        return _clock(v)
+    if track_unit == "h":
+        return _r(v, 1)
+    return None if v is None else (int(round(v)) if isinstance(v, (int, float)) and math.isfinite(v) else v)
+
+
+def _usual_display(key: str, unit: str, s: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not s:
+        return None
+    if unit == "clock":
+        return {"mean": _clock(s.get("mean")), "sd_minutes": _show("min", s.get("sd"))}
+    return {"mean": _show(unit, s.get("mean")), "sd": _show(unit, s.get("sd"))}
+
+
+def week_overview(days: list[dict[str, Any]], obs: dict[str, Any], person_view: bool) -> dict[str, Any]:
+    """The last 7 days with data, as in the person's week table, with the usual weeks in the same units."""
+    tracks = WEEK_TRACKS + ([] if person_view else WEEK_TRACKS_CLINICIAN)
+    rows = []
+    for d in [d for d in days if (d.get("observed") or {}).get("has_data")][-7:]:
+        o = d["observed"]
+        row: dict[str, Any] = {"date": d["date"], "weekday": d.get("weekday")}
+        if o.get("day_type"):
+            row["day_type"] = o["day_type"]
+        compared = {}
+        for name, key, unit in tracks:
+            row[name] = _show(unit, o.get(key))
+            w = compare_word(key, (o.get("deviation") or {}).get(key))
+            if w:
+                compared[name] = w
+        row["compared_with_usual_weeks"] = compared
+        if not person_view and o.get("percentile_ref"):
+            row["percentile_vs_typical"] = {k: _r(v, 0) for k, v in o["percentile_ref"].items()}
+        rows.append(row)
+    usual = obs.get("usual") or {}
+    return {
+        "note": ("the last 7 days with data (as in the week table); 'compared_with_usual_weeks': as usual "
+                 "(within 1 SD of the usual weeks), a little (1-1.5 SD) or clearly (beyond 1.5 SD) different; "
+                 "went quiet / back online = devices quiet at night (asleep, away or off look the same)"),
+        "days": rows,
+        "usual_weeks": {name: u for name, key, unit in tracks if (u := _usual_display(key, unit, usual.get(key)))},
+    }
+
+
+def _flag(f: dict[str, Any]) -> dict[str, Any]:
+    out = {"title": typical_wording(f["title"]),
+           "compared_with": "typical range (other people's usual weeks)" if f.get("basis") == "reference"
+           else "own usual weeks",
+           "days": f["days"], "count": f["count"], "of_last": f["window"]}
+    if f.get("kind") == "change":
+        out["kind"] = "notable change in the improving direction, to discuss (not a risk)"
+    if f.get("names"):
+        out["what"] = f["names"]
+    return out
+
+
+def _typical_reference(ref: dict[str, Any]) -> dict[str, Any]:
+    """The typical range: K1's percentile shape (tracks p16/p50/p84) or the v2 pooled mean/SD."""
+    if ref.get("tracks"):
+        return {"label": typical_wording(ref.get("label") or "typical"), "source": ref.get("source"),
+                "percentiles_16_50_84": {
+                    k: {"p16": _r(v.get("p16"), 2), "p50": _r(v.get("p50"), 2), "p84": _r(v.get("p84"), 2),
+                        **({"n": v["n"]} if v.get("n") else {}),
+                        **({"citation": v["citation"]} if v.get("citation") else {}),
+                        **({"proxy_note": v["proxy_note"]} if v.get("proxy_note") else {})}
+                    for k, v in ref["tracks"].items()}}
+    return {
+        "note": ("pooled usual weeks of other people (scripted personas' baseline weeks, or volunteers); small "
+                 "and mixed lifestyles, so a difference can reflect lifestyle"),
+        "people": len(ref.get("people") or []), "days": ref.get("n_days"),
+        "mean_sd": {k: {"mean": _r(v["mean"]), "sd": _r(v["sd"])} for k, v in (ref.get("stats") or {}).items()},
+    }
+
+
+def observed_context(days: list[dict[str, Any]], obs: dict[str, Any], person_view: bool) -> dict[str, Any]:
+    """Layer 1: observed behaviour in real units and the flags the overview shows (all days).
+
+    For the person the timeline is already redacted (no crisis or self-harm sites, no typical range)."""
+    out: dict[str, Any] = {
+        "note": ("what the network saw, before any model: devices quiet at night (went quiet / back online; "
+                 "asleep, away or off look the same), hours in use, minutes in use 00:00-06:00, chat sessions, "
+                 "different sites. 'usual' = mean and SD over the baseline days (times as minutes from "
+                 "midnight, negative = evening before). A flag names a pattern over the recent days, not a "
+                 "single day."),
+        "usual": {k: {"mean": _r(v["mean"]), "sd": _r(v["sd"])} for k, v in obs.get("usual", {}).items()},
+        "flags": [_flag(f) for f in obs.get("flags", [])],
+        "days": {
+            d["date"]: {
+                "went_quiet": _clock(o.get("quiet_start")), "back_online": _clock(o.get("quiet_end")),
+                "quiet_hours": _r(o.get("quiet_hours"), 2), "hours_in_use": _r(o.get("online_hours"), 2),
+                "minutes_in_use_at_night": o.get("night_minutes"), "chat_sessions": o.get("chat_sessions"),
+                "different_sites": o.get("sites"),
+                **({"went_quiet_sd_last_7_nights_min": _r(o["quiet_start_sd7"], 0)}
+                   if o.get("quiet_start_sd7") is not None else {}),
+            }
+            for d in days if (o := d.get("observed"))
+        },
+    }
+    if obs.get("reference") and not person_view:
+        out["typical_reference"] = _typical_reference(obs["reference"])
+    return out
 
 
 def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
@@ -234,36 +415,8 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
     }
     obs = tl.get("observed")
     if obs:
-        # Layer 1: observed behaviour in real units and the risk flags the overview shows. For the
-        # person, the timeline is already redacted (no crisis or self-harm sites).
-        def clock(m):
-            return None if m is None else f"{int(m // 60) % 24:02d}:{int(m % 60):02d}"
-        ctx["observed_behaviour"] = {
-            "note": ("what the network saw, before any model: quiet window at night (devices went quiet / "
-                     "came back online; asleep, away or off look the same), hours in use, minutes in use "
-                     "00:00-06:00, chat sessions, different sites. 'usual' = mean and SD over the baseline "
-                     "days. A flag names a risk over the recent days, not a single day."),
-            "usual": {k: {"mean": _r(v["mean"]), "sd": _r(v["sd"])} for k, v in obs.get("usual", {}).items()},
-            "flags": [{"title": f["title"], "compared_with": "healthy people" if f.get("basis") == "reference" else "own usual weeks",
-                       "days": f["days"], "count": f["count"], "of_last": f["window"],
-                       **({"what": f.get("names")} if f.get("names") else {})} for f in obs.get("flags", [])],
-            **({"healthy_reference": {
-                "note": ("pooled healthy days of other people (scripted personas' baseline weeks = healthy "
-                         "everyday profiles, or healthy volunteers); small and mixed lifestyles, so a "
-                         "difference can reflect lifestyle rather than health"),
-                "people": obs["reference"]["people"], "days": obs["reference"]["n_days"],
-                "mean_sd": {k: {"mean": _r(v["mean"]), "sd": _r(v["sd"])} for k, v in obs["reference"]["stats"].items()},
-            }} if obs.get("reference") else {}),
-            "days": {
-                d["date"]: {
-                    "went_quiet": clock(o.get("quiet_start")), "back_online": clock(o.get("quiet_end")),
-                    "quiet_hours": _r(o.get("quiet_hours"), 2), "hours_in_use": _r(o.get("online_hours"), 2),
-                    "minutes_in_use_at_night": o.get("night_minutes"), "chat_sessions": o.get("chat_sessions"),
-                    "different_sites": o.get("sites"),
-                }
-                for d in tl["days"] if (o := d.get("observed"))
-            },
-        }
+        ctx["week_overview"] = week_overview(tl["days"], obs, person_view)
+        ctx["observed_behaviour"] = observed_context(tl["days"], obs, person_view)
     care = tl.get("care") or {}
     if care.get("routine"):
         r = care["routine"]
@@ -281,6 +434,7 @@ def build_context(tl: dict[str, Any], cfg: fasl.FaslConfig, person_view: bool,
     if not person_view and care.get("clinical"):
         c = care["clinical"]
         ctx["care_plan_by_clinicians"] = {
+            "purpose": c.get("purpose"),   # assessment (status vs. typical) or treatment monitoring (change)
             "history": c.get("history"), "concerns": c.get("concerns"), "treatment": c.get("treatment"),
             "criteria_in_focus": c.get("criteria"), "risk_settings": c.get("focus"),
             "normal_ranges_set_by_clinician": c.get("normals"),
@@ -332,6 +486,13 @@ def system_blocks(ctx: dict[str, Any], person_view: bool) -> list[dict[str, Any]
     ]
 
 
+def control_message(text: str) -> str | None:
+    """The explicit instruction for an answer control ("Shorter" / "More detail"), else None."""
+    key = " ".join(str(text).strip().strip(".!").lower().split())
+    key = CONTROL_ALIASES.get(key, key)
+    return CONTROL_MESSAGES.get(key)
+
+
 def clean_messages(messages: Iterable[dict[str, Any]], focus: str | None) -> list[dict[str, Any]]:
     """User/assistant text turns only, last MAX_TURNS, starting with a user turn."""
     out = [{"role": m["role"], "content": str(m["content"])[:4000]}
@@ -341,6 +502,10 @@ def clean_messages(messages: Iterable[dict[str, Any]], focus: str | None) -> lis
         out.pop(0)
     if not out or out[-1]["role"] != "user":
         raise ValueError("the last message must be a question")
+    control = control_message(out[-1]["content"])
+    if control:
+        out[-1] = {"role": "user", "content": control}
+        return out          # the controls rewrite the previous answer; the screen focus does not matter
     if focus:
         out[-1] = {"role": "user", "content": f"(The screen currently shows: {focus})\n\n{out[-1]['content']}"}
     return out
