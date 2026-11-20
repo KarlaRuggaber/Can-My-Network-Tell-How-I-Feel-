@@ -1,0 +1,5 @@
+# Real devices (phones, laptops on the access point). Copy to /etc/tapingest/devices.real.csv on the
+# gateway (root:tapingest, mode 640); never commit the real file: MACs of real phones are personal data.
+# mac: the device's fixed private Wi-Fi address; ip: its DHCP reservation, outside the pool 10.42.0.100-200.
+device,role,mac,ip,dataset
+example_phone,phone,a2:00:00:00:00:01,10.42.0.21,gw_example_a

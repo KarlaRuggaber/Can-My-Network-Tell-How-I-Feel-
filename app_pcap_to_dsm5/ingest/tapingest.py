@@ -50,51 +50,78 @@ DEVICE_COLUMNS = ["device", "role", "mac", "ip", "dataset"]
 # -------------------- devices.csv --------------------
 
 class DeviceMap:
-    """IP/MAC -> dataset lookup from devices.csv, reloaded when the file changes."""
+    """MAC/IP -> dataset lookup from one or more devices files, reloaded when one changes.
 
-    def __init__(self, path: Path):
-        self.path = path
-        self.mtime = None
+    Usually two files: the simulated devices (traffic-runner/config/devices.csv, in git) and the
+    real devices (gateway-local, root-only, not in git: real phones' MACs are personal data).
+    """
+
+    def __init__(self, paths: Path | list[Path]):
+        self.paths = [paths] if isinstance(paths, Path) else list(paths)
+        self.mtimes: tuple | None = None
         self.ip_to_dataset: dict[str, str] = {}
         self.mac_to_dataset: dict[str, str] = {}
+        self.ip_to_mac: dict[str, str] = {}
+
+    @property
+    def path(self) -> Path:  # the first file (kept for callers that log it)
+        return self.paths[0]
 
     def refresh(self) -> None:
-        mtime = self.path.stat().st_mtime
-        if mtime == self.mtime:
+        mtimes = tuple(p.stat().st_mtime for p in self.paths)
+        if mtimes == self.mtimes:
             return
-        self.ip_to_dataset, self.mac_to_dataset = load_devices(self.path)
-        self.mtime = mtime
-        log.info("Loaded %d device(s) from %s", len(self.ip_to_dataset), self.path)
+        self.ip_to_dataset, self.mac_to_dataset, self.ip_to_mac = load_devices(self.paths)
+        self.mtimes = mtimes
+        log.info("Loaded %d device(s) from %s", len(self.ip_to_dataset), ", ".join(map(str, self.paths)))
 
     def dataset_for(self, row: dict, src_mac: str | None = None, dst_mac: str | None = None) -> str | None:
-        # Source first: a device's own requests decide; replies are matched via destination.
-        # MAC only as fallback, e.g. for DHCP broadcasts sent from 0.0.0.0.
-        return (self.ip_to_dataset.get(row.get("Source IP")) or self.ip_to_dataset.get(row.get("Destination IP"))
-                or self.mac_to_dataset.get(src_mac) or self.mac_to_dataset.get(dst_mac))
+        # Source first: a device's own packets decide; replies are matched via the destination.
+        # On each side the MAC comes before the IP: a real device keeps its (fixed private) MAC
+        # when its DHCP address changes. The IP counts only if that side's MAC is the one
+        # registered for the IP (or the packet has no MAC): an address that DHCP handed to
+        # another, unregistered device must not be credited to the registered person.
+        return (self._side(src_mac, row.get("Source IP"))
+                or self._side(dst_mac, row.get("Destination IP")))
+
+    def _side(self, mac: str | None, ip: str | None) -> str | None:
+        if mac and mac in self.mac_to_dataset:
+            return self.mac_to_dataset[mac]
+        ds = self.ip_to_dataset.get(ip)
+        if ds is None:
+            return None
+        registered = self.ip_to_mac.get(ip, "")
+        return ds if (not mac or not registered or mac == registered) else None
 
 
-def load_devices(path: Path) -> tuple[dict[str, str], dict[str, str]]:
-    with open(path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(line for line in f if line.strip() and not line.lstrip().startswith("#"))
-        missing = [c for c in DEVICE_COLUMNS if c not in (reader.fieldnames or [])]
-        if missing:
-            raise ValueError(f"{path}: missing column(s) {missing}, expected {DEVICE_COLUMNS}")
-        out: dict[str, str] = {}
-        devices, macs = set(), {}
-        for n, r in enumerate(reader, start=2):
-            r = {k: (v or "").strip() for k, v in r.items()}
-            ip, ds, dev, mac = r["ip"], r["dataset"], r["device"], r["mac"].lower()
-            ipaddress.IPv4Address(ip)  # raises on invalid address
-            if not DATASET_RE.match(ds):
-                raise ValueError(f"{path}:{n}: dataset '{ds}' may only contain A-Z a-z 0-9 . _ -")
-            for value, seen, what in ((ip, out, "ip"), (dev, devices, "device"), (mac, macs, "mac")):
-                if value and value in seen:
-                    raise ValueError(f"{path}:{n}: duplicate {what} '{value}'")
-            out[ip] = ds
-            devices.add(dev)
-            if mac:
-                macs[mac] = ds
-        return out, macs
+def load_devices(paths: Path | list[Path]) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """IP -> dataset, MAC -> dataset and IP -> registered MAC over all files; ip, device and MAC
+    must be unique across them."""
+    out: dict[str, str] = {}
+    devices: set[str] = set()
+    macs: dict[str, str] = {}
+    ip_mac: dict[str, str] = {}
+    for path in ([paths] if isinstance(paths, Path) else paths):
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(line for line in f if line.strip() and not line.lstrip().startswith("#"))
+            missing = [c for c in DEVICE_COLUMNS if c not in (reader.fieldnames or [])]
+            if missing:
+                raise ValueError(f"{path}: missing column(s) {missing}, expected {DEVICE_COLUMNS}")
+            for n, r in enumerate(reader, start=2):
+                r = {k: (v or "").strip() for k, v in r.items()}
+                ip, ds, dev, mac = r["ip"], r["dataset"], r["device"], r["mac"].lower()
+                ipaddress.IPv4Address(ip)  # raises on invalid address
+                if not DATASET_RE.match(ds):
+                    raise ValueError(f"{path}:{n}: dataset '{ds}' may only contain A-Z a-z 0-9 . _ -")
+                for value, seen, what in ((ip, out, "ip"), (dev, devices, "device"), (mac, macs, "mac")):
+                    if value and value in seen:
+                        raise ValueError(f"{path}:{n}: duplicate {what} '{value}'")
+                out[ip] = ds
+                devices.add(dev)
+                if mac:
+                    macs[mac] = ds
+                    ip_mac[ip] = mac
+    return out, macs, ip_mac
 
 
 # -------------------- background filter --------------------
@@ -294,7 +321,8 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--watch", action="append", required=True, type=Path,
                    help="Folder with finished capture files (repeatable), e.g. /var/lib/tapcap/ready")
-    p.add_argument("--devices", required=True, type=Path, help="devices.csv (device,role,mac,ip,dataset)")
+    p.add_argument("--devices", required=True, type=Path, action="append",
+                   help="devices file (device,role,mac,ip,dataset); repeat for several, e.g. simulated + real devices")
     p.add_argument("--out", type=Path, default=APP_DIR / "processed_parquet",
                    help="The app's processed_parquet folder (default: %(default)s)")
     p.add_argument("--state", type=Path, default=Path("/var/lib/tapingest/state.sqlite"),

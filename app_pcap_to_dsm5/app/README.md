@@ -69,14 +69,14 @@ Notes:
 ## Data Directories
 
 - `processed_parquet/`: On-demand storage for five-minute parquet partitions derived from uploaded PCAP/PCAPNG files.
-- `feature_cache/`: Daily metric caches that accelerate repeat visits by avoiding recomputation.
+- `feature_cache/`: Daily metric caches that accelerate repeat visits by avoiding recomputation. Since 17.11.2026 (our change, PR #17) one CSV per dataset selection (`features_<md5>.csv`), one row per day with a fingerprint of that day's partition files: only new or changed days are recomputed, each day in its own short Python process so the app's memory stays at about one day of data (peak 3.8 GB for a 9 M-row day). Precompute from the command line: `python -m metrics.daily_cache --dataset <name>` (run from `app/`), see `metrics/daily_cache.py`.
 
 Both folders are created lazily by the application and can be cleared safely if you want to reset cached artefacts.
 
 ## Development Tips
 
 - Use the sample datasets referenced in the thesis to validate behaviour changes after adjusting thresholds.
-- When iterating on metric logic, disable caching via the in-app controls or clear `feature_cache/` to ensure fresh computations.
+- When iterating on metric logic, recompute via the in-app controls ("Refresh cached day metrics" on Early Signs, "Recompute all-days metric cache" on Network Metrics), `--force` on the command line, or clear `feature_cache/`: the cache notices changed data, not changed code.
 - Keep credentials out of version control; `.streamlit/secrets.toml` is ignored via `.gitignore` but review before publishing forks.
 
 ## Safety Reminder

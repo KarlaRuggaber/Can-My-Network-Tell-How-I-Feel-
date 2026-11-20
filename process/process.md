@@ -388,6 +388,8 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
     - Table and explanation: [synthesizer/README.md](../synthesizer/README.md) §8.
     - Compared headless with `synthesizer/compare_day.py` (the app's own per-day pipeline), because the Streamlit app needs more memory than the 8 GB laptop has.
   - **Access:** Karla's laptop logs in to the gateway with its own SSH key (Tailscale addresses only); sudo stays manual.
+  - **Results portal and evaluation** (Thierry, PRs #14/#15): FastAPI + React portal with login, person profiles and an explanation assistant, deployed on the gateway behind `tailscale serve`; evaluation of the live run, baseline vs. clinical phase per persona. Details: [frontend/README.md](../frontend/README.md), [evaluation/README.md](../evaluation/README.md).
+  - **The Streamlit app ran out of memory** with all days of three personas (gateway 4.9 GB, laptop 8 GB and 24 GB). Fixed in week 10 (PR #17).
 - **Next / open:**
   - Add a day with `browse` blocks to the library
   - After 22.11: full library; several synthetic days in a row, to compare baseline metrics and Early Signs likelihoods too
@@ -401,13 +403,29 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
 
 **Supervisor meeting:** Fri 20.11
 - **Done:**
+  - **App memory fixed** (PR #17, merged 17.11): each day is computed in its own short process, the cache file is written after every day, and only days whose partitions changed are recomputed.
+    - The largest day (Maria 25.10, 9.1 M rows) peaks at 3.8 GB in Docker. All 61 days of the three personas in 48 min.
+    - Values identical before and after (78 metrics × 3 personas; 85 portal values).
+    - Faster through vectorized address checks: Carl's slowest day 1935 s → 97 s.
+    - Pages 01/02 start with no dataset selected (Thierry's note), so opening a page no longer loads everything.
+    - **Decision:** we get more RAM from the professor, so memory is not a priority after this fix.
+  - **Assistant on Claude** (17.11): the project's Claude key replaces OpenRouter. Default Anthropic, Claude Sonnet 5.5 (the key has no Opus/Fable; cheaper). Key entered on the gateway in a terminal, never in chat; tested with a real question. [frontend/README.md](../frontend/README.md).
+  - **Identifying real users** (PR #18, merged 17.11): the ingest identifies devices by MAC first and uses the IP only when the MAC fits, because real phones get changing IPs from DHCP. Real devices go into a separate, gateway-local file. Step-by-step guide for real use in [ingest/README.md](../app_pcap_to_dsm5/ingest/README.md) "Real devices".
+    - **Decision:** not set up now; the live run only has simulated profiles. Set up when the system is used with real people.
+  - **Plan for mobile data** (not built): WireGuard VPN from the phone to the gateway, recorded on `wg0`, so days away from home are no longer read as inactivity. Checked against the gateway's configuration, the ingest part tested locally. [MobileDataVPN.md](MobileDataVPN.md).
+  - **Email to Clemens Stachl:** online call proposed for Wed 25.11 from 10:00, mainly for input on the portal prototype.
 - **Next / open:**
+  - Live run ends Sun 22.11; then the after-run steps (full synthesizer library, several synthetic days in a row)
+  - For real use (later): device names of real devices in the portal, a warning for unknown devices, a retention rule for real-device pcaps
+  - `evaluation` test fails under pandas 3 (already on main before PR #17); the portal pins pandas < 3
 - **Blockers / notes:**
 
 </details>
 
 <details>
 <summary><b>Week 11</b> (23.11 – 29.11)</summary>
+
+**Call with Clemens Stachl** (online, proposed): Wed 25.11 from 10:00, input on the portal prototype
 
 **Supervisor meeting:** Fri 27.11
 - **Done:**
