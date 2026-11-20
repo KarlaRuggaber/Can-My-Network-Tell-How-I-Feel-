@@ -103,7 +103,27 @@ class AssistantConfig:
         if provider == "local":
             out["base_url"] = (f.get("base_urls") or {}).get("local") or os.environ.get("CMN_LOCAL_URL") \
                 or p["default_base_url"]
+            fb = self._fallback(f)
+            if fb:
+                out["fallback"] = fb
         return out
+
+    @staticmethod
+    def _fallback_on(f: dict[str, Any]) -> bool:
+        if "fallback" in f:
+            return f.get("fallback") == "anthropic"
+        return os.environ.get("CMN_ASSISTANT_FALLBACK", "").strip().lower() == "anthropic"
+
+    def _fallback(self, f: dict[str, Any]) -> dict[str, Any] | None:
+        """Claude as the fallback of a local model: on in the settings and Claude credentials exist."""
+        if not self._fallback_on(f):
+            return None
+        a = PROVIDERS["anthropic"]
+        key = (f.get("api_keys") or {}).get("anthropic") or os.environ.get(a["key_env"], "")
+        if not key and not _anthropic_profile():
+            return None
+        return {"provider": "anthropic", "model": (f.get("models") or {}).get("anthropic") or a["default_model"],
+                "api_key": key}
 
     def public(self) -> dict[str, Any]:
         c = self.load()
@@ -112,7 +132,12 @@ class AssistantConfig:
         f = self._file()
         base_url = (f.get("base_urls") or {}).get("local") or os.environ.get("CMN_LOCAL_URL") \
             or PROVIDERS["local"]["default_base_url"]
-        if local:
+        if local and c.get("fallback"):
+            notice = (f"Your question and this profile's daily results (no raw traffic, addresses or device names) "
+                      f"are sent to a model running on the team's own computer ({c['model']}). Only when that "
+                      f"computer cannot be reached do they go to Anthropic's Claude ({c['fallback']['model']}) "
+                      f"instead; the answer then says so.")
+        elif local:
             notice = (f"Your question and this profile's daily results (no raw traffic, addresses or device names) "
                       f"are sent to a model running on the team's own computer ({c['model']}); nothing goes to "
                       f"an outside company.")
@@ -123,6 +148,8 @@ class AssistantConfig:
                 "default_model": p["default_model"],
                 "has_key": True if local else (bool(c["api_key"]) or _anthropic_profile()),
                 "has_claude_key": bool((f.get("api_keys") or {}).get("anthropic")),   # stored in the file
+                "fallback": self._fallback_on(f),                       # Claude when the local model is unreachable
+                "fallback_ready": bool(c.get("fallback")),              # ... and Claude credentials exist
                 "base_url": llm.public_base_url(base_url),
                 "providers": [{"id": k, "label": v["label"], "default_model": v["default_model"],
                                **({"default_base_url": v["default_base_url"]} if "default_base_url" in v else {})}
@@ -130,7 +157,7 @@ class AssistantConfig:
                 "notice": notice}
 
     def save(self, enabled: bool, model: str, api_key: str | None, provider: str | None = None,
-             base_url: str | None = None) -> None:
+             base_url: str | None = None, fallback: bool | None = None) -> None:
         """api_key None: keep the stored key of that provider; "": remove it. provider None: keep the
         current one. Models, keys and the endpoint are kept per provider; unknown providers are dropped."""
         model = model.strip()
@@ -154,8 +181,9 @@ class AssistantConfig:
                 urls["local"] = llm.check_base_url(base_url)
             else:
                 urls.pop("local", None)
+        fb = f.get("fallback") if fallback is None else ("anthropic" if fallback else "")
         f = {"enabled": bool(enabled), "provider": provider, "models": models, "api_keys": keys,
-             **({"base_urls": urls} if urls else {})}
+             **({"base_urls": urls} if urls else {}), **({"fallback": fb} if fb is not None else {})}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".tmp-", suffix=".json")
         with os.fdopen(fd, "w", encoding="utf-8") as fh:

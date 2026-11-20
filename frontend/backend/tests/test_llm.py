@@ -183,3 +183,46 @@ def test_stream_answer_accepts_the_v2_client_name():
     srv = FakeServer(lambda b: httpx.Response(200, content=sse("hi")))
     assert "".join(assistant.stream_answer(LOCAL, "s", [{"role": "user", "content": "q"}],
                                            anthropic_client=srv.client())) == "hi"
+
+
+def test_unreachable_local_model_falls_back_to_claude_only_when_configured():
+    def down(req):
+        raise httpx.ConnectError("refused")
+    dead = httpx.Client(transport=httpx.MockTransport(down))
+    calls = []
+
+    class FakeStream:
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        text_stream = iter(["From Claude."])
+        def get_final_message(self):
+            return type("M", (), {"stop_reason": "end_turn", "content": []})()
+
+    class FakeClaude:
+        class beta:
+            class messages:
+                @staticmethod
+                def stream(**kw):
+                    calls.append(kw["model"])
+                    return FakeStream()
+    cfg = {**LOCAL, "fallback": {"provider": "anthropic", "model": "claude-x", "api_key": "k"}}
+    out = "".join(llm.stream_text(cfg, "s", [{"role": "user", "content": "q"}], dead, fallback_client=FakeClaude()))
+    assert "Claude (Anthropic) answered instead" in out and out.endswith("From Claude.") and calls == ["claude-x"]
+    # without a fallback the error note stays, and no Claude call is made
+    out = "".join(llm.stream_text(LOCAL, "s", [{"role": "user", "content": "q"}], dead))
+    assert out.startswith("(The assistant failed:")
+
+
+def test_fallback_setting_is_saved_and_needs_a_claude_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("cmn_frontend.assistant._anthropic_profile", lambda: False)
+    c = AssistantConfig(tmp_path)
+    c.save(True, "qwen", None, "local", "http://laptop:11434/v1", fallback=True)
+    assert c.public()["fallback"] is True and c.public()["fallback_ready"] is False and "fallback" not in c.load()
+    c.save(True, "claude-x", "sk-test", "anthropic")
+    c.save(True, "qwen", None, "local", None)          # fallback None: kept
+    assert c.load()["fallback"]["model"] == "claude-x" and "Only when that computer" in c.public()["notice"]
+    c.save(True, "qwen", None, "local", None, fallback=False)
+    assert "fallback" not in c.load() and c.public()["fallback"] is False

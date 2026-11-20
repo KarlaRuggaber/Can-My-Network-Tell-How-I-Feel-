@@ -279,10 +279,12 @@ export interface AssistantStatus {
   // multi-profile users only:
   model?: string; default_model?: string; has_key?: boolean;
   provider?: AssistantProviderId; base_url?: string; providers?: AssistantProvider[]; has_claude_key?: boolean;
+  fallback?: boolean;         // local: Claude answers when the local model cannot be reached
+  fallback_ready?: boolean;   // ... and Claude credentials exist
 }
 export interface AssistantSettingsBody {
   enabled: boolean; model: string; api_key?: string | null;
-  provider?: AssistantProviderId; base_url?: string | null;
+  provider?: AssistantProviderId; base_url?: string | null; fallback?: boolean | null;
 }
 export interface AssistantCheck { ok: boolean; message: string; models: string[] }
 export interface ChatTurn { role: "user" | "assistant"; content: string }
