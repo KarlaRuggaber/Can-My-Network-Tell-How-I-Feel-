@@ -51,7 +51,7 @@ describe("AssistantSettings", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save" })); });
     const put = calls.find((c) => c.init?.method === "PUT")!;
     expect(JSON.parse(String(put.init!.body))).toEqual({
-      enabled: true, model: "qwen2.5:3b", provider: "local", api_key: null, base_url: "http://karla-laptop:11434/v1",
+      enabled: true, model: "qwen2.5:3b", provider: "local", api_key: null, base_url: "http://karla-laptop:11434/v1", fallback: false,
     });
     await waitFor(() => expect(screen.getByText("Saved.")).toBeTruthy());
   });

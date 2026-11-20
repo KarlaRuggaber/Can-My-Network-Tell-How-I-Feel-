@@ -15,13 +15,14 @@ export function AssistantSettings() {
   const [model, setModel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [key, setKey] = useState("");
+  const [fallback, setFallback] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [check, setCheck] = useState<AssistantCheck | null>(null);
   const [checking, setChecking] = useState(false);
 
   const apply = (s: AssistantStatus) => {
     setSt(s); setEnabled(s.enabled || false); setModel(s.model ?? "");
-    setProvider(s.provider ?? "anthropic"); setBaseUrl(s.base_url ?? "");
+    setProvider(s.provider ?? "anthropic"); setBaseUrl(s.base_url ?? ""); setFallback(!!s.fallback);
   };
   useEffect(() => { api.assistant().then(apply).catch(() => setSt(null)); }, []);
 
@@ -45,6 +46,7 @@ export function AssistantSettings() {
         enabled, model, provider,
         api_key: local ? null : removeKey ? "" : key || null,
         base_url: local ? baseUrl : null,
+        fallback: local ? fallback : null,
       });
       apply(s); setKey("");
       setMsg({ kind: "ok", text: removeKey ? "Key removed." : s.has_key ? "Saved." : "Saved, but there is no API key yet." });
@@ -71,7 +73,9 @@ export function AssistantSettings() {
         <h2>Assistant</h2>
         <p className="sub">The assistant explains the results in natural language and helps fill in the onboarding and the
           care plan. Questions and the profile's daily results (no raw traffic, addresses or device names){" "}
-          {PROVIDER_TEXT[provider].where}.</p>
+          {local && fallback
+            ? "stay on the team's own computers; only when that computer cannot be reached do they go to Anthropic's Claude (USA)"
+            : PROVIDER_TEXT[provider].where}.</p>
       </div>
       {msg && <p className={msg.kind === "error" ? "error" : "notice"} role="status">{msg.text}</p>}
       <div className="editor">
@@ -108,6 +112,15 @@ export function AssistantSettings() {
               llama.cpp server: port 8080, LM Studio: port 1234, both with <code>/v1</code>. From the gateway, use the
               laptop's Tailscale name or address. Small models answer more slowly and less precisely than Claude.</p>
             {check && <p className={check.ok ? "notice" : "error"} role="status">{check.message}</p>}
+            <label className="radio"><input type="checkbox" checked={fallback} onChange={(e) => setFallback(e.target.checked)} />
+              If the local model cannot be reached (laptop closed or offline), let Anthropic's Claude answer instead</label>
+            {fallback && (
+              <p className={st.has_claude_key ? "muted small" : "error"}>
+                {st.has_claude_key
+                  ? "Uses the stored Claude key and Claude model. Such an answer starts with a note that Claude answered, and the notice for people says that this can happen."
+                  : "No Claude key is stored yet: choose Anthropic (Claude), enter the key and save, then switch back to the local model."}
+              </p>
+            )}
           </>
         ) : (
           <>

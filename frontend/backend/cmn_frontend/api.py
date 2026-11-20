@@ -358,6 +358,7 @@ class AssistantSettingsBody(BaseModel):
     api_key: str | None = None      # None: keep the stored key; "": remove it
     provider: str | None = None     # "anthropic" | "local"; None: keep the current one
     base_url: str | None = None     # local: OpenAI-compatible endpoint; None: keep
+    fallback: bool | None = None    # local: Claude answers when the local model is unreachable; None: keep
 
 
 class AssistantCheckBody(BaseModel):
@@ -659,7 +660,7 @@ def create_app(settings: Settings | None = None, llm_client: Any = None,
     @app.put("/api/assistant")
     def assistant_settings(body: AssistantSettingsBody, user: auth.User = Depends(multi_user)) -> dict[str, Any]:
         try:
-            assistant_cfg.save(body.enabled, body.model, body.api_key, body.provider, body.base_url)
+            assistant_cfg.save(body.enabled, body.model, body.api_key, body.provider, body.base_url, body.fallback)
         except ValueError as e:
             raise HTTPException(422, str(e))
         return assistant_cfg.public()

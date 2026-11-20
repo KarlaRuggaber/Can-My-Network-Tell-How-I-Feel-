@@ -16,7 +16,11 @@ Providers (``cfg["provider"]``):
   machine that runs the model.
 
 ``cfg`` is what ``assistant.AssistantConfig.load()`` returns: provider, model, api_key and, for
-``local``, base_url. Errors never raise out of ``stream_text`` (the answer ends with a short note
+``local``, base_url and optionally ``fallback`` (an Anthropic cfg: provider, model, api_key). With a
+fallback, a local model that cannot be reached at all (connection refused or timed out before any
+answer: laptop closed, offline, Ollama not running) is replaced by Claude for that request, and the
+answer starts with a note that says so. Errors after the connection (wrong model, cut-off answer)
+never fall back. Errors never raise out of ``stream_text`` (the answer ends with a short note
 instead); ``complete_json`` raises ``LLMError`` (a ``ValueError``) with a short, user-facing reason.
 """
 
@@ -55,6 +59,19 @@ def _extra_body() -> dict[str, Any]:
 
 class LLMError(ValueError):
     """A short reason the model gave no usable answer (shown to the user)."""
+
+
+class LocalUnreachable(LLMError):
+    """The local endpoint could not be reached at all (only raised when a fallback is configured)."""
+
+
+def _unreachable(e: Exception) -> bool:
+    import httpx
+    return isinstance(e, (httpx.ConnectError, httpx.ConnectTimeout))
+
+
+def fallback_note(e: Exception) -> str:
+    return f"({str(e)[0].upper()}{str(e)[1:]}; Claude (Anthropic) answered instead.)\n\n"
 
 
 # ---- shared helpers ----
@@ -124,10 +141,15 @@ def check_local(base_url: str, model: str, api_key: str = "", client: Any = None
 
 
 def stream_text(cfg: dict[str, Any], system: str | list[dict[str, Any]], messages: list[dict[str, Any]],
-                client: Any = None) -> Iterator[str]:
+                client: Any = None, fallback_client: Any = None) -> Iterator[str]:
     """Text chunks of the answer. Refusals and errors end with a short note instead of raising."""
     if cfg.get("provider", DEFAULT_PROVIDER) == "local":
-        yield from _local_stream(cfg, system_text(system), messages, client)
+        try:
+            yield from _local_stream(cfg, system_text(system), messages, client)
+        except LocalUnreachable as e:
+            fb = cfg["fallback"]
+            yield fallback_note(e)
+            yield from stream_claude(fallback_client or _anthropic_client(fb), fb["model"], system, messages)
     else:
         if client is None:
             client = _anthropic_client(cfg)
@@ -135,10 +157,13 @@ def stream_text(cfg: dict[str, Any], system: str | list[dict[str, Any]], message
 
 
 def complete_json(cfg: dict[str, Any], system: str, user: str, schema: dict[str, Any],
-                  client: Any = None) -> dict[str, Any]:
+                  client: Any = None, fallback_client: Any = None) -> dict[str, Any]:
     """One answer that follows ``schema`` (raises LLMError with a short reason)."""
     if cfg.get("provider", DEFAULT_PROVIDER) == "local":
-        return _local_json(cfg, system, user, schema, client)
+        try:
+            return _local_json(cfg, system, user, schema, client)
+        except LocalUnreachable:
+            return _claude_json(cfg["fallback"], system, user, schema, fallback_client)
     return _claude_json(cfg, system, user, schema, client)
 
 
@@ -247,6 +272,7 @@ def _local_stream(cfg: dict[str, Any], system: str, messages: list[dict[str, Any
         return
     http = _local_client(cfg, client)
     finish = None
+    started = False
     try:
         with http.stream("POST", _local_url(cfg), json=body) as r:
             if r.status_code >= 400:
@@ -264,9 +290,12 @@ def _local_stream(cfg: dict[str, Any], system: str, messages: list[dict[str, Any
                     continue
                 text = (choice.get("delta") or {}).get("content")
                 if text:
+                    started = True
                     yield text
                 finish = choice.get("finish_reason") or finish
     except httpx.HTTPError as e:
+        if cfg.get("fallback") and not started and _unreachable(e):
+            raise LocalUnreachable(_local_error(e, cfg))
         yield f"(The assistant failed: {_local_error(e, cfg)}.)"
         return
     finally:
@@ -296,6 +325,8 @@ def _local_json(cfg: dict[str, Any], system: str, user: str, schema: dict[str, A
         r.raise_for_status()
         choice = (r.json().get("choices") or [{}])[0]
     except httpx.HTTPError as e:
+        if cfg.get("fallback") and _unreachable(e):
+            raise LocalUnreachable(_local_error(e, cfg))
         raise LLMError(_local_error(e, cfg))
     except ValueError:
         raise LLMError("the local endpoint gave no valid response")

@@ -41,7 +41,7 @@ Ollama settings (environment variables of the Ollama server):
 |---|---|---|
 | `OLLAMA_CONTEXT_LENGTH` | `32768` | see above; the OpenAI-compatible endpoint cannot set it per request |
 | `OLLAMA_KEEP_ALIVE` | `30m` | the model stays loaded between questions; loading 18 GB takes a while |
-| `OLLAMA_HOST` | `127.0.0.1:11434` for the laptop only; the Tailscale address for the gateway (§5) | where it listens |
+| `OLLAMA_HOST` | leave unset (`127.0.0.1:11434`) | the gateway reaches it through `tailscale serve` (§5), so Ollama never listens on a network address |
 
 **Ollama.app (menu bar):** set the variables for apps, then quit and reopen Ollama:
 
@@ -123,29 +123,34 @@ For the routine form, the portal sends the form's JSON schema as `response_forma
 three servers turn that into a grammar, so the answer always parses. A server without it gets JSON
 mode with the schema in the prompt.
 
-## 5. Gateway mini-PC → laptop over Tailscale
+## 5. Gateway mini-PC → laptop over Tailscale (set up 20.11)
 
 The portal on the mini-PC runs with host networking, so it reaches every machine in our tailnet
-directly. Ollama has **no login**, so it must only be reachable inside the tailnet, not on the home or
-university Wi-Fi.
+directly. Ollama has **no login**, so it must only be reachable inside the tailnet, never on the home
+or university Wi-Fi. Ollama itself stays on `127.0.0.1` (so the laptop's own portal keeps using
+`http://127.0.0.1:11434/v1`); Tailscale forwards the port into the tailnet:
 
-1. Thierry's Tailscale address: `tailscale ip -4` (e.g. `100.x.y.z`); the name is in the Tailscale app
-   (MagicDNS, e.g. `thierry-mbp`).
-2. Let Ollama listen on that address only, then quit and reopen Ollama:
+```bash
+/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg --tcp 11434 tcp://127.0.0.1:11434
+```
 
-   ```bash
-   launchctl setenv OLLAMA_HOST "$(tailscale ip -4):11434"
-   ```
+This stays active across restarts of the Mac and of Tailscale. Check with `… serve status`: it must
+say "(tailnet only)". Thierry's MacBook is `100.79.94.102` (`macbook-pro-von-thierry`). From the
+mini-PC: `curl -s http://100.79.94.102:11434/v1/models`.
 
-   Not `0.0.0.0`: that would open it to every network the laptop is on. While it listens on the
-   Tailscale address, the laptop's own portal uses `http://<that address>:11434/v1` too (127.0.0.1 no
-   longer answers).
-3. From the mini-PC (after the live run, Sun 22.11): `curl -s http://100.x.y.z:11434/v1/models`.
-4. In the gateway portal: Settings → Assistant → Local model, endpoint `http://100.x.y.z:11434/v1`
-   (or the MagicDNS name), Check connection, Save. Nothing in `docker-compose.yml` changes; the
-   setting is stored in the portal's home (`assistant.json`).
-5. The laptop must be awake, on Tailscale and running Ollama during the demo. If it is closed, the
-   assistant says it could not reach the local model; switch back to Anthropic in the same settings.
+Gateway portal (v3): Settings → Assistant → **Local model**, endpoint `http://100.79.94.102:11434/v1`,
+model `qwen3.5:35b-mlx`, **Check connection**, tick **"If the local model cannot be reached … let
+Anthropic's Claude answer instead"**, Save. The container runs with thinking off
+(`CMN_LOCAL_EXTRA_BODY` in `docker-compose.yml`).
+
+**Fallback.** When the laptop is closed, offline or Ollama is not running, the connection fails
+within a few seconds and Claude answers that question with the stored Claude key; the answer starts
+with "(Could not reach the local model at …; Claude (Anthropic) answered instead.)". The notice people
+see says that this can happen. Errors after the connection (wrong model name, cut-off answer) do not
+fall back. Without the tick, the answer is just the error note.
+
+Before a demo on the laptop: Ollama running with the 32k context (§2, after a restart of the Mac set
+the `launchctl` values again), laptop awake and on Tailscale.
 
 ## 6. Run K2's eval on the local model
 
@@ -167,5 +172,6 @@ tokens the first time per profile and role.
 
 ## 7. Afterwards
 
-`ollama stop qwen3.8:27b-mlx` frees the memory; `launchctl unsetenv OLLAMA_HOST` returns Ollama to
-localhost after the demo.
+`ollama stop qwen3.5:35b-mlx` frees the memory. To take the laptop out of the tailnet path:
+`/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --tcp=11434 off` (the gateway then
+falls back to Claude).
