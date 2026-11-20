@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { appendText, Dictate } from "./Dictate";
+import { appendText, Dictate, resetSpeechStatus } from "./Dictate";
 
 class FakeRecorder {
   static isTypeSupported = (t: string) => t === "audio/webm;codecs=opus";
@@ -36,7 +36,8 @@ describe("Dictate", () => {
       return new Response(JSON.stringify({ available: true, max_seconds: 300 }), { status: 200 });
     }));
   });
-  afterEach(() => { vi.unstubAllGlobals(); });
+  beforeEach(() => resetSpeechStatus());
+  afterEach(() => { vi.unstubAllGlobals(); resetSpeechStatus(); });
 
   it("records, sends the clip to the local service and adds the words", async () => {
     const onText = vi.fn();
@@ -57,6 +58,24 @@ describe("Dictate", () => {
     const mic = screen.getByRole("button", { name: /^Dictate your week/ });
     await act(async () => { fireEvent.click(mic); });
     expect(await screen.findByRole("button", { name: "Stop recording your week" })).toBeTruthy();
+  });
+
+  it("shows a disabled, explained mic when asked and the service is off, and hides it otherwise", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ available: false }), { status: 200 })));
+    const { container, rerender } = render(<Dictate onText={() => undefined} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(container.querySelector("button")).toBeNull();
+    rerender(<Dictate showUnavailable onText={() => undefined} />);
+    const mic = await screen.findByRole("button", { name: /dictation is off/i }) as HTMLButtonElement;
+    expect(mic.disabled).toBe(true);
+    expect(mic.getAttribute("aria-disabled")).toBe("true");
+    expect(mic.title).toMatch(/not running/);
+  });
+
+  it("stays hidden when the browser cannot record at all", () => {
+    vi.stubGlobal("MediaRecorder", undefined);
+    const { container } = render(<Dictate showUnavailable onText={() => undefined} />);
+    expect(container.querySelector("button")).toBeNull();
   });
 
   it("appends to what is already typed", () => {

@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import assistant, auth, care as care_mod, fasl, llm, norms, observability, observed, setup_assist, speech as speech_mod
+from . import sources as based_on   # the route function `sources` below would shadow the name
 from .notes import NoteStore
 from .groundtruth import blocks_on_day, day_summary, load_devices, load_plan, phase_by_day
 from .personas import PHASE_LABEL, persona_meta
@@ -700,8 +701,10 @@ def create_app(settings: Settings | None = None, llm_client: Any = None,
         ctx = assistant.build_context(tl, config(), person, labels)
         chunks = assistant.stream_answer(st, assistant.system_blocks(ctx, person), msgs,
                                          client=llm_client)
-        if person:      # safety net: no clinical terms reach the person, whatever the model writes
-            chunks = assistant.guard_person(chunks)
+        # The hidden <based_on> block never reaches the text; one record follows it (sources.py).
+        # Safety net: no clinical terms reach the person, whatever the model writes (visible text only).
+        chunks = based_on.answer_stream(chunks, ctx, person, body.focus, labels,
+                                       guard=assistant.guard_person if person else None)
         return StreamingResponse(chunks, media_type="text/plain; charset=utf-8",
                                  headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 

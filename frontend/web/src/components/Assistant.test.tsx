@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { api, type ChatTurn } from "../api";
+import { resetSpeechStatus } from "./Dictate";
 import { Assistant, followUps, MORE_DETAIL, SHORTER, resetConversations } from "./Assistant";
 
 vi.mock("../api", async (orig) => {
@@ -53,6 +54,72 @@ describe("Assistant answer controls", () => {
   });
 });
 
+describe("Assistant dictation", () => {
+  beforeEach(() => resetSpeechStatus());
+  afterEach(() => { vi.unstubAllGlobals(); resetSpeechStatus(); });
+  it("shows a disabled, explained mic when the speech service is off", async () => {
+    vi.stubGlobal("MediaRecorder", class {});
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: vi.fn() } });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ available: false }), { status: 200 })));
+    vi.mocked(api.assistant).mockResolvedValue({ enabled: true, notice: "" } as never);
+    render(<Assistant open onToggle={() => undefined} profileId="p1" person={false} focus="overview" />);
+    const mic = await screen.findByRole("button", { name: /dictation is off/i }) as HTMLButtonElement;
+    expect(mic.disabled).toBe(true);
+  });
+});
+
+describe("Assistant orb", () => {
+  beforeEach(() => { vi.clearAllMocks(); resetConversations(); });
+  afterEach(() => { vi.useRealTimers(); });
+  const orbs = () => document.querySelectorAll(".assistant-orb");
+
+  it("shows a paused orb above a greeting and the suggestions when the conversation is empty", async () => {
+    vi.mocked(api.assistant).mockResolvedValue({ enabled: true, notice: "" } as never);
+    render(<Assistant open onToggle={() => undefined} profileId="p1" person focus={null} />);
+    await screen.findByRole("group", { name: "Suggested questions" });
+    expect(screen.getByText("Ask where a result comes from.")).toBeTruthy();
+    const big = document.querySelector(".assistant-orb-64") as HTMLElement;
+    expect(big.getAttribute("aria-hidden")).toBe("true");
+    expect(big.getAttribute("data-paused")).toBe("true");
+    // the header carries a paused small orb, the tab a paused 32 orb (scaled by CSS: small on desktop, large on phones)
+    expect(document.querySelectorAll(".drawer-head .assistant-orb-20[data-paused='true']").length).toBe(1);
+    expect(document.querySelectorAll(".assistant-tab .assistant-orb-32[data-paused='true']").length).toBe(1);
+  });
+
+  it("waits with an orb and an elapsed-time status, and the slow hint appears after 15 s", async () => {
+    vi.mocked(api.assistant).mockResolvedValue({ enabled: true, notice: "" } as never);
+    vi.mocked(api.ask).mockImplementation(() => new Promise(() => undefined));
+    render(<Assistant open onToggle={() => undefined} profileId="p1" person focus={null} />);
+    const pill = await screen.findByRole("button", { name: "Which days stood out?" });
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(pill); });
+    expect(screen.getByRole("status").textContent).toContain("Thinking, 0 s");
+    expect(screen.queryByText(/Composing/)).toBeNull();
+    expect(document.querySelector(".composing .assistant-orb-20[data-paused='false']")).toBeTruthy();
+    expect(document.querySelector(".composing .assistant-orb-64")).toBeNull();
+    expect(screen.queryByText("This can take up to half a minute.")).toBeNull();
+    await act(async () => { vi.advanceTimersByTime(12_000); });
+    expect(screen.getByRole("status").textContent).toContain("Thinking, 12 s");
+    await act(async () => { vi.advanceTimersByTime(4_000); });
+    expect(screen.getByText("This can take up to half a minute.")).toBeTruthy();
+  });
+
+  it("shows a small orb after the streaming text and removes it when the answer is complete", async () => {
+    vi.mocked(api.assistant).mockResolvedValue({ enabled: true, notice: "" } as never);
+    let finish: () => void = () => undefined;
+    vi.mocked(api.ask).mockImplementation((_id, _m, _f, onText) => new Promise<void>((res) => { onText("Fewer quiet hours"); finish = res; }));
+    render(<Assistant open onToggle={() => undefined} profileId="p1" person focus={null} />);
+    const pill = await screen.findByRole("button", { name: "Which days stood out?" });
+    await act(async () => { fireEvent.click(pill); });
+    await screen.findByText("Fewer quiet hours");
+    expect(document.querySelector(".bubble-assistant .stream-orb")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();     // text is flowing: no "Thinking" any more
+    await act(async () => { finish(); });
+    expect(document.querySelector(".bubble-assistant .stream-orb")).toBeNull();
+    expect(orbs().length).toBe(2);                       // only the tab and header marks remain
+  });
+});
+
 describe("followUps", () => {
   it("gives 2–3 short questions, flag first, without clinical terms for the person", () => {
     expect(followUps(true, { flag: "quiet_short", day: "2025-11-04" }))
@@ -89,5 +156,44 @@ describe("Assistant across tabs", () => {
     expect(await screen.findByText("Two late nights.")).toBeTruthy();   // conversation kept
     expect(api.ask).toHaveBeenCalledTimes(1);                            // not asked again
     expect(toggle).not.toHaveBeenCalled();                               // not reopened
+  });
+});
+
+describe("Assistant sources", () => {
+  beforeEach(() => { vi.clearAllMocks(); resetConversations(); });
+  const day = { kind: "day" as const, id: "2025-10-31", name: "2025-10-31", icon: null, unit: null, values: [], usual: null, detail: null, code: null, days: ["2025-10-31"] };
+
+  it("shows 'Based on' chips under the finished answer, keeps them in the stored conversation, and jumps on click", async () => {
+    vi.mocked(api.assistant).mockResolvedValue({ enabled: true, notice: "" } as never);
+    vi.mocked(api.ask).mockImplementation(async (_id, _m, _f, onText, onSources) => {
+      onText("Fewer quiet hours on Friday.");
+      onSources?.({ items: [day], fallback: false, no_data: false });
+    });
+    const jump = vi.fn();
+    const first = render(<Assistant open onToggle={() => undefined} profileId="p1" person focus={null} onJump={jump} />);
+    const pill = await screen.findByRole("button", { name: "Which days stood out?" });
+    await act(async () => { fireEvent.click(pill); });
+    const chip = await screen.findByRole("button", { name: /31\/10/ });
+    expect(screen.getByText("Based on:")).toBeTruthy();
+    fireEvent.click(chip);
+    expect(jump).toHaveBeenCalledWith(day);
+    // a reload (new panel, same browser tab) keeps the conversation with its sources
+    first.unmount();
+    expect(JSON.parse(window.sessionStorage.getItem("cmn.conversations")!).p1[1].sources.items[0].id).toBe("2025-10-31");
+    render(<Assistant open onToggle={() => undefined} profileId="p1" person focus={null} onJump={jump} />);
+    expect(await screen.findByRole("button", { name: /31\/10/ })).toBeTruthy();
+  });
+
+  it("shows no sources while the answer is still streaming", async () => {
+    vi.mocked(api.assistant).mockResolvedValue({ enabled: true, notice: "" } as never);
+    vi.mocked(api.ask).mockImplementation((_id, _m, _f, onText, onSources) => new Promise<void>(() => {
+      onText("Fewer quiet");
+      onSources?.({ items: [day], fallback: false, no_data: false });
+    }));
+    render(<Assistant open onToggle={() => undefined} profileId="p1" person focus={null} />);
+    const pill = await screen.findByRole("button", { name: "Which days stood out?" });
+    await act(async () => { fireEvent.click(pill); });
+    await screen.findByText("Fewer quiet");
+    expect(screen.queryByText("Based on:")).toBeNull();
   });
 });

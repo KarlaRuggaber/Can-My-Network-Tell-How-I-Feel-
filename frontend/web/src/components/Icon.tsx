@@ -22,6 +22,7 @@ export const ICON_MEANING = {
   person: "Person",
   data: "Data",
   lock: "Private / protected",
+  days: "Timeline, day by day",
 } as const;
 
 export type IconName = keyof typeof ICON_MEANING;
@@ -52,6 +53,7 @@ const PATHS: Record<IconName, ReactNode> = {
   person: <><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></>,
   data: <path d="M4 20h16M7 16v-4M12 16V7M17 16V9" />,
   lock: <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>,
+  days: <><rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M3.5 10h17M8 3v4M16 3v4" />{dot(8, 14)}{dot(12, 14)}{dot(16, 14)}</>,
 };
 
 export interface IconProps {

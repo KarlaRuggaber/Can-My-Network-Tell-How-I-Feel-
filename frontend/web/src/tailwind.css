@@ -1,0 +1,70 @@
+/* Tailwind v4 + shadcn (Radix), scoped so the hand-written CSS keeps rendering as before.
+   - theme + utilities only, no preflight; it comes on at the end of the migration.
+   - shadcn tokens live under the --ui- prefix: styles.css already owns --muted, --accent,
+     --border and others with different meanings (--muted is a text colour there).
+   - Light only; no dark mode. Red is only --ui-destructive (the alert red). */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+/* No automatic source detection: it would turn words in the existing screens (table, hidden,
+   container, ...) into utilities. Only the shadcn components and the new assistant parts are scanned. */
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@source "./components/ui";
+@source "./components/AssistantOrb.tsx";
+@source "./components/AnswerSources.tsx";
+@source "./components/AppBar.tsx";
+@import "tw-animate-css";
+
+@theme inline {
+  --font-sans: var(--sans);
+  --font-serif: var(--serif);
+  --font-heading: var(--serif);
+
+  --color-background: var(--ui-background);
+  --color-foreground: var(--ui-foreground);
+  --color-card: var(--ui-card);
+  --color-card-foreground: var(--ui-card-foreground);
+  --color-popover: var(--ui-popover);
+  --color-popover-foreground: var(--ui-popover-foreground);
+  --color-primary: var(--ui-primary);
+  --color-primary-foreground: var(--ui-primary-foreground);
+  --color-secondary: var(--ui-secondary);
+  --color-secondary-foreground: var(--ui-secondary-foreground);
+  --color-muted: var(--ui-muted);
+  --color-muted-foreground: var(--ui-muted-foreground);
+  --color-accent: var(--ui-accent);
+  --color-accent-foreground: var(--ui-accent-foreground);
+  --color-destructive: var(--ui-destructive);
+  --color-border: var(--ui-border);
+  --color-input: var(--ui-input);
+  --color-ring: var(--ui-ring);
+
+  --radius-sm: calc(var(--ui-radius) * 0.6);
+  --radius-md: calc(var(--ui-radius) * 0.8);
+  --radius-lg: var(--ui-radius);
+  --radius-xl: calc(var(--ui-radius) * 1.4);
+  --radius-2xl: calc(var(--ui-radius) * 1.8);
+  --radius-3xl: calc(var(--ui-radius) * 2.2);
+  --radius-4xl: calc(var(--ui-radius) * 2.6);
+}
+
+:root {
+  --ui-background: #ffffff;
+  --ui-foreground: #1a1a1a;
+  --ui-card: #ffffff;
+  --ui-card-foreground: #1a1a1a;
+  --ui-popover: #ffffff;
+  --ui-popover-foreground: #1a1a1a;
+  --ui-primary: #262626;               /* ink */
+  --ui-primary-foreground: #ffffff;
+  --ui-secondary: #fbf6f1;             /* beige-faint */
+  --ui-secondary-foreground: #262626;
+  --ui-muted: #fbf6f1;
+  --ui-muted-foreground: #8a837c;
+  --ui-accent: #f6ece2;                /* beige-soft */
+  --ui-accent-foreground: #262626;
+  --ui-destructive: #b3243a;           /* the only red */
+  --ui-border: #e3d9cf;
+  --ui-input: #e3d9cf;
+  --ui-ring: #8a837c;
+  --ui-radius: 14px;
+}

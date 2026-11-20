@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, type AssistantStatus, type ChatTurn } from "../api";
+import { api, type AssistantStatus, type ChatTurn, type SourceItem } from "../api";
+import { AnswerSources } from "./AnswerSources";
 import { Markdown } from "./Markdown";
 import { appendText, Dictate } from "./Dictate";
-import { Icon } from "./Icon";
+import { AssistantOrb } from "./AssistantOrb";
 import { fmtDay } from "../lib/format";
 
 /** A question asked from elsewhere on the page ("explain this value"), sent once per id. */
@@ -19,6 +20,8 @@ type Props = {
   focusInfo?: FocusInfo;         // the same, structured: drives the follow-up suggestions
   /** Called once a request was taken over, so a tab mounted later does not ask it again. */
   onRequestHandled?: () => void;
+  /** A "Based on" chip was clicked: the page jumps to that day, criterion or metric. */
+  onJump?: (item: SourceItem) => void;
 };
 
 /** The conversation per profile survives switching tabs (each tab mounts its own panel). */
@@ -93,8 +96,35 @@ function storedWidth(): number {
   try { const v = Number(window.localStorage.getItem(WIDTH_KEY)); return v ? clampW(v) : DEFAULT_W; } catch { return DEFAULT_W; }
 }
 
+/** Seconds since `active` became true (0 while inactive); ticks once a second. */
+function useElapsed(active: boolean): number {
+  const [secs, setSecs] = useState(0);
+  useEffect(() => {
+    if (!active) { setSecs(0); return; }
+    const start = Date.now();
+    const id = window.setInterval(() => setSecs(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, [active]);
+  return secs;
+}
+const SLOW_HINT_AFTER = 15;   // seconds before "can take up to half a minute" appears
+
+/** The pending answer: the small orb and an elapsed-time status; the slow hint fades in after a while. */
+function Thinking() {
+  const secs = useElapsed(true);
+  return (
+    <div className="composing">
+      <AssistantOrb size={20} />
+      <div role="status" className="composing-text">
+        <span>Thinking, {secs} s</span>
+        {secs >= SLOW_HINT_AFTER && <span className="composing-hint muted small">This can take up to half a minute.</span>}
+      </div>
+    </div>
+  );
+}
+
 /** Explanation layer: natural-language questions about the results shown, answered from the data. */
-export function Assistant({ request, open, onToggle, profileId, person, focus, focusInfo, onRequestHandled }: Props) {
+export function Assistant({ request, open, onToggle, profileId, person, focus, focusInfo, onRequestHandled, onJump }: Props) {
   const [status, setStatus] = useState<AssistantStatus | null>(null);
   const [turns, setTurnsState] = useState<ChatTurn[]>(() => conversations.get(profileId) ?? []);
   // The stored conversation is the source of truth, so an answer that is still streaming when the
@@ -174,6 +204,11 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
           const last = next[next.length - 1];
           next[next.length - 1] = { ...last, content: last.content + t };
           return next;
+        }), (sources) =>
+        setTurns((cur) => {
+          const next = cur.slice();
+          next[next.length - 1] = { ...next[next.length - 1], sources };
+          return next;
         }));
     } catch (e) {
       setError(String((e as Error).message));
@@ -204,7 +239,7 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
     <>
       <button className={`assistant-tab ${open ? "is-hidden" : ""}`} onClick={() => onToggle(true)}
         aria-expanded={open} aria-controls="assistant-panel" tabIndex={open ? -1 : 0}>
-        <span className="assistant-tab-icon" aria-hidden="true"><Icon name="explain" /></span>
+        <span className="assistant-tab-icon" aria-hidden="true"><AssistantOrb size={32} paused /></span>
         <span>{person ? "Questions" : "Assistant"}</span>
       </button>
     <aside id="assistant-panel" className={`assistant-drawer ${open ? "is-open" : ""}`} aria-label="Assistant"
@@ -213,7 +248,8 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
         tabIndex={open ? 0 : -1} onPointerDown={startResize} onKeyDown={keyResize}
         onDoubleClick={() => setWidth(DEFAULT_W)} title="Drag to resize; double-click to reset" />
       <div className="drawer-head">
-        <div>
+        <AssistantOrb size={20} paused className="drawer-head-orb" />
+        <div className="drawer-head-text">
           <h2>{person ? "Questions about your results" : "Ask about these results"}</h2>
           <p className="sub">
             {person
@@ -229,6 +265,12 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
           <p className="muted">The assistant is turned off. Turn it on and enter an API key under <b>Settings → Assistant</b>.</p>
         )}
         {status?.enabled && turns.length === 0 && (
+          <div className="empty-state">
+            <AssistantOrb size={64} paused />
+            <p className="empty-greeting">{person ? "Ask where a result comes from." : "Ask where a result comes from, or what drives it."}</p>
+          </div>
+        )}
+        {status?.enabled && turns.length === 0 && (
           <div className="suggestions" role="group" aria-label="Suggested questions">
             {(person ? SUGGEST_PERSON : SUGGEST_CLINICIAN).map((s) => (
               <button key={s} type="button" className="suggestion" onClick={() => send(s)} disabled={busy}>{s}</button>
@@ -238,11 +280,17 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
         {turns.length > 0 && (
           <div className="chat" aria-live="polite">
             {turns.map((t, i) => (
-              <div key={i} className={`bubble bubble-${t.role}`}>
-                {t.content
-                  ? (t.role === "assistant" ? <Markdown text={t.content} /> : t.content)
-                  : (busy && i === turns.length - 1 ? <span className="muted">Thinking… (this can take up to half a minute)</span> : null)}
-              </div>
+              t.content || !(busy && i === turns.length - 1)
+                ? (
+                  <Fragment key={i}>
+                    <div className={`bubble bubble-${t.role}`}>
+                      {t.role === "assistant" ? <Markdown text={t.content} /> : t.content}
+                      {busy && i === turns.length - 1 && t.role === "assistant" && <AssistantOrb size={20} className="stream-orb" />}
+                    </div>
+                    {t.role === "assistant" && t.sources && !(busy && i === turns.length - 1) && <AnswerSources sources={t.sources} onJump={onJump} />}
+                  </Fragment>
+                )
+                : <Thinking key={i} />
             ))}
             {/* controls under the latest answer: "Shorter" / "More detail" refer to the answer just given */}
             {!busy && turns[turns.length - 1]?.role === "assistant" && turns[turns.length - 1].content && (
@@ -276,7 +324,7 @@ export function Assistant({ request, open, onToggle, profileId, person, focus, f
             <input value={input} onChange={(e) => setInput(e.target.value)} disabled={busy}
               placeholder={person ? "e.g. Why was last Tuesday different?" : "e.g. Why does Sleep count as present on 31/10?"}
               aria-label="Your question" />
-            <Dictate disabled={busy} onText={(t) => setInput((old) => appendText(old, t))} />
+            <Dictate showUnavailable disabled={busy} onText={(t) => setInput((old) => appendText(old, t))} />
             <button className="btn btn-primary" type="submit" disabled={busy || !input.trim()}>{busy ? "…" : "Ask"}</button>
           </form>
           <div className="row-between">

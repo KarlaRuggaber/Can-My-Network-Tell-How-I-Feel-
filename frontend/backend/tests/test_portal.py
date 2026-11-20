@@ -198,7 +198,7 @@ def test_assistant_explains_from_derived_results_only(portal, scripted, monkeypa
     c.post("/api/login", json={"username": "ben", "password": "pw-ben"})
     r = c.post(f"/api/profiles/{scripted}/assistant",
                json={"messages": [{"role": "user", "content": "Why is my sleep marked?"}], "focus": "Sleep"})
-    assert r.status_code == 200 and r.text == "Your sleep looks as usual."
+    assert r.status_code == 200 and r.text.split("\x1e")[0] == "Your sleep looks as usual."
     kw = fake.calls[-1]
     assert kw["model"] == "claude-sonnet-5-5" and kw["thinking"] == {"type": "adaptive"}
     assert kw["messages"][-1]["content"].endswith("Why is my sleep marked?")
@@ -285,7 +285,7 @@ def test_assistant_on_a_local_model(portal, scripted, monkeypatch):
     assert person.get("/api/assistant").json()["enabled"] is True          # no Claude key needed
     assert person.get("/api/assistant").json()["notice"] == ""
     r = person.post(f"/api/profiles/{scripted}/assistant", json={"messages": [{"role": "user", "content": "Sleep?"}]})
-    assert r.status_code == 200 and r.text == "Quieter nights."
+    assert r.status_code == 200 and r.text.split("\x1e")[0] == "Quieter nights."
     url, body = sent[-1]
     assert url == "http://100.64.0.5:11434/v1/chat/completions" and body["model"] == "qwen2.5:3b"
     assert body["messages"][0]["role"] == "system" and "<results>" in body["messages"][0]["content"]

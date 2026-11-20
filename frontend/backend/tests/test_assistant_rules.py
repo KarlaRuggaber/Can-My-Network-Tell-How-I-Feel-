@@ -40,7 +40,9 @@ def test_answer_first_short_and_from_the_week_overview():
     assert "unless the person asks for more detail" in prompt(True)
     assert f"under about {assistant.CLINICIAN_MAX_WORDS} words" in prompt(False)
     assert "group days that look alike" in prompt(False) and "instead of one line per day" in prompt(False)
-    assert "at most 3 short bullets" in prompt(True) and "at most 4 short bullet points" in prompt(False)
+    assert "each starting with a bold label" in common and "Bold short phrases only" in common
+    assert assistant.SYSTEM_COMMON.rstrip().endswith("(for example how the scoring works in general, or a greeting), return four empty lists.")
+    assert "then up to 3 short bullets" in prompt(True) and "at most 4 short bullet points" in prompt(False)
 
 
 def test_person_guardrail_observations_only_even_when_asked_again():
@@ -319,6 +321,8 @@ def test_safety_net_replaces_clinical_sentences_once():
     assert out.startswith("I can't say that. ") and out.endswith("later nights on **Mon** and Tue.")
     out, n = assistant.guard_person_text("- Later nights.\n- Maybe insomnia.\n- Or depression.\n- Fine.")
     assert n == 2 and out == f"- Later nights.\n- {assistant.PERSON_REPLACEMENT}\n- Fine."
+    assert assistant.guard_person_text("**Later** nights.\n- **Mon 16/11:** devices quiet for 5.5 h.\n- **Tue:** maybe insomnia.") == (
+        "**Later** nights.\n- **Mon 16/11:** devices quiet for 5.5 h.\n- " + assistant.PERSON_REPLACEMENT, 1)
     assert assistant.guard_person_text("Your devices went quiet later than usual.") == (
         "Your devices went quiet later than usual.", 0)
 
