@@ -162,7 +162,6 @@ export interface Clinical {
  *  monitoring (change over time first, "notable change" flags on by default). */
 export type CarePurpose = "assessment" | "treatment";
 export interface Care {
-  purpose?: "assessment" | "treatment";   // v3 (K5): which comparison the overview shows first
   routine: Routine | null; away_periods: AwayPeriod[]; clinical: Clinical | null;
   updated: Record<string, { by: string; at: string }>;
   purpose?: CarePurpose;            // clinicians and parents only; "assessment" without a setup
