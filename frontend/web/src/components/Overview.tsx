@@ -9,7 +9,6 @@ import {
 } from "../lib/observed";
 import { C } from "../theme";
 import { Chart } from "./Chart";
-import { DataLabel } from "./DataLabel";
 import { Icon, ICON_MEANING } from "./Icon";
 import { WeekTable } from "./WeekTable";
 import "./overview.css";
@@ -45,7 +44,6 @@ export function Overview(props: Props) {
   if (person) {
     return (
       <div className="ov" style={CSS_VARS}>
-        <DataLabel tl={tl} />
         <WeekTable tl={tl} person selectedDay={selectedDay} onSelectDay={onSelectDay} selectable={showCharts} />
         <section className="card">
           <div className="row-between">

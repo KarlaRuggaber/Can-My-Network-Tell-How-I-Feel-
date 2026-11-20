@@ -14,7 +14,7 @@ function Harness(over: Partial<React.ComponentProps<typeof AppBar>> = {}) {
     <AppBar username="Dr Who" multi tabs={TABS} tab={tab} onTab={setTab} onHome={() => setTab("overview")}
       profiles={[]} pid={undefined} onPick={() => undefined} showPicker={false}
       settings={false} onToggleSettings={() => undefined} backLabel="Back to Anna"
-      canMyWeek={false} myWeek={false} onToggleMyWeek={() => undefined} onLogout={() => undefined}
+      myWeek={false} onToggleMyWeek={() => undefined} onLogout={() => undefined}
       thesis="A thesis" {...over} />
   );
 }

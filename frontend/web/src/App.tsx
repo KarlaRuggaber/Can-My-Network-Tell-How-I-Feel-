@@ -10,6 +10,7 @@ import { Assistant, resetConversations, type AskRequest } from "./components/Ass
 import { CarePlan } from "./components/CarePlan";
 import { MyWeek, Onboarding } from "./components/Onboarding";
 import { AboutData } from "./components/AboutData";
+import { DataLabel } from "./components/DataLabel";
 import { AssistantSettings } from "./components/AssistantSettings";
 import { Login } from "./components/Login";
 import { Overview } from "./components/Overview";
@@ -27,7 +28,8 @@ const PHASES: PhaseKey[] = ["baseline", "current"];
 
 export type Tab = "overview" | "timeline" | "details" | "about" | "care";
 const TABS: Tab[] = ["overview", "timeline", "details", "about", "care"];
-const MULTI_ONLY: Tab[] = ["details", "about", "care"];
+const MULTI_ONLY: Tab[] = ["details", "care"];   // "about" exists for both roles, with role-specific content
+const tabAllowed = (t: Tab, multi: boolean) => multi || !MULTI_ONLY.includes(t);
 
 /** The thesis behind the prototype: shown only as a small "About" line, not as the product name. */
 export const THESIS_TITLE = "Can My Network Tell How I Feel? Explainable depression indicators from network traffic metadata";
@@ -38,7 +40,8 @@ const TAB_DEFS: TabDef[] = [
   { key: "overview", label: "Overview", icon: "person", sub: (m) => (m ? "what the network observed" : "your recent days") },
   { key: "timeline", label: "Timeline", icon: "days", sub: (m) => (m ? "day by day, with notes" : "day by day") },
   { key: "details", label: "Details", icon: "explain", sub: () => "DSM-5 model, metrics, days", multiOnly: true },
-  { key: "about", label: "About the data", short: "About", icon: "data", sub: () => "what the network can and cannot see", multiOnly: true },
+  // the person sees the same tab with "What this page is based on" (DataLabel)
+  { key: "about", label: "About the data", short: "About", icon: "data", sub: (m) => (m ? "what the network can and cannot see" : "what this page is based on") },
   { key: "care", label: "Care plan", icon: "note", sub: () => "routine, devices, focus, normals", multiOnly: true },
 ];
 
@@ -101,11 +104,11 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [crit, setCrit] = useState<CritKey | null>(init.crit ?? null);
   const [gate, setGate] = useState<GateParams | null>(null);
   const [rolling, setRolling] = useState(false);   // optional extra view; mixes phases
-  const [tab, setTab] = useState<Tab>(init.tab && (multi || !MULTI_ONLY.includes(init.tab)) ? init.tab : "overview");
+  const [tab, setTab] = useState<Tab>(init.tab && tabAllowed(init.tab, multi) ? init.tab : "overview");
   const [askReq, setAskReq] = useState<AskRequest | null>(null);
+  const [myWeek, setMyWeek] = useState(false);                       // the person's "My week" page (account menu)
   const clearAsk = useCallback(() => setAskReq(null), []);
   const [assistantOn, setAssistantOn] = useState(false);
-  const [myWeek, setMyWeek] = useState(false);                       // the person's "My week" page
   const [skipOnboarding, setSkipOnboarding] = useState(() => {
     try { return window.sessionStorage.getItem("cmn.skipOnboarding") === "1"; } catch { return false; }
   });
@@ -177,7 +180,7 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
       if (h.pid) setPid(h.pid);
       if (h.day) setDay(h.day);   // a link without a day keeps the current one
       setCrit(h.crit ?? null);
-      if (h.tab && (multi || !MULTI_ONLY.includes(h.tab))) setTab(h.tab);
+      if (h.tab && tabAllowed(h.tab, multi)) setTab(h.tab);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -248,13 +251,13 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
             dot: t.key === "care" && setupMissing.length > 0 ? "Care plan incomplete" : undefined,
           }))
           : null}
-        tab={tab} onTab={(k) => setTab(k as Tab)}
-        onHome={() => { setSettings(false); setTab("overview"); }}
+        tab={tab} onTab={(k) => { setMyWeek(false); setTab(k as Tab); }}
+        onHome={() => { setSettings(false); setMyWeek(false); setTab("overview"); }}
         profiles={profiles} pid={pid} showPicker={multi && profiles.length > 0}
         onPick={(id) => { if (id !== pid) { setPid(id); setDay(null); } }}
         settings={settings && multi} onToggleSettings={() => setSettings(!settings)}
         backLabel={`Back to ${profiles.find((x) => x.id === pid)?.name ?? "overview"}`}
-        canMyWeek={!!tl?.care?.routine} myWeek={myWeek} onToggleMyWeek={() => setMyWeek(!myWeek)}
+        myWeek={myWeek} onToggleMyWeek={() => setMyWeek(!myWeek)}
         thesis={multi ? THESIS_TITLE : undefined} />
 
       {settings && multi && (
@@ -327,12 +330,15 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
               {tl.status === "ready" && phases && !multi && (
                 <>
-                  {!tl.care?.routine && !skipOnboarding ? (
+                  {/* My week (account menu) and About the data open at any time; onboarding only replaces Overview / Timeline */}
+                  {myWeek ? (
+                    <MyWeek profileId={tl.profile.id} care={tl.care} assistant={assistantOn} onSaved={onCareSaved} onClose={() => setMyWeek(false)} />
+                  ) : tab === "about" ? (
+                    <DataLabel tl={tl} />
+                  ) : !tl.care?.routine && !skipOnboarding ? (
                     <Onboarding profileId={tl.profile.id} name={tl.persona.name} care={tl.care} assistant={assistantOn}
                       onDone={onCareSaved}
                       onSkip={() => { setSkipOnboarding(true); try { window.sessionStorage.setItem("cmn.skipOnboarding", "1"); } catch { /* ignore */ } }} />
-                  ) : myWeek ? (
-                    <MyWeek profileId={tl.profile.id} care={tl.care} assistant={assistantOn} onSaved={onCareSaved} onClose={() => setMyWeek(false)} />
                   ) : tab === "timeline"
                     ? <TimelineView tl={tl} person notes={[]} onNotes={() => undefined} selectedDay={day} onSelectDay={setDay} onAsk={ask} />
                     : <Overview tl={tl} person selectedDay={day} onSelectDay={setDay} onAsk={ask} />}

@@ -23,8 +23,7 @@ type Props = {
   settings: boolean;
   onToggleSettings: () => void;
   backLabel: string;                  // "Back to <person>" while settings are open
-  canMyWeek: boolean;
-  myWeek: boolean;
+  myWeek: boolean;                    // person only: "My week" is always in the account menu
   onToggleMyWeek: () => void;
   onLogout: () => void;
   thesis?: string;                    // clinician view only
@@ -116,8 +115,8 @@ export function AppBar(p: Props) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="appbar-menu w-auto min-w-44">
             {p.multi && <DropdownMenuItem onSelect={p.onToggleSettings}>{p.settings ? "Close settings" : "Settings"}</DropdownMenuItem>}
-            {!p.multi && p.canMyWeek && <DropdownMenuItem onSelect={p.onToggleMyWeek}>{p.myWeek ? "Close My week" : "My week"}</DropdownMenuItem>}
-            {(p.multi || p.canMyWeek) && <DropdownMenuSeparator />}
+            {!p.multi && <DropdownMenuItem onSelect={p.onToggleMyWeek}>{p.myWeek ? "Close My week" : "My week"}</DropdownMenuItem>}
+            <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={p.onLogout}>Log out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
