@@ -1,9 +1,7 @@
-/* App shell (T3): header brand, person picker, tab icons, assistant answer controls.
+/* App shell (T3): app bar, person picker, tab icons, assistant answer controls.
    Loaded before styles.css (imported from App.tsx), so rules that override styles.css use a
    parent selector. Colours only from the tokens in styles.css; red only for the alert icon. */
 
-.top .brand h1 { font-size: 34px; }
-.top .brand .tagline { margin: 4px 0 6px; }
 .about-line { color: var(--muted); }
 
 /* ---- person picker ---- */
@@ -32,8 +30,6 @@
 .pp-flags { font-size: 11.5px; padding: 1px 8px; border-radius: 99px; background: #f1ede8; color: var(--text2); white-space: nowrap; }
 .pp-alert { display: inline-flex; color: var(--alert); }
 
-/* ---- tabs with icons ---- */
-.layer-tabs .tab-label { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ---- assistant ---- */
 .assistant-tab-icon .icon { width: 14px; height: 14px; }
@@ -63,8 +59,7 @@
 .answer-length .btn:hover { border-color: var(--ink); }
 
 /* "care plan incomplete" is a to-do, not an alert: neutral dot (red is for alerts only) */
-.layer-tabs .tab-dot { background: var(--text2); }
-.layer-tabs button.active .tab-dot { background: #fff; }
+.appbar .tab-dot { background: var(--text2); margin-left: 0; vertical-align: baseline; }
 
 /* ---- "Based on" under an answer (shadcn Badge, Collapsible, Tooltip) ---- */
 .answer-sources { align-self: flex-start; max-width: 100%; margin: -2px 0 2px; }
@@ -72,3 +67,55 @@
 .answer-sources-label { font-size: 12px; color: var(--text2); }
 .answer-sources-rows { margin: 6px 0 0; padding: 8px 10px; list-style: none; border-radius: 8px; background: var(--beige-faint);
   font-size: 12px; line-height: 1.5; color: var(--text2); display: flex; flex-direction: column; gap: 4px; }
+
+/* ---- app bar: wordmark, section links, person picker, account; sticky under the drawer (z 20) ---- */
+.appbar { position: sticky; top: 0; z-index: 15; display: flex; align-items: stretch; gap: 20px; height: 56px;
+  margin: -28px 0 0; padding: 0; }
+/* full-bleed background and rule although .page is centred and max 1320px wide (body clips the overflow) */
+.appbar::before { content: ""; position: absolute; z-index: -1; top: 0; bottom: 0; left: -100vmax; right: -100vmax;
+  background: rgba(255,255,255,0.92); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid var(--ink); }
+.appbar-brand { align-self: center; font: inherit; font-family: var(--serif); font-size: 22px; line-height: 1; letter-spacing: -0.005em;
+  color: var(--ink); background: none; border: 0; padding: 4px 2px; margin: 0; cursor: pointer; border-radius: 6px; flex: none; }
+.appbar-nav { flex: 1; min-width: 0; display: flex; align-items: stretch; }
+.appbar-tabs { display: flex; align-items: stretch; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.appbar-tabs::-webkit-scrollbar { display: none; }
+.appbar-tab { position: relative; display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 0 12px;
+  font: inherit; font-family: var(--sans); font-size: 14px; color: var(--text2); background: none; border: 0; cursor: pointer; white-space: nowrap; }
+.appbar-tab:hover { color: var(--ink); }
+.appbar-tab.active { color: var(--ink); font-weight: 700; box-shadow: inset 0 -2px 0 var(--ink); }
+.appbar-settings { align-items: center; gap: 14px; }
+.appbar-back { font: inherit; font-size: 14px; color: var(--text2); background: none; border: 0; padding: 4px 6px; cursor: pointer; border-radius: 6px; }
+.appbar-back:hover { color: var(--ink); }
+.appbar-state { font-size: 14px; font-weight: 700; color: var(--ink); }
+.appbar-picker { align-self: center; flex: none; }
+.appbar .pp-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.appbar .pp-trigger { min-width: 200px; max-width: 280px; padding: 4px 10px; border-radius: 10px; }
+.appbar .pp-sub { display: none; }
+.appbar .pp-pop { left: auto; right: 0; }
+.appbar-account { align-self: center; display: inline-flex; align-items: center; gap: 8px; flex: none; font: inherit; font-size: 14px; color: var(--ink);
+  background: none; border: 1px solid transparent; border-radius: 99px; padding: 4px 8px 4px 4px; cursor: pointer; }
+.appbar-account:hover, .appbar-account[aria-expanded="true"] { background: var(--beige-faint); border-color: var(--border); }
+.appbar-avatar { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--ink); color: #fff; font-size: 13px; font-weight: 700; }
+.appbar-caret { color: var(--text2); font-size: 11px; }
+.appbar-brand:focus-visible, .appbar-back:focus-visible, .appbar-account:focus-visible { outline: 2px solid var(--beige); outline-offset: 2px; }
+.appbar-tab:focus-visible { outline: 2px solid var(--beige); outline-offset: -4px; border-radius: 6px; }
+.appbar-note { margin: -8px 0 0; font-size: 12px; color: var(--text2); }
+.appbar-tab, .appbar-account { transition: color 120ms ease, background-color 120ms ease; }
+@media (prefers-reduced-motion: reduce) { .appbar-tab, .appbar-account { transition: none; } }
+@media (max-width: 860px) {
+  .appbar { flex-wrap: wrap; height: auto; gap: 0 10px; row-gap: 0; }
+  .appbar-brand { order: 1; min-height: 52px; align-self: center; }
+  .appbar-picker { order: 2; flex: 1; min-width: 0; padding: 0; }
+  .appbar-picker .person-picker { display: block; }
+  .appbar .pp-trigger { min-width: 0; width: 100%; }
+  .appbar-account { order: 3; margin-left: auto; }
+  .appbar-username, .appbar-caret { display: none; }
+  .appbar-account { padding: 4px; }
+  .appbar-nav { order: 4; flex: 0 0 100%; height: 44px; }
+  .appbar-tabs { width: 100%; }
+  .appbar-tab { padding: 0 10px; }
+  .appbar-tab:first-child { padding-left: 2px; }
+  .appbar-settings { height: 44px; }
+  .appbar .pp-pop { right: auto; left: 0; }
+}

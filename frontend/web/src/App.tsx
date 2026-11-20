@@ -16,10 +16,9 @@ import { Overview } from "./components/Overview";
 import { Timeline as TimelineView } from "./components/Timeline";
 import { MetricTrends } from "./components/MetricTrends";
 import { ProfileSettings } from "./components/ProfileSettings";
-import { PersonPicker } from "./components/PersonPicker";
-import { Icon, type IconName } from "./components/Icon";
+import { AppBar } from "./components/AppBar";
+import type { IconName } from "./components/Icon";
 import { jumpTarget } from "./lib/jump";
-import { PRODUCT_NAME, PRODUCT_SUBTITLE } from "./theme";
 import "./shell.css";
 import { episodeFlags, gatePresentRolling, phaseGate, type GateParams } from "./lib/gate";
 
@@ -240,33 +239,21 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const drawer = assistantOpen && !settings && tl?.status === "ready";
   return (
     <div className={`page ${drawer ? "page-with-drawer" : ""} ${reflow ? `reflow-${reflow}` : ""}`}>
-      <header className="top">
-        <div className="brand">
-          <h1>{PRODUCT_NAME}</h1>
-          <p className="tagline">{PRODUCT_SUBTITLE}</p>
-          {/* the person's view names no condition (no expectation effect), so the thesis line is clinician-only */}
-          <p className="disclaimer">{multi
-            ? <>Research prototype, not a diagnostic tool. <span className="about-line">About: {THESIS_TITLE}.</span></>
-            : "Research prototype, not a diagnostic tool."}</p>
-        </div>
-        <div className="top-right">
-          <div className="usermenu">
-            <span className="muted small">Signed in as <b>{me.username}</b></span>
-            {multi && (
-              <button className={`btn ${settings ? "btn-active" : ""}`} onClick={() => setSettings(!settings)}>
-                Settings
-              </button>
-            )}
-            {!multi && tl?.care?.routine && (
-              <button className={`btn ${myWeek ? "btn-active" : ""}`} onClick={() => setMyWeek(!myWeek)}>My week</button>
-            )}
-            <button className="btn btn-quiet" onClick={onLogout}>Log out</button>
-          </div>
-          {multi && !settings && profiles.length > 0 && (
-            <PersonPicker profiles={profiles} value={pid} onChange={(id) => { if (id !== pid) { setPid(id); setDay(null); } }} />
-          )}
-        </div>
-      </header>
+      <AppBar username={me.username} multi={multi} onLogout={onLogout}
+        tabs={!settings && profiles.length > 0 && tl?.status === "ready"
+          ? TAB_DEFS.filter((t) => multi || !t.multiOnly).map((t) => ({
+            key: t.key, label: t.label, icon: t.icon, sub: t.sub(multi),
+            dot: t.key === "care" && setupMissing.length > 0 ? "Care plan incomplete" : undefined,
+          }))
+          : null}
+        tab={tab} onTab={(k) => setTab(k as Tab)}
+        onHome={() => { setSettings(false); setTab("overview"); }}
+        profiles={profiles} pid={pid} showPicker={multi && profiles.length > 0}
+        onPick={(id) => { if (id !== pid) { setPid(id); setDay(null); } }}
+        settings={settings && multi} onToggleSettings={() => setSettings(!settings)}
+        backLabel={`Back to ${profiles.find((x) => x.id === pid)?.name ?? "overview"}`}
+        canMyWeek={!!tl?.care?.routine} myWeek={myWeek} onToggleMyWeek={() => setMyWeek(!myWeek)}
+        thesis={multi ? THESIS_TITLE : undefined} />
 
       {settings && multi && (
         <>
@@ -327,20 +314,6 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
                   <div><dt>Recorded days</dt><dd>{tl.days.filter((d) => d.phase === "baseline").length} {labels.baseline.toLowerCase()}, {tl.days.filter((d) => d.phase === "current").length} {labels.current.toLowerCase()}</dd></div>
                 </dl>
               </section>}
-
-              {tl.status === "ready" && (
-                <nav className="layer-tabs" role="tablist" aria-label="View">
-                  {TAB_DEFS.filter((t) => multi || !t.multiOnly).map((t) => (
-                    <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
-                      <span className="tab-label">
-                        {t.icon && <Icon name={t.icon} size={16} />} {t.label}
-                        {t.key === "care" && setupMissing.length > 0 && <span className="tab-dot" role="img" aria-label="incomplete" title="Care plan incomplete" />}
-                      </span>
-                      <span className="tab-sub">{t.sub(multi)}</span>
-                    </button>
-                  ))}
-                </nav>
-              )}
 
               {tl.status === "pending" && (
                 <section className="card">

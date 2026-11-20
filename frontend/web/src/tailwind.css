@@ -11,6 +11,7 @@
 @source "./components/ui";
 @source "./components/AssistantOrb.tsx";
 @source "./components/AnswerSources.tsx";
+@source "./components/AppBar.tsx";
 @import "tw-animate-css";
 
 @theme inline {
