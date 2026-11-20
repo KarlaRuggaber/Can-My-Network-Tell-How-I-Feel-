@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, type AwayPeriod, type Care, type Routine } from "../api";
 import { AwayEditor, defaultRoutine, RoutineForm } from "./RoutineForm";
+import { Icon } from "./Icon";
 
 type Props = {
   profileId: string;
@@ -110,7 +111,9 @@ export function MyWeek({ profileId, care, assistant, onSaved, onClose }: {
           <h2>My week</h2>
           <p className="sub">Your usual week, your devices and the times you are away. Change it whenever something changes.</p>
         </div>
-        <button className="btn" onClick={onClose}>Back to my overview</button>
+        <button className="btn btn-icon" onClick={onClose} aria-label="Back to my overview" title="Back to my overview">
+          <Icon name="home" size={22} />
+        </button>
       </div>
       {msg && <p className={msg.kind === "error" ? "error" : "notice"}>{msg.text}</p>}
       <RoutineForm profileId={profileId} value={routine} onChange={setRoutine} person assistant={assistant} />

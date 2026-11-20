@@ -225,3 +225,9 @@
 .phone-only { display: none; }
 @media (max-width: 600px) { .phone-only { display: block; } }
 .auto-textarea { resize: none; overflow: hidden; }
+
+/* icon-only round buttons (show/hide charts, back home): icon centred inside the outline, 22px */
+.btn.btn-icon { flex: none; width: 42px; height: 42px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--ink); }
+.btn.btn-icon .icon { width: 22px; height: 22px; stroke-width: 1.9; }
+.btn.btn-icon:hover:not(:disabled) { background: var(--beige-faint); }
+.btn.btn-icon:focus-visible { outline: 2px solid var(--beige); outline-offset: 2px; }
