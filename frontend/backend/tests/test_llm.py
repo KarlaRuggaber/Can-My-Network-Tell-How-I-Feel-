@@ -166,3 +166,20 @@ def test_check_local_lists_the_served_models():
         raise httpx.ConnectError("refused")
     out = llm.check_local("http://laptop:11434/v1", "m", client=httpx.Client(transport=httpx.MockTransport(down)))
     assert out == {"ok": False, "models": [], "message": "Could not reach the local model at http://laptop:11434/v1."}
+
+
+def test_extra_body_from_the_environment(monkeypatch):
+    srv = FakeServer(lambda b: httpx.Response(200, content=sse("ok")) if b["stream"] else _answer("{}"))
+    monkeypatch.setenv("CMN_LOCAL_EXTRA_BODY", '{"reasoning_effort": "none"}')
+    assert "".join(llm.stream_text(LOCAL, "s", [{"role": "user", "content": "q"}], srv.client())) == "ok"
+    llm.complete_json(LOCAL, "s", "u", {}, srv.client())
+    assert [r["reasoning_effort"] for r in srv.requests] == ["none", "none"]
+    monkeypatch.setenv("CMN_LOCAL_EXTRA_BODY", "{nope")
+    assert "not valid JSON" in "".join(llm.stream_text(LOCAL, "s", [{"role": "user", "content": "q"}], srv.client()))
+
+
+def test_stream_answer_accepts_the_v2_client_name():
+    from cmn_frontend import assistant
+    srv = FakeServer(lambda b: httpx.Response(200, content=sse("hi")))
+    assert "".join(assistant.stream_answer(LOCAL, "s", [{"role": "user", "content": "q"}],
+                                           anthropic_client=srv.client())) == "hi"

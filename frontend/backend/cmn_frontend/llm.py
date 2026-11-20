@@ -23,20 +23,34 @@ instead); ``complete_json`` raises ``LLMError`` (a ``ValueError``) with a short,
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any, Iterable, Iterator
 
 PROVIDERS: dict[str, dict[str, Any]] = {
     "anthropic": {"label": "Anthropic (Claude)", "default_model": "claude-sonnet-5-5",
                   "key_env": "ANTHROPIC_API_KEY"},
-    "local": {"label": "Local model (OpenAI-compatible endpoint)", "default_model": "qwen2.5:3b",
+    "local": {"label": "Local model (OpenAI-compatible endpoint)", "default_model": "qwen3.8:27b-mlx",
               "default_base_url": "http://127.0.0.1:11434/v1", "key_env": "CMN_LOCAL_API_KEY"},
 }
 DEFAULT_PROVIDER = "anthropic"
 
 LOCAL_TIMEOUT = 600.0          # a 3B model on a laptop CPU/GPU reads a long <results> block slowly
-LOCAL_MAX_TOKENS = 1500        # answers are short (K2's prompt rules); JSON forms need a bit more
-LOCAL_JSON_MAX_TOKENS = 3000
+LOCAL_MAX_TOKENS = 4000        # answers are short (K2's prompt rules); room for a thinking model
+LOCAL_JSON_MAX_TOKENS = 6000
+
+
+def _extra_body() -> dict[str, Any]:
+    """CMN_LOCAL_EXTRA_BODY: JSON merged into every local request, e.g. {"reasoning_effort": "none"}
+    to switch off a model's thinking, or {"temperature": 0.2}."""
+    raw = os.environ.get("CMN_LOCAL_EXTRA_BODY", "").strip()
+    if not raw:
+        return {}
+    try:
+        out = json.loads(raw)
+    except ValueError:
+        raise LLMError("CMN_LOCAL_EXTRA_BODY is not valid JSON")
+    return out if isinstance(out, dict) else {}
 
 
 class LLMError(ValueError):
@@ -226,6 +240,11 @@ def _local_stream(cfg: dict[str, Any], system: str, messages: list[dict[str, Any
     import httpx
     body = {"model": cfg["model"], "stream": True, "max_tokens": LOCAL_MAX_TOKENS, "temperature": 0.3,
             "messages": [{"role": "system", "content": system}, *messages]}
+    try:
+        body.update(_extra_body())
+    except LLMError as e:
+        yield f"(The assistant failed: {e}.)"
+        return
     http = _local_client(cfg, client)
     finish = None
     try:
@@ -262,7 +281,8 @@ def _local_json(cfg: dict[str, Any], system: str, user: str, schema: dict[str, A
     import httpx
     http = _local_client(cfg, client)
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    base = {"model": cfg["model"], "stream": False, "max_tokens": LOCAL_JSON_MAX_TOKENS, "temperature": 0}
+    base = {"model": cfg["model"], "stream": False, "max_tokens": LOCAL_JSON_MAX_TOKENS, "temperature": 0,
+            **_extra_body()}
     strict = {"type": "json_schema", "json_schema": {"name": "answer", "strict": True, "schema": schema}}
     try:
         r = http.post(_local_url(cfg), json={**base, "messages": messages, "response_format": strict})

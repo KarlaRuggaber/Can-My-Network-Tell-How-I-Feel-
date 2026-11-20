@@ -384,9 +384,10 @@ def clean_messages(messages: Iterable[dict[str, Any]], focus: str | None) -> lis
 
 
 def stream_answer(cfg: dict[str, Any], system: list[dict[str, Any]], messages: list[dict[str, Any]],
-                  client: Any = None) -> Iterator[str]:
-    """Text chunks of the answer, from the configured provider (llm.py)."""
-    yield from llm.stream_text(cfg, system, messages, client)
+                  client: Any = None, anthropic_client: Any = None) -> Iterator[str]:
+    """Text chunks of the answer, from the configured provider (llm.py). anthropic_client: the v2 name
+    of `client`, still accepted (eval/assistant_eval.py passes it)."""
+    yield from llm.stream_text(cfg, system, messages, client if client is not None else anthropic_client)
 
 
 def stream_claude(client: Any, model: str, system: list[dict[str, Any]],
