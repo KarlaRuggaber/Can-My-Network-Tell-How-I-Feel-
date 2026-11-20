@@ -38,8 +38,8 @@ SENSITIVITY = {                       # deviation (SD) and days needed among the
 MAX_TEXT = 4000
 # Why this person is monitored. Assessment: where do they stand? The overview shows the comparison
 # with the typical range first. Treatment monitoring: how are they changing? The overview shows the
-# change against their own usual weeks first, and "notable change" flags (improvements, flag kind
-# "change") are on by default so they can be discussed.
+# change against their own usual weeks first. "Notable change" flags (improvements, flag kind "change")
+# are on by default for both purposes, so they can be discussed; a clinician can switch them off.
 PURPOSES = ("assessment", "treatment")
 DEFAULT_PURPOSE = "assessment"         # no care plan yet: the person has not been assessed
 ALWAYS_ON = ("sensitive_sites",)       # crisis or self-harm sites: a safety signal, never switched off
@@ -164,7 +164,7 @@ def clean_clinical(c: dict[str, Any], risk_ids: list[str], track_keys: list[str]
         raise ValueError(f"purpose must be one of {', '.join(PURPOSES)}")
     change_flags = c.get("change_flags")
     if change_flags is not None and not isinstance(change_flags, bool):
-        raise ValueError("change_flags must be true, false or null (follow the purpose)")
+        raise ValueError("change_flags must be true, false or null (default: on)")
     return {"purpose": purpose, "change_flags": change_flags,
             "history": _text(c.get("history"), "history"), "concerns": _text(c.get("concerns"), "concerns"),
             "treatment": _text(c.get("treatment"), "treatment"), "criteria": criteria,
@@ -178,9 +178,9 @@ def purpose_of(clinical: dict[str, Any] | None) -> str:
 
 
 def change_flags_on(clinical: dict[str, Any] | None) -> bool:
-    """Whether "notable change" flags are shown: the clinician's choice, else on for treatment monitoring."""
+    """Whether "notable change" flags are shown: the clinician's choice, else on (for every purpose)."""
     v = (clinical or {}).get("change_flags")
-    return v if isinstance(v, bool) else purpose_of(clinical) == "treatment"
+    return v if isinstance(v, bool) else True
 
 
 def apply_purpose(flags: list[dict[str, Any]], clinical: dict[str, Any] | None) -> list[dict[str, Any]]:

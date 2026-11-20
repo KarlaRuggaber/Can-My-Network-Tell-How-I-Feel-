@@ -12,10 +12,14 @@ SSH_OPTS=(-i "$GW_KEY" -o BatchMode=yes -o ConnectTimeout=20 -o HostKeyAlias="$G
 GW="$GW_USER@$GW_HOST"
 gw() { ssh "${SSH_OPTS[@]}" "$GW" "$@"; }
 RSYNC_SSH="ssh ${SSH_OPTS[*]}"
-# Where v2 lives on the mini-PC (keep in line with docker-compose.yml). v1 stays in /opt/cmn-portal
-# (container cmn-portal, port 8600); both read the day records in /var/lib/cmn-portal/cache.
-PORTAL_DIR=/opt/cmn-portal-v2
-PORTAL_HOME=/var/lib/cmn-portal-v2/home
-PORTAL_PORT=8610
+# Where v3 lives on the mini-PC (keep in line with docker-compose.yml). v1 stays in /opt/cmn-portal
+# (container cmn-portal, port 8600) and v2 in /opt/cmn-portal-v2 (container cmn-portal-v2, port 8610);
+# all three read the day records in /var/lib/cmn-portal/cache. Dictation (cmn-whisper, 8601) is
+# shared: it was started with v2 and its code did not change in v3.
+PORTAL_DIR=/opt/cmn-portal-v3
+PORTAL_HOME=/var/lib/cmn-portal-v3/home
+PORTAL_PORT=8620
 PORTAL_CACHE=/var/lib/cmn-portal/cache
 V1_HOME=/var/lib/cmn-portal/home
+V2_HOME=/var/lib/cmn-portal-v2/home
+V2_PORT=8610

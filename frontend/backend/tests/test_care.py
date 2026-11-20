@@ -29,7 +29,7 @@ def test_purpose_is_validated_and_sets_the_change_flag_default():
     risk_ids, tracks = ["later_nights", "sensitive_sites"], ["quiet_start"]
     c = care.clean_clinical({}, risk_ids, tracks)
     assert c["purpose"] == "assessment" and c["change_flags"] is None
-    assert care.purpose_of(None) == "assessment" and care.change_flags_on(None) is False
+    assert care.purpose_of(None) == "assessment" and care.change_flags_on(None) is True
     t = care.clean_clinical({"purpose": "treatment"}, risk_ids, tracks)
     assert care.purpose_of(t) == "treatment" and care.change_flags_on(t) is True
     # the clinician's explicit choice wins over the purpose's default, in both directions
@@ -44,12 +44,13 @@ def test_purpose_is_validated_and_sets_the_change_flag_default():
     assert c["focus"]["sensitive_sites"]["enabled"] is True and c["focus"]["later_nights"]["enabled"] is False
 
 
-def test_change_flags_follow_the_purpose():
+def test_change_flags_are_on_unless_switched_off():
     flags = [{"id": "later_nights", "kind": "risk"}, {"id": "earlier_nights", "kind": "change"},
              {"id": "sensitive_sites"}]                       # flags without a kind are risk flags (v2)
     ids = lambda clinical: [f["id"] for f in care.apply_purpose(flags, clinical)]
-    assert ids(None) == ["later_nights", "sensitive_sites"]
-    assert ids({"purpose": "assessment"}) == ["later_nights", "sensitive_sites"]
+    assert ids(None) == ["later_nights", "earlier_nights", "sensitive_sites"]          # on by default
+    assert ids({"purpose": "assessment"}) == ["later_nights", "earlier_nights", "sensitive_sites"]
+    assert ids({"purpose": "assessment", "change_flags": False}) == ["later_nights", "sensitive_sites"]
     assert ids({"purpose": "treatment"}) == ["later_nights", "earlier_nights", "sensitive_sites"]
     assert ids({"purpose": "treatment", "change_flags": False}) == ["later_nights", "sensitive_sites"]
     assert ids({"purpose": "assessment", "change_flags": True}) == ["later_nights", "earlier_nights", "sensitive_sites"]
