@@ -7,8 +7,9 @@ clinician's setup (history, focus, sensitivity, own normal ranges).
   laptop"). Clinicians or parents link each named device to an address seen on the network.
 - *Away periods* (patient or clinician): holidays, hospital stays, travel. These days are left out of
   the usual ranges and the flags, since the home network cannot see them.
-- *Clinical setup* (clinicians and parents): history, current concerns, treatment; which risks are
-  tracked and how sensitively; normal ranges that replace the learned ones for this person.
+- *Clinical setup* (clinicians and parents): the purpose of the monitoring (assessment or treatment
+  monitoring), history, current concerns, treatment; which risks are tracked and how sensitively;
+  normal ranges that replace the learned ones for this person.
 
 Stored in <home>/care.json (owner-only). Never shown to the person: the clinical setup.
 """
@@ -35,6 +36,13 @@ SENSITIVITY = {                       # deviation (SD) and days needed among the
     "relaxed": {"z": 2.0, "days": 4},
 }
 MAX_TEXT = 4000
+# Why this person is monitored. Assessment: where do they stand? The overview shows the comparison
+# with the typical range first. Treatment monitoring: how are they changing? The overview shows the
+# change against their own usual weeks first, and "notable change" flags (improvements, flag kind
+# "change") are on by default so they can be discussed.
+PURPOSES = ("assessment", "treatment")
+DEFAULT_PURPOSE = "assessment"         # no care plan yet: the person has not been assessed
+ALWAYS_ON = ("sensitive_sites",)       # crisis or self-harm sites: a safety signal, never switched off
 _TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _lock = threading.Lock()
 
@@ -135,7 +143,7 @@ def clean_clinical(c: dict[str, Any], risk_ids: list[str], track_keys: list[str]
         sens = (v or {}).get("sensitivity", "standard")
         if sens not in SENSITIVITY:
             raise ValueError(f"sensitivity must be one of {', '.join(SENSITIVITY)}")
-        focus[rid] = {"enabled": bool((v or {}).get("enabled", True)), "sensitivity": sens}
+        focus[rid] = {"enabled": rid in ALWAYS_ON or bool((v or {}).get("enabled", True)), "sensitivity": sens}
     normals = {}
     for k, v in (c.get("normals") or {}).items():
         if k not in track_keys:
@@ -151,9 +159,35 @@ def clean_clinical(c: dict[str, Any], risk_ids: list[str], track_keys: list[str]
         if lo is not None and hi is not None and lo > hi:
             raise ValueError(f"{k}: minimum above maximum")
         normals[k] = {"min": lo, "max": hi}
-    return {"history": _text(c.get("history"), "history"), "concerns": _text(c.get("concerns"), "concerns"),
+    purpose = c.get("purpose") or DEFAULT_PURPOSE
+    if purpose not in PURPOSES:
+        raise ValueError(f"purpose must be one of {', '.join(PURPOSES)}")
+    change_flags = c.get("change_flags")
+    if change_flags is not None and not isinstance(change_flags, bool):
+        raise ValueError("change_flags must be true, false or null (follow the purpose)")
+    return {"purpose": purpose, "change_flags": change_flags,
+            "history": _text(c.get("history"), "history"), "concerns": _text(c.get("concerns"), "concerns"),
             "treatment": _text(c.get("treatment"), "treatment"), "criteria": criteria,
             "focus": focus, "normals": normals}
+
+
+def purpose_of(clinical: dict[str, Any] | None) -> str:
+    """The monitoring purpose; a person without a clinical setup counts as being assessed."""
+    p = (clinical or {}).get("purpose")
+    return p if p in PURPOSES else DEFAULT_PURPOSE
+
+
+def change_flags_on(clinical: dict[str, Any] | None) -> bool:
+    """Whether "notable change" flags are shown: the clinician's choice, else on for treatment monitoring."""
+    v = (clinical or {}).get("change_flags")
+    return v if isinstance(v, bool) else purpose_of(clinical) == "treatment"
+
+
+def apply_purpose(flags: list[dict[str, Any]], clinical: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Drop the "notable change" flags (kind "change") when they are off; risk flags always stay."""
+    if change_flags_on(clinical):
+        return list(flags)
+    return [f for f in flags if f.get("kind", "risk") != "change"]
 
 
 class CareStore:
@@ -176,8 +210,10 @@ class CareStore:
 
     def get(self, pid: str) -> dict[str, Any]:
         c = self._load().get(pid, {})
+        clinical = c.get("clinical")
         return {"routine": c.get("routine"), "away_periods": c.get("away_periods", []),
-                "clinical": c.get("clinical"), "updated": c.get("updated", {})}
+                "clinical": clinical, "updated": c.get("updated", {}),
+                "purpose": purpose_of(clinical), "change_flags": change_flags_on(clinical)}
 
     def _put(self, pid: str, key: str, value: Any, author: str) -> dict[str, Any]:
         with _lock:
