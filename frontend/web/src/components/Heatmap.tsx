@@ -4,12 +4,15 @@ import { CRIT_KEYS } from "../api";
 import { fmtDay } from "../lib/format";
 import { C } from "../theme";
 import { Chart } from "./Chart";
+import { Icon } from "./Icon";
 import { c9Signal } from "./UnscoredMetrics";
 
 type Cell = { x: number; y: number; fill: string; text: string; textFill: string; above?: boolean; present?: boolean };
 
-const seqIndex = (L: number) => Math.max(0, Math.min(C.seq.length - 1, Math.round(L * (C.seq.length - 1))));
-const seqColor = (L: number) => C.seq[seqIndex(L)];
+/** Neutral intensity step of a likelihood (rule §2.3): lightness only, no red. */
+export const intensityIndex = (L: number) => Math.max(0, Math.min(C.intensity.length - 1, Math.round(L * (C.intensity.length - 1))));
+const intensityColor = (L: number) => C.intensity[intensityIndex(L)];
+const EMPTY = "#f6f3ef";
 
 type Props = {
   tl: Timeline;
@@ -52,28 +55,29 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
       const ph = d.phase;
       cells.push({
         x: i, y: rowOf("Phase"),
-        fill: ph === "current" ? C.clinical : ph === "baseline" ? C.baseline : "#f6f3ef",
-        text: ph === "current" ? curShort : ph === "baseline" ? "base" : "", textFill: ph === "current" ? "#fff" : C.ink,
+        // baseline neutral and shaded, the current period plain (rule §2.4)
+        fill: ph === "baseline" ? C.baselineShade : C.surface,
+        text: ph === "current" ? curShort : ph === "baseline" ? "base" : "", textFill: ph === "baseline" ? C.ink : C.text2,
       });
       crits.forEach((c) => {
         const L = d.L[c];
         cells.push({
-          x: i, y: rowOf(c), fill: L == null ? "#f6f3ef" : seqColor(L),
+          x: i, y: rowOf(c), fill: L == null ? EMPTY : intensityColor(L),
           text: L == null ? "" : L.toFixed(2).replace(/^0/, ""),
-          textFill: L != null && seqIndex(L) >= C.seqWhiteFrom ? "#fff" : C.text,
+          textFill: L != null && intensityIndex(L) >= C.intensityWhiteFrom ? "#fff" : C.text,
           above: L != null && L >= theta, present: !!present[c]?.[i],
         });
       });
       if (showC9) cells.push({
-        x: i, y: rowOf("C9 signal"), fill: c9Flags[i].length ? C.critical : "#f6f3ef",
+        x: i, y: rowOf("C9 signal"), fill: c9Flags[i].length ? C.alert : EMPTY,
         text: c9Flags[i].length ? "!" : "", textFill: "#fff",
       });
       cells.push({
-        x: i, y: rowOf("Criteria present"), fill: nPresent[i] > 0 ? "#f6ece2" : "#f6f3ef",
-        text: String(nPresent[i]), textFill: C.text,
+        x: i, y: rowOf("Criteria present"), fill: EMPTY,
+        text: String(nPresent[i]), textFill: nPresent[i] > 0 ? C.text : C.muted,
       });
       if (canEpisode) cells.push({
-        x: i, y: rowOf("Episode"), fill: episode[i] ? C.critical : "#f6f3ef",
+        x: i, y: rowOf("Episode"), fill: episode[i] ? C.alert : EMPTY,
         text: episode[i] ? "yes" : "", textFill: "#fff",
       });
     });
@@ -95,9 +99,12 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
           const c = row as CritKey;
           const L = d.L[c];
           const lines = Object.entries(d.parts[c] ?? {})
+            .filter(([, m]) => m.w * m.mu > 0)
             .sort((a, b) => b[1].w * b[1].mu - a[1].w * a[1].mu)
-            .map(([k, m]) => `${cfg.metric_labels[k] ?? k}: μ ${m.mu.toFixed(2)} × w ${m.w}`);
-          return `${head}<br/><b>${c}</b> L = ${L == null ? "–" : L.toFixed(2)}${present[c]?.[i] ? ` · <b>present</b> (${gateWord})` : ""}<br/><span style="color:${C.text2}">${lines.join("<br/>")}</span>`;
+            .slice(0, 3)
+            .map(([k]) => cfg.metric_labels[k] ?? k);
+          return `${head}<br/><b>${c}</b> likelihood ${L == null ? "–" : L.toFixed(2)}${present[c]?.[i] ? ` · <b style="color:${C.alert}">present</b> (${gateWord})` : ""}` +
+            `<br/><span style="color:${C.text2}">${lines.length ? `mainly: ${lines.join(", ")}` : "no metric counted on this day"}</span>`;
         },
       },
       xAxis: {
@@ -126,7 +133,7 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
             { type: "text", style: { text: cell.text, x: cx, y: cy, align: "center", verticalAlign: "middle", fill: cell.textFill, fontSize: 9 } },
           ];
           if (cell.above) children.push({ type: "circle", shape: { cx: cx + w / 2 - 6, cy: cy - h / 2 + 6, r: 2.5 }, style: { fill: C.ink, stroke: "#fff", lineWidth: 1 } });
-          if (cell.present) children.push({ type: "rect", shape: { x: cx - w / 2 + 6, y: cy + h / 2 - 6, width: w - 12, height: 2.5, r: 1.25 }, style: { fill: C.ink } });
+          if (cell.present) children.push({ type: "rect", shape: { x: cx - w / 2 + 6, y: cy + h / 2 - 6, width: w - 12, height: 2.5, r: 1.25 }, style: { fill: C.alert, stroke: "#fff", lineWidth: 0.5 } });
           return { type: "group", children };
         },
       }],
@@ -139,14 +146,20 @@ export function Heatmap({ tl, cfg, present, episode, theta, rolling, M, selected
       <div className="card-head">
         <h2><span className="step">2</span>Day by day</h2>
         <p className="sub">
-          Each cell is a day's likelihood L (darker = stronger signal).{" "}
-          <span className="key"><i className="dot" style={{ background: C.ink }} /> reaches θ</span>{" "}
-          <span className="key"><i className="bar" style={{ background: C.ink }} /> present{rolling
-            ? <> (rolling {M}-day window, mixes phases)</> : <> in this phase</>}</span>.
-          Click a day to open it below.
+          Each cell is a day's likelihood L of a criterion (0–1). Click a day to open it below.
           {!canEpisode && <> No episode row: the configuration scores {crits.length} criteria, and an episode needs 5 present.</>}
-          {c9 > 0 && <> <span className="key"><i className="dot" style={{ background: C.critical }} /> C9 signal (outside the gate)</span>.</>}
         </p>
+        <div className="small muted" style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", marginTop: 6 }}>
+          <span className="key" title="Neutral scale: lighter = weaker, darker = stronger signal">
+            likelihood 0 {C.intensity.map((c) => <i key={c} style={{ display: "inline-block", width: 10, height: 10, background: c }} />)} 1
+          </span>
+          <span className="key"><i className="dot" style={{ background: C.ink }} /> reaches θ</span>
+          <span className="key"><i className="bar" style={{ background: C.alert }} /> present{rolling
+            ? <> (rolling {M}-day window, mixes phases)</> : <> in this period</>}</span>
+          <span className="key"><i style={{ display: "inline-block", width: 14, height: 10, background: C.baselineShade, marginRight: 4 }} /> Baseline (usual weeks)</span>
+          {c9 > 0 && <span className="key" style={{ color: C.alert }}><Icon name="alert" label="C9 signal" /> C9 signal (outside the gate)</span>}
+          {canEpisode && <span className="key"><i style={{ display: "inline-block", width: 14, height: 10, background: C.alert, marginRight: 4 }} /> episode likely</span>}
+        </div>
       </div>
       <div className="pop-host">
         <Chart option={option} height={height}
