@@ -1,0 +1,99 @@
+/* Overview, week table, data label and timeline (session T1). Colours come from theme.ts through the
+   --t1-* custom properties set on .ov; the fallbacks keep the timeline readable on its own. */
+
+.ov { display: contents; }
+
+/* card header without the step-number indent of .card-head */
+.t1-head { margin-bottom: 12px; }
+
+/* --- data label (A2) --- */
+.data-label .dl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin-top: 12px; }
+@media (max-width: 720px) { .data-label .dl-grid { grid-template-columns: 1fr; } }
+.dl-col { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.dl-not { background: var(--beige-faint, #fbf6f1); }
+.dl-head { display: flex; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; font-size: 14px; color: var(--text); margin: 0 0 8px; }
+.dl-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+.dl-list li { display: flex; gap: 8px; align-items: baseline; }
+.dl-icon { width: 16px; flex: none; text-align: center; color: var(--text2); }
+.dl-cross { font-weight: 700; }
+.dl-devices { margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.dl-device { display: inline-flex; gap: 4px; align-items: center; }
+.dl-care { margin: 12px 0 0; color: var(--text2); }
+
+/* --- week table (A4) --- */
+.wt { width: 100%; max-width: 720px; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.wt th, .wt td { font-size: 14px; text-align: left; }
+.wt td, .wt tbody th { padding: 7px 10px; vertical-align: middle; }
+.wt thead th { vertical-align: bottom; }
+.wt-th { display: inline-flex; align-items: center; gap: 5px; color: var(--text); }
+.wt-sub { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+.wt tbody th { font-weight: 400; position: static; background: transparent; border-bottom: 1px solid var(--line); text-align: left; }
+.wt tbody th .muted { display: block; font-size: 11px; }
+.wt-day { font: inherit; font-family: var(--serif); font-size: 15px; background: none; border: none; padding: 0; cursor: pointer; color: var(--text); }
+span.wt-day { cursor: default; }
+.wt-usual th, .wt-usual td { color: var(--text2); border-bottom: none; border-top: 1px solid var(--ink); font-weight: 400; position: static; background: transparent; }
+
+.chart-options { margin-top: 12px; display: inline-block; }
+.chart-title { display: flex; align-items: center; gap: 6px; }
+
+/* --- legends --- */
+.band-key i { display: inline-block; vertical-align: -1px; margin-right: 4px; }
+.key-usual { width: 16px; height: 10px; border-radius: 2px; background: var(--t1-usual, rgba(120,110,100,0.18)); }
+.key-typical { width: 16px; height: 10px; border-radius: 2px; border: 1px dashed var(--t1-typical, #6f6862); }
+.key-shade { width: 16px; height: 10px; background: var(--t1-baseline, rgba(120,110,100,0.08)); border: 1px solid var(--line); }
+.key-area { width: 16px; height: 10px; background: var(--t1-area, #bdb3a8); border-top: 1.5px solid var(--ink); }
+.key-nodata { width: 16px; height: 10px; border: 1px dotted var(--muted); }
+.key-line { width: 0; height: 12px; border-left: 1px dashed var(--muted); }
+.key-night { width: 16px; height: 10px; border: 1px solid var(--line); }
+.key-bar { width: 8px; height: 12px; border-radius: 3px; background: var(--t1-bar, #d3cbc2); }
+.key-bar-flag { box-shadow: inset 0 0 0 2px var(--ink); }
+.kdot { width: 8px; height: 8px; border-radius: 50%; background: var(--t1-dot, #262626); }
+.kdot-night { width: 5px; height: 5px; background: var(--t1-night-dot, #4d433b); }
+.kdot-change { background: var(--t1-change, #3d6f8f); }
+.kdot-ring { background: #fff; box-shadow: inset 0 0 0 2px var(--t1-dot, #262626); }
+.kdot-alert { background: var(--t1-alert, #b3243a); border-radius: 2px; }
+.typical-txt { cursor: help; }
+
+/* --- flag tiles (V6): icon first; alert only for crisis/self-harm sites --- */
+.ov .flag { align-items: flex-start; }
+.flag-icon { flex: none; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 16px; background: #fff; border: 1px solid var(--border); color: var(--ink); }
+.flag-body { min-width: 0; flex: 1; }
+.flag-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.flag-title .pill + .pill { margin-left: 0; }
+.ov .flag-risk { border-left: 3px solid var(--ink); }
+.ov .flag-alert { background: var(--t1-alert-soft, #fdeef0); border-color: var(--t1-alert, #b3243a); }
+.ov .flag-alert .flag-icon { color: var(--t1-alert, #b3243a); border-color: var(--t1-alert, #b3243a); }
+.ov .flag-change { background: #fff; border-left: 3px solid var(--t1-change, #3d6f8f); }
+.ov .flag-change .flag-icon { color: var(--t1-change, #3d6f8f); border-color: var(--t1-change, #3d6f8f); }
+.ov .flag-reference { border-style: dashed; }
+.ov .flag-seen { opacity: 0.6; }
+.pill-change { border: 1px solid var(--t1-change, #3d6f8f); color: var(--t1-change, #3d6f8f); background: #fff; padding: 1px 9px; }
+.pill .icon { margin-right: 2px; }
+.explain-link { display: inline-flex; align-items: center; gap: 3px; }
+
+/* --- timeline: legend dots and the person's one-line days (A6) --- */
+.tl-dot-key { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 4px; }
+.tl-dot-key-risk { background: var(--ink); border: 2px solid var(--ink); }
+.tl-dot-key-diff { background: #fff; border: 2px solid var(--text2); }
+.timeline .tl-dot-risk { border-color: var(--ink); background: var(--ink); }
+.timeline .tl-dot-diff { border-color: var(--text2); background: #fff; }
+.tl-values span { display: inline-flex; align-items: center; gap: 4px; }
+.tl-note { display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; }
+.strip-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 6px; }
+.strip-ramp { display: inline-flex; gap: 1px; }
+.strip-ramp i { width: 10px; height: 10px; border-radius: 2px; margin: 0; }
+.key-night-tick { width: 14px; height: 10px; border-radius: 2px; background: #f3f0ec; box-shadow: inset 0 -2px 0 rgba(38,38,38,0.35); }
+.hour-night { box-shadow: inset 0 -2px 0 rgba(38,38,38,0.35); }
+
+.tlp { list-style: none; margin: 12px 0 0; padding: 0; }
+.tlp-day { display: grid; grid-template-columns: 110px minmax(240px, auto) minmax(220px, 1fr); align-items: center; gap: 6px 16px;
+  padding: 8px 10px; border-bottom: 1px solid var(--line); border-radius: 8px; }
+.tlp-day:hover { background: var(--beige-faint, #fbf6f1); }
+.tlp-selected { box-shadow: inset 0 0 0 1px var(--ink); }
+@media (max-width: 760px) { .tlp-day { grid-template-columns: 1fr; } }
+.tlp-date { font: inherit; font-family: var(--serif); font-size: 16px; background: none; border: none; padding: 0; cursor: pointer; color: var(--text); text-align: left; }
+.tlp-facts { display: flex; gap: 14px; font-variant-numeric: tabular-nums; font-size: 14px; }
+.tlp-facts > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.tlp-none { grid-column: span 2; }
+.hour-strip-compact { margin-top: 0; max-width: none; }

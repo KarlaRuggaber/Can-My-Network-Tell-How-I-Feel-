@@ -240,7 +240,7 @@ def test_assistant_settings_claude_only(portal, scripted, monkeypatch):
     assert person.put("/api/assistant", json={"enabled": True, "model": "x"}).status_code == 403
     st = doc.get("/api/assistant").json()
     assert st["model"] == "claude-sonnet-5-5" and st["default_model"] == "claude-sonnet-5-5"
-    assert st["enabled"] is False and st["has_key"] is False and "provider" not in st      # no Claude key yet
+    assert st["enabled"] is False and st["has_key"] is False and st["provider"] == "anthropic"  # no Claude key yet
 
     r = doc.put("/api/assistant", json={"enabled": True, "model": "claude-sonnet-5-5", "api_key": "sk-ant-test"})
     assert r.status_code == 200 and r.json()["has_key"] and "sk-ant-test" not in r.text
@@ -258,6 +258,40 @@ def test_assistant_settings_claude_only(portal, scripted, monkeypatch):
     doc.put("/api/assistant", json={"enabled": False, "model": "claude-sonnet-5-5", "api_key": ""})
     assert json.loads(path.read_text())["api_keys"] == {}
     path.unlink()
+
+
+def test_assistant_on_a_local_model(portal, scripted, monkeypatch):
+    """Provider "local": the same context goes to an OpenAI-compatible endpoint, nothing to Anthropic."""
+    import json
+    import httpx
+    for v in ("CMN_ASSISTANT", "CMN_ASSISTANT_PROVIDER", "CMN_ASSISTANT_MODEL", "ANTHROPIC_API_KEY", "CMN_LOCAL_URL"):
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setattr("cmn_frontend.assistant._anthropic_profile", lambda: False)
+    sent = []
+
+    def server(req: httpx.Request) -> httpx.Response:
+        sent.append((str(req.url), json.loads(req.content)))
+        chunk = json.dumps({"choices": [{"delta": {"content": "Quieter nights."}, "finish_reason": "stop"}]})
+        return httpx.Response(200, content=f"data: {chunk}\n\ndata: [DONE]\n\n".encode())
+    app = create_app(portal, llm_client=httpx.Client(transport=httpx.MockTransport(server)))
+    person, doc = TestClient(app), TestClient(app)
+    person.post("/api/login", json={"username": "ben", "password": "pw-ben"})
+    doc.post("/api/login", json={"username": "doc", "password": "pw-doc"})
+    assert doc.put("/api/assistant", json={"enabled": True, "model": "qwen2.5:3b", "provider": "local",
+                                           "base_url": "ftp://x"}).status_code == 422
+    r = doc.put("/api/assistant", json={"enabled": True, "model": "qwen2.5:3b", "provider": "local",
+                                        "base_url": "http://100.64.0.5:11434/v1"})
+    assert r.status_code == 200 and r.json()["provider"] == "local" and r.json()["has_key"] is True
+    assert person.get("/api/assistant").json()["enabled"] is True          # no Claude key needed
+    assert "outside company" in person.get("/api/assistant").json()["notice"]
+    r = person.post(f"/api/profiles/{scripted}/assistant", json={"messages": [{"role": "user", "content": "Sleep?"}]})
+    assert r.status_code == 200 and r.text == "Quieter nights."
+    url, body = sent[-1]
+    assert url == "http://100.64.0.5:11434/v1/chat/completions" and body["model"] == "qwen2.5:3b"
+    assert body["messages"][0]["role"] == "system" and "<results>" in body["messages"][0]["content"]
+    assert PHONE_IP not in json.dumps(body) and "C4" not in body["messages"][0]["content"].split("<results>")[1]
+    doc.put("/api/assistant", json={"enabled": False, "model": "claude-sonnet-5-5", "provider": "anthropic"})
+    (portal.home_dir / "assistant.json").unlink()
 
 
 def test_notes_and_seen_flags_for_clinicians_only(portal):

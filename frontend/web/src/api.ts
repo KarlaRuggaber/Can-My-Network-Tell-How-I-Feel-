@@ -26,7 +26,11 @@ export interface ProfileListItem {
   id: string; name: string; condition: string; source: string; scripted: boolean;
   first_day: string | null; last_day: string | null; n_days: number;
   config: Profile;
+  attention?: ProfileAttention;   // added by the backend (v3); absent until then
 }
+
+/** What needs a clinician's look per person: new flags, and whether crisis/self-harm sites appeared. */
+export interface ProfileAttention { flags: number; alert: boolean }
 
 export interface DeviceRef { ip: string; label: string }
 
@@ -99,6 +103,7 @@ export interface DayObserved {
   deviation_ref?: Record<string, number | null>;   // z against the healthy reference (clinicians and parents)
   sensitive?: { metric: string; label: string; value: number | null }[];   // clinicians and parents only
   sensitive_days?: number;
+  percentile_ref?: Record<string, number | null>;   // v3 (K1): position in the typical range, 0–100, per track
 }
 
 export interface ObservedTrack {
@@ -109,11 +114,19 @@ export interface RiskFlag {
   id: string; title: string; track: string; direction: number; days: string[]; count: number;
   window: number; unit: string; phrase: string; text: string; sensitive: boolean; names?: string[];
   basis: "own" | "reference";     // compared with the person's usual weeks, or with healthy people
+  kind?: "risk" | "change";       // v3 (K1): change = notable change in the other direction, "to discuss"
+  icon?: string;                  // v3 (K1): one of the Icon names
 }
+/** v3 (K1): typical range per track as percentiles (P16–P84 = central 68 %). */
+export interface ReferenceTrack { p16: number; p50: number; p84: number; n?: number; citation?: string; proxy_note?: string }
 export interface Observed {
   tracks: ObservedTrack[];
   usual: Record<string, { mean: number; sd: number; n: number }>;
-  reference: { stats: Record<string, { mean: number; sd: number; n: number }>; n_days: number; people: string[] } | null;
+  // v2: stats (mean ± SD of the pooled reference); v3 (K1): source, label, tracks (percentiles)
+  reference: {
+    stats?: Record<string, { mean: number; sd: number; n: number }>; n_days?: number; people?: string[];
+    source?: "pooled" | "external"; label?: string; tracks?: Record<string, ReferenceTrack>;
+  } | null;
   flags: RiskFlag[];
   params: { active_packets: number; deviation_z: number; flag_days: number; flag_window: number;
     sensitive_window: number; night_from_hour: number; night_to_hour: number };
@@ -144,6 +157,7 @@ export interface Clinical {
   normals: Record<string, { min: number | null; max: number | null }>;
 }
 export interface Care {
+  purpose?: "assessment" | "treatment";   // v3 (K5): which comparison the overview shows first
   routine: Routine | null; away_periods: AwayPeriod[]; clinical: Clinical | null;
   updated: Record<string, { by: string; at: string }>;
 }
@@ -214,12 +228,19 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 const get = <T,>(path: string) => call<T>("GET", path);
 const enc = encodeURIComponent;
 
+export type AssistantProviderId = "anthropic" | "local";
+export interface AssistantProvider { id: AssistantProviderId; label: string; default_model: string; default_base_url?: string }
 export interface AssistantStatus {
   enabled: boolean; notice: string;
   // multi-profile users only:
   model?: string; default_model?: string; has_key?: boolean;
+  provider?: AssistantProviderId; base_url?: string; providers?: AssistantProvider[]; has_claude_key?: boolean;
 }
-export interface AssistantSettingsBody { enabled: boolean; model: string; api_key?: string | null }
+export interface AssistantSettingsBody {
+  enabled: boolean; model: string; api_key?: string | null;
+  provider?: AssistantProviderId; base_url?: string | null;
+}
+export interface AssistantCheck { ok: boolean; message: string; models: string[] }
 export interface ChatTurn { role: "user" | "assistant"; content: string }
 
 /** Ask the explanation assistant; calls onText for every streamed chunk. */
@@ -266,6 +287,7 @@ export const api = {
   transcribe,
   assistant: () => get<AssistantStatus>("/api/assistant"),
   saveAssistant: (b: AssistantSettingsBody) => call<AssistantStatus>("PUT", "/api/assistant", b),
+  checkAssistant: (b: { base_url: string; model: string }) => call<AssistantCheck>("POST", "/api/assistant/check", b),
   ask,
   login: (username: string, password: string) => call<Me>("POST", "/api/login", { username, password }),
   logout: () => call<{ ok: boolean }>("POST", "/api/logout"),

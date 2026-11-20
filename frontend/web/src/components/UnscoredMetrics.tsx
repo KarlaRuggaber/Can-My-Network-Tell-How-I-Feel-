@@ -2,8 +2,11 @@ import { useMemo, useState } from "react";
 import type { Config, CritKey, Timeline } from "../api";
 import { CRIT_KEYS } from "../api";
 import { fmtDay, fmtNum } from "../lib/format";
+import { axisName, BAND_LABELS, baselineMarkArea, mergeMarkAreas, usualBand } from "../lib/chart";
 import { C } from "../theme";
 import { Chart } from "./Chart";
+import { Icon } from "./Icon";
+import { metricUnit } from "./MetricTrends";
 
 type Props = { tl: Timeline; cfg: Config; selectedDay: string | null; onSelectDay: (d: string) => void; step: number;
   onAsk?: (question: string, focus: string) => void };
@@ -64,7 +67,8 @@ export function UnscoredMetrics({ tl, cfg, selectedDay, onSelectDay, step, onAsk
       </div>
 
       {flags.length > 0 && (
-        <div className="flag-box" role="note">
+        <div className="flag-box" role="note" style={{ background: C.alertSoft, borderColor: C.alert }}>
+          <span style={{ color: C.alert, marginRight: 6 }}><Icon name="alert" label="Alert" /></span>
           <b>C9 {cfg.criterion_names.C9}: signal on {flags.length} day{flags.length === 1 ? "" : "s"}</b>{" "}
           (above the baseline, outside the gate): {flags.map((f, i) => (
             <span key={f.date}>{i > 0 && ", "}<button className="link" onClick={() => onSelectDay(f.date)}>{fmtDay(f.date)}</button>
@@ -77,7 +81,7 @@ export function UnscoredMetrics({ tl, cfg, selectedDay, onSelectDay, step, onAsk
       <div className="seg" role="tablist">
         {crits.map((c) => (
           <button key={c} role="tab" aria-selected={c === active} className={c === active ? "active" : ""} onClick={() => setTab(c)}>
-            <b>{c}</b> {cfg.criterion_names[c]}{c === "C9" && flags.length > 0 && <span className="flag-dot" aria-label="signal" />}
+            <b>{c}</b> {cfg.criterion_names[c]}{c === "C9" && flags.length > 0 && <span className="flag-dot" style={{ background: C.alert }} aria-label="signal" />}
           </button>
         ))}
       </div>
@@ -88,6 +92,13 @@ export function UnscoredMetrics({ tl, cfg, selectedDay, onSelectDay, step, onAsk
       {zero.length > 0 && (
         <p className="muted small">Always 0 or missing: {zero.map((k) => cfg.metric_labels[k] ?? k).join(" · ")}</p>
       )}
+      {varying.length > 0 && (
+        <div className="small muted" style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px" }}>
+          <span className="key"><i style={{ display: "inline-block", width: 16, height: 0, borderTop: `2px solid ${C.ink}`, margin: "0 5px 3px 0", verticalAlign: "middle" }} />daily value</span>
+          <span className="key"><i style={{ display: "inline-block", width: 16, height: 10, background: C.usualBand, borderRadius: 2, marginRight: 5, verticalAlign: -1 }} />{BAND_LABELS.usual} (baseline mean ± 1 SD)</span>
+          {tl.days.some((d) => d.phase === "baseline") && <span className="key"><i style={{ display: "inline-block", width: 16, height: 10, background: C.baselineShade, borderRadius: 2, marginRight: 5, verticalAlign: -1 }} />{BAND_LABELS.baseline}</span>}
+        </div>
+      )}
     </section>
   );
 }
@@ -96,24 +107,18 @@ function RawMetric({ tl, metric, label, selectedDay, onSelectDay }: { tl: Timeli
   const option = useMemo(() => {
     const vals = tl.days.map((d) => num(d.metrics[metric]));
     const stats = tl.baseline_stats[metric];
-    const cur = tl.days.map((d, i) => (d.phase === "current" ? i : -1)).filter((i) => i >= 0);
+    const unit = metricUnit(metric);
     const sel = tl.days.findIndex((d) => d.date === selectedDay);
     return {
       animation: false,
-      grid: { left: 48, right: 10, top: 12, bottom: 24 },
-      tooltip: { trigger: "axis", valueFormatter: (v: number) => fmtNum(v) },
+      grid: { left: 60, right: 10, top: 22, bottom: 24 },
+      tooltip: { trigger: "axis", valueFormatter: (v: number) => `${fmtNum(v)}${unit === "value" ? "" : ` ${unit}`}` },
       xAxis: { type: "category", data: tl.days.map((d) => fmtDay(d.date)), axisLabel: { color: C.text2, fontSize: 9 }, axisTick: { show: false }, axisLine: { lineStyle: { color: C.grid } } },
-      yAxis: { type: "value", scale: true, axisLabel: { color: C.text2, fontSize: 9, formatter: (v: number) => fmtNum(v, 1) }, splitLine: { lineStyle: { color: C.grid } } },
+      yAxis: { type: "value", scale: true, ...axisName(unit, undefined, 44), axisLabel: { color: C.text2, fontSize: 9, formatter: (v: number) => fmtNum(v, 1) }, splitLine: { lineStyle: { color: C.grid } } },
       series: [{
         type: "line", data: vals, connectNulls: false, symbolSize: 5,
         lineStyle: { width: 1.5, color: C.ink }, itemStyle: { color: C.ink },
-        markArea: {
-          silent: true,
-          data: [
-            ...(stats ? [[{ yAxis: stats.mean - stats.sd, itemStyle: { color: C.baselineBand } }, { yAxis: stats.mean + stats.sd }]] : []),
-            ...(cur.length ? [[{ xAxis: cur[0], itemStyle: { color: C.clinicalTint } }, { xAxis: cur[cur.length - 1] }]] : []),
-          ],
-        },
+        markArea: mergeMarkAreas(baselineMarkArea(tl.days, { label: false }), usualBand(stats)),
         markLine: sel >= 0 ? { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: C.text, width: 1, type: "solid" }, data: [{ xAxis: sel }] } : undefined,
       }],
     };

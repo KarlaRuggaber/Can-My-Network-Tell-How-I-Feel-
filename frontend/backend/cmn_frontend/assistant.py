@@ -5,16 +5,19 @@ shows (likelihoods per criterion, metric values, membership degrees μ and weigh
 and SD, the gate per period) and explains where a finding comes from. It never sees raw packets,
 IP addresses, hostnames or device names, and it must not diagnose.
 
-Off by default, because questions and these derived results are sent to an external model API.
-A multi-profile user turns it on in the portal (Settings → Assistant): model and Claude API key are
-stored in <home>/assistant.json (readable by the owner only; the key is never sent back to a
-browser). Environment variables give the defaults:
+Off by default, because questions and these derived results are sent to a model. A multi-profile
+user turns it on in the portal (Settings → Assistant) and chooses the provider: Anthropic (Claude,
+with the project's Claude key) or a local model behind an OpenAI-compatible endpoint (Ollama,
+llama.cpp server, LM Studio; see llm.py), so nothing leaves the team's own machines. Provider, model,
+endpoint and key are stored in <home>/assistant.json (readable by the owner only; the key is never
+sent back to a browser). Environment variables give the defaults:
 
     CMN_ASSISTANT=1                         # on
-    CMN_ASSISTANT_MODEL=claude-sonnet-5-5
+    CMN_ASSISTANT_PROVIDER=anthropic        # or local
+    CMN_ASSISTANT_MODEL=claude-sonnet-5-5   # model of that provider
     ANTHROPIC_API_KEY=...
-
-The only provider is Anthropic (Claude through the official SDK, with the project's Claude key).
+    CMN_LOCAL_URL=http://127.0.0.1:11434/v1 # local: OpenAI-compatible base URL
+    CMN_LOCAL_API_KEY=...                   # local: only if the server wants one
 
 Single-profile users (the person themself) get a context without expectations or clinical labels and
 answers in everyday language; multi-profile users (clinicians, parents) get the criterion names and,
@@ -30,14 +33,9 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
-from . import fasl
+from . import fasl, llm
+from .llm import DEFAULT_PROVIDER, PROVIDERS
 from .settings import PRODUCT_NAME, PRODUCT_SUBTITLE
-
-PROVIDERS = {
-    "anthropic": {"label": "Anthropic (Claude)", "default_model": "claude-sonnet-5-5",
-                  "key_env": "ANTHROPIC_API_KEY"},
-}
-DEFAULT_PROVIDER = "anthropic"
 MAX_TURNS = 20
 
 # Everyday names for the scored criteria (person view and person assistant).
@@ -76,7 +74,7 @@ PLAIN_METRICS = {
 
 
 class AssistantConfig:
-    """Assistant settings: <home>/assistant.json over environment defaults. Claude only."""
+    """Assistant settings: <home>/assistant.json over environment defaults."""
 
     def __init__(self, home: Path):
         self.path = Path(home) / "assistant.json"
@@ -87,38 +85,77 @@ class AssistantConfig:
         except (OSError, ValueError):
             return {}
 
+    @staticmethod
+    def _env_provider() -> str:
+        p = os.environ.get("CMN_ASSISTANT_PROVIDER", "").strip().lower()
+        return p if p in PROVIDERS else DEFAULT_PROVIDER
+
     def load(self) -> dict[str, Any]:
         f = self._file()
-        p = PROVIDERS[DEFAULT_PROVIDER]
+        env_provider = self._env_provider()
+        provider = f.get("provider") if f.get("provider") in PROVIDERS else env_provider
+        p = PROVIDERS[provider]
         env_on = os.environ.get("CMN_ASSISTANT", "").lower() in ("1", "true", "yes")
-        key = (f.get("api_keys") or {}).get(DEFAULT_PROVIDER) or os.environ.get(p["key_env"], "")
-        model = (f.get("models") or {}).get(DEFAULT_PROVIDER) or os.environ.get("CMN_ASSISTANT_MODEL") \
-            or p["default_model"]
-        return {"enabled": bool(f.get("enabled", env_on)), "provider": DEFAULT_PROVIDER, "model": model,
-                "api_key": key}
+        key = (f.get("api_keys") or {}).get(provider) or os.environ.get(p["key_env"], "")
+        env_model = os.environ.get("CMN_ASSISTANT_MODEL") if provider == env_provider else None
+        model = (f.get("models") or {}).get(provider) or env_model or p["default_model"]
+        out = {"enabled": bool(f.get("enabled", env_on)), "provider": provider, "model": model, "api_key": key}
+        if provider == "local":
+            out["base_url"] = (f.get("base_urls") or {}).get("local") or os.environ.get("CMN_LOCAL_URL") \
+                or p["default_base_url"]
+        return out
 
     def public(self) -> dict[str, Any]:
         c = self.load()
-        return {"enabled": c["enabled"], "model": c["model"],
-                "default_model": PROVIDERS[DEFAULT_PROVIDER]["default_model"],
-                "has_key": bool(c["api_key"]) or _anthropic_profile(),
-                "notice": (f"Your question and this profile's daily results (no raw traffic, addresses or device "
-                           f"names) are sent to Anthropic's Claude ({c['model']}) to write the answer.")}
+        p = PROVIDERS[c["provider"]]
+        local = c["provider"] == "local"
+        f = self._file()
+        base_url = (f.get("base_urls") or {}).get("local") or os.environ.get("CMN_LOCAL_URL") \
+            or PROVIDERS["local"]["default_base_url"]
+        if local:
+            notice = (f"Your question and this profile's daily results (no raw traffic, addresses or device names) "
+                      f"are sent to a model running on the team's own computer ({c['model']}); nothing goes to "
+                      f"an outside company.")
+        else:
+            notice = (f"Your question and this profile's daily results (no raw traffic, addresses or device "
+                      f"names) are sent to Anthropic's Claude ({c['model']}) to write the answer.")
+        return {"enabled": c["enabled"], "provider": c["provider"], "model": c["model"],
+                "default_model": p["default_model"],
+                "has_key": True if local else (bool(c["api_key"]) or _anthropic_profile()),
+                "has_claude_key": bool((f.get("api_keys") or {}).get("anthropic")),   # stored in the file
+                "base_url": llm.public_base_url(base_url),
+                "providers": [{"id": k, "label": v["label"], "default_model": v["default_model"],
+                               **({"default_base_url": v["default_base_url"]} if "default_base_url" in v else {})}
+                              for k, v in PROVIDERS.items()],
+                "notice": notice}
 
-    def save(self, enabled: bool, model: str, api_key: str | None) -> None:
-        """api_key None: keep the stored key; "": remove it. Keys of earlier providers are dropped."""
+    def save(self, enabled: bool, model: str, api_key: str | None, provider: str | None = None,
+             base_url: str | None = None) -> None:
+        """api_key None: keep the stored key of that provider; "": remove it. provider None: keep the
+        current one. Models, keys and the endpoint are kept per provider; unknown providers are dropped."""
         model = model.strip()
         if not model or len(model) > 200:
             raise ValueError("model is required")
         f = self._file()
+        provider = provider or (f.get("provider") if f.get("provider") in PROVIDERS else self._env_provider())
+        if provider not in PROVIDERS:
+            raise ValueError(f"unknown provider {provider!r}")
         keys = {k: v for k, v in (f.get("api_keys") or {}).items() if k in PROVIDERS}
+        models = {k: v for k, v in (f.get("models") or {}).items() if k in PROVIDERS}
+        urls = {k: v for k, v in (f.get("base_urls") or {}).items() if k in PROVIDERS}
+        models[provider] = model
         if api_key is not None:
             if api_key.strip():
-                keys[DEFAULT_PROVIDER] = api_key.strip()
+                keys[provider] = api_key.strip()
             else:
-                keys.pop(DEFAULT_PROVIDER, None)
-        f = {"enabled": bool(enabled), "provider": DEFAULT_PROVIDER, "models": {DEFAULT_PROVIDER: model},
-             "api_keys": keys}
+                keys.pop(provider, None)
+        if base_url is not None and provider == "local":
+            if base_url.strip():
+                urls["local"] = llm.check_base_url(base_url)
+            else:
+                urls.pop("local", None)
+        f = {"enabled": bool(enabled), "provider": provider, "models": models, "api_keys": keys,
+             **({"base_urls": urls} if urls else {})}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".tmp-", suffix=".json")
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -524,41 +561,13 @@ def clean_messages(messages: Iterable[dict[str, Any]], focus: str | None) -> lis
 
 
 def stream_answer(cfg: dict[str, Any], system: list[dict[str, Any]], messages: list[dict[str, Any]],
-                  anthropic_client: Any = None) -> Iterator[str]:
-    """Text chunks of Claude's answer."""
-    if anthropic_client is None:
-        import anthropic
-        anthropic_client = anthropic.Anthropic(api_key=cfg["api_key"]) if cfg["api_key"] else anthropic.Anthropic()
-    yield from stream_claude(anthropic_client, cfg["model"], system, messages)
+                  client: Any = None, anthropic_client: Any = None) -> Iterator[str]:
+    """Text chunks of the answer, from the configured provider (llm.py). anthropic_client: the v2 name
+    of `client`, still accepted (eval/assistant_eval.py passes it)."""
+    yield from llm.stream_text(cfg, system, messages, client if client is not None else anthropic_client)
 
 
 def stream_claude(client: Any, model: str, system: list[dict[str, Any]],
                   messages: list[dict[str, Any]]) -> Iterator[str]:
-    """Text chunks of Claude's answer. Refusals and errors end with a short note instead of raising."""
-    import anthropic
-    try:
-        with client.beta.messages.stream(
-            model=model,
-            max_tokens=16000,
-            system=system,
-            messages=messages,
-            thinking={"type": "adaptive"},
-            output_config={"effort": "medium"},
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        ) as stream:
-            for text in stream.text_stream:
-                yield text
-            final = stream.get_final_message()
-        if final.stop_reason == "refusal":
-            yield "\n\n(The assistant could not answer this question.)"
-        elif final.stop_reason == "max_tokens":
-            yield "\n\n(The answer was cut off.)"
-    except anthropic.AuthenticationError:
-        yield "(The assistant is not set up: no valid Anthropic credentials on the server.)"
-    except anthropic.RateLimitError:
-        yield "(The assistant is busy. Please try again in a minute.)"
-    except anthropic.APIStatusError as e:
-        yield f"(The assistant failed: {e.status_code}.)"
-    except anthropic.APIConnectionError:
-        yield "(The assistant could not reach the Anthropic API.)"
+    """Text chunks of Claude's answer (kept for callers of v2; see llm.stream_claude)."""
+    yield from llm.stream_claude(client, model, system, messages)

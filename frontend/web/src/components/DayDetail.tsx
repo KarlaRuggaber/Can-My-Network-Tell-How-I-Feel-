@@ -2,8 +2,13 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import type { Block, Config, CritKey, Day, DayDetail as DD, PhaseKey } from "../api";
 import { api, CRIT_KEYS } from "../api";
 import { fmtDay, fmtNum, fmtTime, minutesInDay } from "../lib/format";
+import { axisName } from "../lib/chart";
 import { C, deviceColor, deviceRole } from "../theme";
 import { Chart } from "./Chart";
+import { Icon } from "./Icon";
+
+/** Neutral hatch for scripted clinical blocks (rule §2.4: no red for periods). */
+const CLIN_HATCH = `repeating-linear-gradient(135deg, ${C.intensity[4]} 0 3px, ${C.intensity[0]} 3px 5px)`;
 
 type Props = {
   onAsk?: (question: string, focus: string) => void;
@@ -44,16 +49,17 @@ export function DayDetail({ onAsk, profileId, day, cfg, present, dayIndex, phase
     }));
     return {
       animation: false,
-      legend: { top: 0, right: 0, textStyle: { color: C.text2, fontSize: 11 }, icon: "roundRect", itemWidth: 12, itemHeight: 4 },
-      grid: { left: 56, right: 12, top: 24, bottom: 24 },
+      legend: { top: 0, right: 0, data: series.map((x) => x.name), textStyle: { color: C.text2, fontSize: 11 }, icon: "roundRect", itemWidth: 12, itemHeight: 4 },
+      grid: { left: 64, right: 12, top: 28, bottom: 40 },
       tooltip: { trigger: "axis", valueFormatter: (v: number) => `${fmtNum(v)} packets` },
       xAxis: {
         type: "category", data: xs, boundaryGap: false,
+        ...axisName("clock time", "hh:mm"), nameRotate: 0, nameGap: 24,
         axisLabel: { color: C.text2, fontSize: 10, interval: 35 }, axisTick: { show: false },
         axisLine: { lineStyle: { color: C.grid } },
       },
       yAxis: {
-        type: "value", name: "packets / 5 min", nameTextStyle: { color: C.text2, fontSize: 10, align: "left" },
+        type: "value", ...axisName("packets", "per 5 min", 46),
         axisLabel: { color: C.text2, fontSize: 10, formatter: (v: number) => fmtNum(v, 0) },
         splitLine: { lineStyle: { color: C.grid } },
       },
@@ -66,7 +72,9 @@ export function DayDetail({ onAsk, profileId, day, cfg, present, dayIndex, phase
   return (
     <section className="card">
       <div className="card-head">
-        <h2><span className="step">6</span>{day.weekday} {fmtDay(day.date)} <span className={`pill ${day.phase === "current" ? "pill-red" : "pill-beige"}`}>{(day.phase === "current" || day.phase === "baseline" ? phaseLabels[day.phase as PhaseKey] : day.phase).toLowerCase()}</span>
+        <h2><span className="step">6</span>{day.weekday} {fmtDay(day.date)} {day.phase === "baseline"
+          ? <span className="pill pill-baseline">{phaseLabels.baseline.toLowerCase()}</span>
+          : <span className="muted small" style={{ marginLeft: 8, fontFamily: "var(--sans)" }}>{(day.phase === "current" ? phaseLabels.current : day.phase).toLowerCase()}</span>}
           {!day.complete && <span className="pill pill-outline">still being recorded</span>}</h2>
         <p className="sub">{gt ? "What the persona was scripted to do, and the traffic the gateway saw." : "The traffic of this person's devices over the day."}</p>
         <details className="howto">
@@ -99,7 +107,7 @@ export function DayDetail({ onAsk, profileId, day, cfg, present, dayIndex, phase
       )}
 
       <details className="fold">
-        <summary>Score of this day per criterion (L = Σ w · μ)</summary>
+        <summary>Show model details: score of this day per criterion (L = Σ w · μ)</summary>
         <CriterionBreakdown day={day} cfg={cfg} present={present} dayIndex={dayIndex} onAsk={onAsk} />
       </details>
       {gt && <details className="fold">
@@ -130,7 +138,8 @@ function Gantt({ blocks, devices, day }: { blocks: Block[]; devices: string[]; d
     <div className="gantt" aria-label="Scripted blocks over the day">
       {devices.map((dev, row) => (
         <div className="gantt-row" key={dev}>
-          <div className="gantt-label">{deviceRole(dev)}</div>
+          <div className="gantt-label">{deviceRole(dev) === "phone" || deviceRole(dev) === "laptop"
+            ? <><Icon name={deviceRole(dev) as "phone" | "laptop"} label={deviceRole(dev)} /> {deviceRole(dev)}</> : deviceRole(dev)}</div>
           <div className="gantt-track">
             {row === 0 && [0, 6, 12, 18].map((h) => <div key={h} className="gantt-hour" style={{ left: `${(h / 24) * 100}%` }}>{String(h).padStart(2, "0")}</div>)}
             {blocks.filter((b) => b.device === dev).map((b) => {
@@ -138,7 +147,7 @@ function Gantt({ blocks, devices, day }: { blocks: Block[]; devices: string[]; d
               const cls = ["gantt-bar", b.phase === "profile" ? "clin" : "base", b.flag === "sensitive" ? "sensitive" : "", b.status.startsWith("exit") || b.status === "not run" ? "failed" : "", b.status === "away" ? "away" : ""].join(" ");
               return (
                 <div key={b.block_id} className={cls}
-                  style={{ left: `${(s / 1440) * 100}%`, width: `max(3px, ${((e - s) / 1440) * 100}%)`, ...(b.phase !== "profile" ? { background: deviceColor(dev) } : {}) }}
+                  style={{ left: `${(s / 1440) * 100}%`, width: `max(3px, ${((e - s) / 1440) * 100}%)`, background: b.phase !== "profile" ? deviceColor(dev) : CLIN_HATCH, ...(b.flag === "sensitive" ? { outline: `2px solid ${C.alert}` } : {}) }}
                   title={`${fmtTime(b.start)}–${fmtTime(b.end)} ${b.profile_block} (${b.activity})\n${b.block_id}\nphase: ${b.phase} · status: ${b.status}${b.flag ? " · " + b.flag : ""}`} />
               );
             })}
@@ -148,9 +157,9 @@ function Gantt({ blocks, devices, day }: { blocks: Block[]; devices: string[]; d
       <div className="gantt-legend">
         <span><i style={{ background: C.phone }} /> everyday block (phone)</span>
         <span><i style={{ background: C.laptop }} /> everyday block (laptop)</span>
-        <span><i className="clin-swatch" /> clinical block</span>
-        <span><i className="sens-swatch" /> sensitive</span>
-        <span><i className="away-swatch" /> away (no traffic expected)</span>
+        <span><i style={{ background: CLIN_HATCH }} /> clinical block</span>
+        <span style={{ color: C.alert }}><Icon name="alert" label="sensitive" /> sensitive (crisis / self-harm site)</span>
+        <span><i className="away-swatch" /><Icon name="away" label="away" /> away (no traffic expected)</span>
       </div>
     </div>
   );
@@ -164,12 +173,12 @@ function BlockTable({ blocks }: { blocks: Block[] }) {
         <thead><tr><th>Time</th><th>Device</th><th>Block</th><th>Activity</th><th>Phase</th><th>Run</th></tr></thead>
         <tbody>
           {blocks.map((b) => (
-            <tr key={b.block_id} className={b.phase === "profile" ? "clin" : ""}>
+            <tr key={b.block_id}>
               <td className="nowrap">{fmtTime(b.start)}–{fmtTime(b.end)}</td>
               <td>{deviceRole(b.device)}</td>
               <td title={b.block_id}>
                 {b.profile_block}
-                {b.flag === "sensitive" && <span className="tag tag-warn">sensitive</span>}
+                {b.flag === "sensitive" && <span className="tag" style={{ borderColor: C.alert, color: C.alert }}>sensitive</span>}
                 <div className="note mono">{b.block_id}</div>
               </td>
               <td title={b.mix}>{b.activity}</td>
@@ -199,7 +208,7 @@ function CriterionBreakdown({ day, cfg, present, dayIndex, onAsk }: { day: Day; 
                   {onAsk && <button className="link small explain-link" onClick={() => onAsk(`Explain the ${c} ${cfg.criterion_names[c]} score of ${fmtNum(day.L[c])} on ${day.date}, metric by metric (value, μ, weight), and what could explain it besides the criterion.`, `day ${day.date}, ${c}`)}>✦ explain</button>}</td>
                 <td />
                 <td />
-                <td className="num"><b>{fmtNum(day.L[c])}</b>{present[c]?.[dayIndex] && <span className="status status-on"> ●</span>}</td>
+                <td className="num"><b>{fmtNum(day.L[c])}</b>{present[c]?.[dayIndex] && <span className="status" style={{ color: C.alert }} title="present"> ● present</span>}</td>
               </tr>
               {Object.entries(day.parts[c]!).sort((a, b) => b[1].w * b[1].mu - a[1].w * a[1].mu).map(([k, m]) => (
                 <tr key={c + k}>

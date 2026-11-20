@@ -2,6 +2,7 @@ import type { Config, CritKey, Expectation, PhaseKey, Timeline } from "../api";
 import { CRIT_KEYS } from "../api";
 import { fmtDay } from "../lib/format";
 import type { GateParams, PhaseGate } from "../lib/gate";
+import { C } from "../theme";
 
 /** Gate result of one phase plus what it was computed on. */
 export interface PhaseView extends PhaseGate {
@@ -57,11 +58,12 @@ function PhaseTile({ ph, title, p, crits, cfg, gate }: { ph: PhaseKey; title: st
   const on = presentList(p, crits);
   const prelim = isPreliminary(p, gate);
   return (
-    <div className={`phase-tile phase-tile-${ph}`}>
+    <div className={`phase-tile${ph === "baseline" ? " phase-tile-baseline" : " phase-tile-plain"}`}
+      style={ph === "baseline" ? undefined : { background: C.surface }}>
       <div className="phase-tile-head">
         <span className="phase-tile-title">{title}</span>
         <span className="muted small">{phaseSpan(p)}</span>
-        {ph === "current" && prelim && <span className="pill pill-beige">preliminary · day {p.days} of {gate.M}</span>}
+        {ph === "current" && prelim && <span className="pill pill-neutral">preliminary · day {p.days} of {gate.M}</span>}
       </div>
       {p.days === 0 ? <p className="muted">No complete days yet.</p> : (
         <>
@@ -70,12 +72,12 @@ function PhaseTile({ ph, title, p, crits, cfg, gate }: { ph: PhaseKey; title: st
           </div>
           <div className="chips">
             {on.length === 0 && <span className="muted small">none</span>}
-            {on.map((c) => <span key={c} className="pill pill-red">{c} {cfg.criterion_names[c]}</span>)}
+            {on.map((c) => <span key={c} className="pill pill-alert">{c} {cfg.criterion_names[c]}</span>)}
           </div>
           <div className="small">
             Episode: {!episodePossible(cfg, gate)
               ? <span className="muted" title={`Only ${crits.length} of 9 criteria are scored; an episode needs ${gate.minPresent} present criteria.`}>not possible with this configuration</span>
-              : p.episode ? <b className="status-on">likely</b> : <span>no</span>}
+              : p.episode ? <b style={{ color: C.alert }}>likely</b> : <span>no</span>}
           </div>
         </>
       )}
@@ -161,7 +163,7 @@ export function CriteriaSummary({ tl, cfg, phases, gate, selected, onSelect }: P
                     if (!r || p.days === 0) return <td key={ph} className="muted">–</td>;
                     return (
                       <td key={ph}>
-                        {r.present ? <span className="pill pill-red">present</span> : <span className="pill pill-grey">absent</span>}
+                        {r.present ? <span className="pill pill-alert">present</span> : <span className="pill pill-grey">absent</span>}
                         <span className="days-count">{r.daysOver} of {p.days}</span>
                       </td>
                     );
