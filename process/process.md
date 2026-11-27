@@ -429,7 +429,14 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
 
 **Supervisor meeting:** Fri 27.11
 - **Done:**
+  - **Evaluation of the whole live run** (Thierry, 27.11): data up to 22.11 copied from the gateway, all 29 days recomputed per persona (14 baseline vs. 14 clinical days), also the peer variant. The days up to 12.11 are identical to the run of 13.11. Tables: [evaluation/README.md](../evaluation/README.md) "Results".
+    - **No criterion reaches the gate with the thesis config, no episode** for any persona (expected for MDD: borderline). C4 is over θ on more baseline than clinical days (MDD 6 vs. 2, SAD 7 vs. 3), so the Dataset-B tuning does not transfer.
+    - **Metrics:** insomnia 2 of 5 as expected (sleep onset later, nocturnal micro-sessions), all 6 stable metrics unchanged; MDD 7 of 16 as expected (night/day ratio, fewer domains, fewer productivity hits, later sleep onset), 4 opposite; SAD 0 of 5 (outgoing social share goes up instead of down).
+    - **C9:** MDD has crisis-line hits on 4 clinical days and none in the baseline, but the thesis config has no rule for C9.
+    - The Tailscale name of the gateway is now `minipc` (same address 100.124.37.62); `can-my-network-gw` no longer resolves.
 - **Next / open:**
+  - Calibrated gateway config (thesis-alignment §4, tuned on the baseline days only): decide whether we do it before the presentation
+  - The gateway still writes partitions after 22.11 (up to 27.11): check whether the runner should keep running
 - **Blockers / notes:**
 
 </details>
