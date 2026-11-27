@@ -26,9 +26,12 @@ instead); ``complete_json`` raises ``LLMError`` (a ``ValueError``) with a short,
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import threading
+import time
 from typing import Any, Iterable, Iterator
 
 PROVIDERS: dict[str, dict[str, Any]] = {
@@ -139,6 +142,58 @@ def check_local(base_url: str, model: str, api_key: str = "", client: Any = None
     listed = ", ".join(models[:8]) or "none"
     return {"ok": False, "models": models,
             "message": f"Reached the endpoint, but it has no model \"{model}\" (available: {listed})."}
+
+
+# ---- warm-up of the local model ----
+# A local model on a CPU needs minutes to read the long <results> block. Ollama (and llama.cpp) keep the
+# start of the last prompt in memory and reuse it when the next prompt begins the same way. warm_local()
+# sends the exact system prompt of a person's page once, in the background, with a one-token answer, so
+# the first real question only has to read the question itself. Nothing happens for Claude.
+WARM_TTL = 25 * 60              # Ollama keeps the model (and its cache) loaded for OLLAMA_KEEP_ALIVE=30m
+_warm_lock = threading.Lock()
+_warm: dict[str, Any] = {"key": None, "busy": False, "at": 0.0}
+
+
+def warm_key(cfg: dict[str, Any], system: str | list[dict[str, Any]]) -> str:
+    raw = "\x00".join([cfg.get("base_url") or "", cfg.get("model") or "", system_text(system)])
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def warm_local(cfg: dict[str, Any], system: str | list[dict[str, Any]], client: Any = None,
+               background: bool = True) -> str:
+    """Load the model and read this system prompt now. Returns what happened: "started",
+    "not_local", "already_warm" or "busy" (one warm-up at a time; a later one waits for the next page)."""
+    if cfg.get("provider", DEFAULT_PROVIDER) != "local":
+        return "not_local"
+    key = warm_key(cfg, system)
+    with _warm_lock:
+        if _warm["busy"]:
+            return "busy"
+        if _warm["key"] == key and time.monotonic() - _warm["at"] < WARM_TTL:
+            return "already_warm"
+        _warm.update(key=key, busy=True)
+
+    def run() -> None:
+        ok = False
+        try:
+            body = {"model": cfg["model"], "stream": False, "max_tokens": 1, "temperature": 0.3,
+                    "messages": [{"role": "system", "content": system_text(system)},
+                                 {"role": "user", "content": "Ready?"}]}
+            body.update(_extra_body())
+            http = _local_client(cfg, client)
+            r = http.post(_local_url(cfg), json=body)
+            ok = r.status_code < 400
+        except Exception:   # a failed warm-up only means the first question is slow
+            ok = False
+        finally:
+            with _warm_lock:
+                _warm.update(busy=False, at=time.monotonic() if ok else 0.0, key=key if ok else None)
+
+    if background:
+        threading.Thread(target=run, name="warm-local-model", daemon=True).start()
+    else:
+        run()
+    return "started"
 
 
 def stream_text(cfg: dict[str, Any], system: str | list[dict[str, Any]], messages: list[dict[str, Any]],

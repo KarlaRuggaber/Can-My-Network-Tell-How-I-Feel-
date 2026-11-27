@@ -113,6 +113,9 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
     try { return window.sessionStorage.getItem("cmn.skipOnboarding") === "1"; } catch { return false; }
   });
   useEffect(() => { api.assistant().then((a) => setAssistantOn(a.enabled)).catch(() => setAssistantOn(false)); }, []);
+  // A local model reads the page's data once in the background as soon as the page is open, so the
+  // first question does not wait minutes (the server does nothing for Claude or if already warm).
+  const warmedFor = useRef<string | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [seen, setSeen] = useState<SeenMarks>({});
   // "Explain this" anywhere on the page: open the assistant with the question
@@ -185,6 +188,12 @@ function Portal({ me, onLogout }: { me: Me; onLogout: () => void }) {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, [multi]);
+
+  useEffect(() => {
+    if (!assistantOn || !pid || tl?.status !== "ready" || tl.profile.id !== pid || warmedFor.current === pid) return;
+    warmedFor.current = pid;
+    api.warmAssistant(pid).catch(() => undefined);
+  }, [assistantOn, pid, tl]);
 
   const configured = useMemo(
     () => (cfg ? CRIT_KEYS.filter((c) => Object.keys(cfg.criteria[c] ?? {}).length > 0) : []),
