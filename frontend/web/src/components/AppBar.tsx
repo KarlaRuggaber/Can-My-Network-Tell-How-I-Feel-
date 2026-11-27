@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ProfileListItem } from "../api";
 import { Icon, type IconName } from "./Icon";
+import { Logo } from "./Logo";
 import { PersonPicker } from "./PersonPicker";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -74,7 +75,7 @@ export function AppBar(p: Props) {
     <>
       <header className="appbar">
         <button type="button" className="appbar-brand" onClick={p.onHome} title={PRODUCT_SUBTITLE} aria-label={`${PRODUCT_NAME}, ${PRODUCT_SUBTITLE}: go to Overview`}>
-          {PRODUCT_NAME}
+          <Logo className="appbar-logo" />
         </button>
 
         {p.settings ? (
