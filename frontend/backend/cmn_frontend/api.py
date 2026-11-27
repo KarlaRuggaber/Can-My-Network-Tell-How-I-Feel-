@@ -679,11 +679,8 @@ def create_app(settings: Settings | None = None, llm_client: Any = None,
         key = c["api_key"] if c["provider"] == "local" else ""
         return llm.check_local(url, body.model.strip(), key, client=llm_client)
 
-    @app.post("/api/profiles/{pid}/assistant")
-    def ask(pid: str, body: AssistantBody, user: auth.User = Depends(current_user)) -> StreamingResponse:
-        st = assistant_cfg.load()
-        if not st["enabled"]:
-            raise HTTPException(503, "The assistant is turned off (Settings → Assistant).")
+    def _assistant_context(pid: str, user: auth.User) -> tuple[dict[str, Any], bool, dict[str, str]]:
+        """The data the assistant gets for this page (the same for a question and for the warm-up)."""
         p = profile_for(user, pid)
         person = user.role == "single"
         tl = build_timeline(p, settings, config())
@@ -693,12 +690,28 @@ def create_app(settings: Settings | None = None, llm_client: Any = None,
             tl["notes"] = notes.notes(pid)
         if not tl["days"]:
             raise HTTPException(409, "No data for this profile yet.")
+        labels, _ = _metric_labels(str(settings.app_dir))
+        return assistant.build_context(tl, config(), person, labels), person, labels
+
+    @app.post("/api/profiles/{pid}/assistant/warm")
+    def warm(pid: str, user: auth.User = Depends(current_user)) -> dict[str, Any]:
+        """Local model only: read this page's data now, in the background, so the first question is fast."""
+        st = assistant_cfg.load()
+        if not st["enabled"] or st.get("provider") != "local":
+            return {"warm": "not_local"}
+        ctx, person, _ = _assistant_context(pid, user)
+        return {"warm": llm.warm_local(st, assistant.system_blocks(ctx, person), client=llm_client)}
+
+    @app.post("/api/profiles/{pid}/assistant")
+    def ask(pid: str, body: AssistantBody, user: auth.User = Depends(current_user)) -> StreamingResponse:
+        st = assistant_cfg.load()
+        if not st["enabled"]:
+            raise HTTPException(503, "The assistant is turned off (Settings → Assistant).")
+        ctx, person, labels = _assistant_context(pid, user)
         try:
             msgs = assistant.clean_messages([m.model_dump() for m in body.messages], body.focus)
         except ValueError as e:
             raise HTTPException(422, str(e))
-        labels, _ = _metric_labels(str(settings.app_dir))
-        ctx = assistant.build_context(tl, config(), person, labels)
         chunks = assistant.stream_answer(st, assistant.system_blocks(ctx, person), msgs,
                                          client=llm_client)
         # The hidden <based_on> block never reaches the text; one record follows it (sources.py).

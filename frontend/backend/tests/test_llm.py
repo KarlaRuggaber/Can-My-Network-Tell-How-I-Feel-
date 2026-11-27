@@ -226,3 +226,54 @@ def test_fallback_setting_is_saved_and_needs_a_claude_key(tmp_path, monkeypatch)
     assert c.load()["fallback"]["model"] == "claude-x" and c.public()["notice"] == ""
     c.save(True, "qwen", None, "local", None, fallback=False)
     assert "fallback" not in c.load() and c.public()["fallback"] is False
+
+
+# ---- warm-up of the local model ----
+
+class _WarmClient:
+    def __init__(self, status: int = 200):
+        self.calls: list[dict] = []
+        self.status = status
+
+    def post(self, url, json=None):
+        self.calls.append({"url": url, "json": json})
+        return type("R", (), {"status_code": self.status})()
+
+
+def _warm_reset():
+    llm._warm.update(key=None, busy=False, at=0.0)
+
+
+def test_warm_does_nothing_for_claude():
+    _warm_reset()
+    c = _WarmClient()
+    assert llm.warm_local({"provider": "anthropic", "model": "claude-sonnet-5-5"}, "sys", client=c) == "not_local"
+    assert c.calls == []
+
+
+def test_warm_sends_the_exact_system_prompt_once():
+    _warm_reset()
+    cfg = {"provider": "local", "model": "qwen3.5:4b", "base_url": "http://127.0.0.1:11434/v1"}
+    system = [{"type": "text", "text": "rules"}, {"type": "text", "text": "<results>\n{}\n</results>"}]
+    c = _WarmClient()
+    assert llm.warm_local(cfg, system, client=c, background=False) == "started"
+    body = c.calls[0]["json"]
+    assert c.calls[0]["url"] == "http://127.0.0.1:11434/v1/chat/completions"
+    assert body["messages"][0] == {"role": "system", "content": llm.system_text(system)}   # same as a question
+    assert body["max_tokens"] == 1 and body["stream"] is False
+    assert llm.warm_local(cfg, system, client=c, background=False) == "already_warm"
+    assert len(c.calls) == 1
+    other = [{"type": "text", "text": "rules"}, {"type": "text", "text": "<results>\n{\"x\":1}\n</results>"}]
+    assert llm.warm_local(cfg, other, client=c, background=False) == "started"     # another page: warm again
+
+
+def test_warm_one_at_a_time_and_retry_after_failure():
+    _warm_reset()
+    cfg = {"provider": "local", "model": "m", "base_url": "http://x/v1"}
+    llm._warm["busy"] = True
+    assert llm.warm_local(cfg, "sys", client=_WarmClient(), background=False) == "busy"
+    _warm_reset()
+    failing = _WarmClient(status=500)
+    assert llm.warm_local(cfg, "sys", client=failing, background=False) == "started"
+    assert llm.warm_local(cfg, "sys", client=failing, background=False) == "started"   # not marked warm
+    _warm_reset()

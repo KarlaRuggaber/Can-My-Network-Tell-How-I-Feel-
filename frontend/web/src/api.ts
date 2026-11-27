@@ -382,6 +382,8 @@ export const api = {
   assistant: () => get<AssistantStatus>("/api/assistant"),
   saveAssistant: (b: AssistantSettingsBody) => call<AssistantStatus>("PUT", "/api/assistant", b),
   checkAssistant: (b: { base_url: string; model: string }) => call<AssistantCheck>("POST", "/api/assistant/check", b),
+  /** Local model only: read this page's data in the background, so the first question is fast. */
+  warmAssistant: (id: string) => call<{ warm: string }>("POST", `/api/profiles/${enc(id)}/assistant/warm`),
   ask,
   login: (username: string, password: string) => call<Me>("POST", "/api/login", { username, password }),
   logout: () => call<{ ok: boolean }>("POST", "/api/logout"),
