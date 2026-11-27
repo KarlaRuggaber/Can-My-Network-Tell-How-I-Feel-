@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { api, ApiError, type Me } from "../api";
 import { PRODUCT_NAME, PRODUCT_SLOGAN } from "../theme";
+import { Logo } from "./Logo";
 
-/** Login card: product name, username and password, nothing else. */
+/** Login card: logo, slogan, username and password, nothing else. */
 export function Login({ onLogin }: { onLogin: (me: Me) => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -24,7 +25,7 @@ export function Login({ onLogin }: { onLogin: (me: Me) => void }) {
   return (
     <div className="login-page">
       <form className="login-card card" onSubmit={submit}>
-        <h1>{PRODUCT_NAME}</h1>
+        <h1><Logo className="login-logo" title={PRODUCT_NAME} /></h1>
         <p className="tagline">{PRODUCT_SLOGAN}</p>
         <h2 className="login-title">Welcome – please log in</h2>
         <label className="field">Username

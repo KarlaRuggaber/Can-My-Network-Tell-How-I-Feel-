@@ -107,6 +107,9 @@
 .appbar-avatar { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%;
   background: var(--ink); color: #fff; font-size: 13px; font-weight: 700; }
 .appbar-caret { color: var(--text2); font-size: 11px; }
+.appbar-logo { display: block; height: 30px; width: auto; }
+/* phones: leave room for the person picker next to the logo */
+@container page (max-width: 480px) { .appbar-logo { height: 26px; } }
 .appbar-brand:focus-visible, .appbar-back:focus-visible, .appbar-account:focus-visible { outline: 2px solid var(--beige); outline-offset: 2px; }
 .appbar-tab:focus-visible { outline: 2px solid var(--beige); outline-offset: -4px; border-radius: 6px; }
 .appbar-note { margin: -8px 0 0; font-size: 12px; color: var(--text2); }

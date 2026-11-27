@@ -196,6 +196,7 @@ details.fold[open] { padding-bottom: 12px; }
 .login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; background: var(--beige-faint); }
 .login-card { position: relative; width: min(460px, 100%); display: flex; flex-direction: column; gap: 12px; padding: 32px 30px 26px; }
 .login-card h1 { font-size: 30px; max-width: 300px; }
+.login-logo { display: block; height: 52px; width: auto; max-width: 100%; color: var(--ink); }
 .login-card .tagline { font-size: 15px; margin: 0 0 6px; }
 .login-title { font-size: 19px; margin-top: 4px; }
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--text2); }
