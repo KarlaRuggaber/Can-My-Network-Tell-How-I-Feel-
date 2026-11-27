@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, ApiError, type Me } from "../api";
-import { PRODUCT_NAME, PRODUCT_SUBTITLE } from "../theme";
+import { PRODUCT_NAME, PRODUCT_SLOGAN } from "../theme";
 
 /** Login card: product name, username and password, nothing else. */
 export function Login({ onLogin }: { onLogin: (me: Me) => void }) {
@@ -25,7 +25,7 @@ export function Login({ onLogin }: { onLogin: (me: Me) => void }) {
     <div className="login-page">
       <form className="login-card card" onSubmit={submit}>
         <h1>{PRODUCT_NAME}</h1>
-        <p className="tagline">{PRODUCT_SUBTITLE}</p>
+        <p className="tagline">{PRODUCT_SLOGAN}</p>
         <h2 className="login-title">Welcome – please log in</h2>
         <label className="field">Username
           <input autoFocus autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} />
