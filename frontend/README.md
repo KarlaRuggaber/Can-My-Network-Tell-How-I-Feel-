@@ -149,9 +149,10 @@ v3 builds on v2 and follows the second calls with the UZH child and adolescent p
 and with a UX / data-science reviewer. The tasks, the norm research and how the work was split are in
 [`process/Feedback-v3-Plan.md`](../process/Feedback-v3-Plan.md). Main changes:
 
-- **Name and look.** The portal is called **Rhythm** ("Home network overview"; placeholder, one
-  constant in `web/src/theme.ts` and `backend/cmn_frontend/settings.py`); the thesis title is only an
-  "About" line. Visual rules in [VISUAL.md](VISUAL.md), applied to every screen: every element answers
+- **Name and look.** The portal is called **Meanwhile**, slogan "notices when your routines drift" on the
+  login page, subtitle "Home network overview" in the app bar (chosen 27.11, replaces the placeholder
+  "Rhythm"; constants in `web/src/theme.ts` and `backend/cmn_frontend/settings.py`); the thesis title is
+  only an "About" line. Visual rules in [VISUAL.md](VISUAL.md), applied to every screen: every element answers
   a question; red only for alerts (crisis or self-harm sites, "present", the C9 signal); one neutral
   intensity scale; only the baseline period is shaded, in a neutral colour (the clinical / recent
   period is not); every axis is named with its unit; fixed icons with one meaning each

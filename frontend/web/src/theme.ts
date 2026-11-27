@@ -3,9 +3,11 @@
 // shaded. Data colours checked with the dataviz palette validator (light mode, white surface).
 export const BRAND = { red: "#DC3A4F", beige: "#EBD6C1", ink: "#262626" };
 
-/** Placeholder product name (decision §8); the thesis title stays only in an "About" line. */
-export const PRODUCT_NAME = "Rhythm";
+/** Product name (chosen 27.11, replaces the placeholder "Rhythm"); the thesis title stays only in an
+ * "About" line. The subtitle describes the app (app bar, footer, assistant); the slogan is the login line. */
+export const PRODUCT_NAME = "Meanwhile";
 export const PRODUCT_SUBTITLE = "Home network overview";
+export const PRODUCT_SLOGAN = "notices when your routines drift";
 
 export const FONT = {
   serif: '"Book Antiqua", "Palatino Linotype", Palatino, "URW Palladio L", Georgia, serif',

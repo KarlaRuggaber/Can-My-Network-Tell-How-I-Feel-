@@ -442,6 +442,7 @@ What we did today: we worked the entire day on the hardware setup. The entire pr
 
 **Supervisor meeting:** Fri 27.11
 - **Done:**
+  - **Product name:** the placeholder "Rhythm" becomes **Meanwhile**, slogan "notices when your routines drift" (27.11, chosen for the video: the name answers what happens between sessions). Login page shows the slogan; app bar, footer and assistant keep the subtitle "Home network overview". The video script is in the project folder (`Video/Drehbuch-und-Strategie.md`, outside git).
 - **Next / open:**
 - **Blockers / notes:**
 

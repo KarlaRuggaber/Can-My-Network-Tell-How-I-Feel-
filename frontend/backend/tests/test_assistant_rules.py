@@ -22,10 +22,10 @@ def prompt(person: bool) -> str:
 def test_product_name_in_prompt_and_api(tmp_path):
     from cmn_frontend.api import create_app
     from fixtures import make_run
-    assert PRODUCT_NAME == "Rhythm"
+    assert PRODUCT_NAME == "Meanwhile"
     for person in (True, False):
-        assert "Rhythm" in prompt(person) and "Can My Network" not in prompt(person)
-    assert create_app(make_run(tmp_path)).title == "Rhythm – results API"
+        assert "Meanwhile" in prompt(person) and "Can My Network" not in prompt(person)
+    assert create_app(make_run(tmp_path)).title == "Meanwhile – results API"
 
 
 # ---- prompt rules (B1, B2, B3, D1) ----
@@ -265,7 +265,7 @@ def test_markdown_table():
     case = ev.Case("p01", "person", ev.BEN, ("How was my week?",))
     recs = [ev.check_answer(case, 0, "Usual week; quiet at 01:35.", None, GROUND),
             ev.check_answer(case, 0, "Usual week; quiet at 03:00.", None, GROUND)]
-    md = ev.markdown(recs, {"model": "m", "date": "2026-11-20", "product": "Rhythm", "n_cases": 1,
+    md = ev.markdown(recs, {"model": "m", "date": "2026-11-20", "product": "Meanwhile", "n_cases": 1,
                             "last_days": "Ben 2026-11-19"})
     assert "| person | 2 |" in md and "1/2 (50 %)" in md and "numbers: 03:00" in md
     assert re.search(r"\| Role \| Answers \| Median words \| Numbers grounded", md)
@@ -374,7 +374,7 @@ def test_length_is_reported_not_failed():
     r = ev.check_answer(case, 0, "Usual week. " * 60, None, GROUND)
     assert r["checks"]["length"] is False and ev.failed_checks(r) == []
     assert r["guard"] == {"replaced": 0, "terms_left": []}
-    md = ev.markdown([r], {"model": "m", "date": "d", "product": "Rhythm", "n_cases": 1, "last_days": "-"})
+    md = ev.markdown([r], {"model": "m", "date": "d", "product": "Meanwhile", "n_cases": 1, "last_days": "-"})
     assert "Length (info)" in md and "long (info)" in md and "changed 0 of 1 person answers" in md
 
 
